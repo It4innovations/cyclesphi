@@ -18,7 +18,7 @@
 
 set(INC
   ..
-  ../blenderphi
+  ${CMAKE_SOURCE_DIR}/lib/braas-hpc-renderengine
   #../../third_party
   ../app
 )
@@ -141,8 +141,8 @@ if(WITH_CYCLES_STANDALONE)
       frame_display_driver.cpp
       frame_display_driver.h
       
-      ../blenderphi/renderengine_tcp.cpp
-      ../blenderphi/renderengine_tcp.h
+      ${CMAKE_SOURCE_DIR}/lib/braas-hpc-renderengine/renderengine_tcp.cpp
+      ${CMAKE_SOURCE_DIR}/lib/braas-hpc-renderengine/renderengine_tcp.h
 
       ../app/cycles_xml_bin.cpp
       ../app/cycles_xml_bin.h
@@ -183,8 +183,8 @@ if(WITH_CYCLES_STANDALONE)
       frame_display_driver.cpp
       frame_display_driver.h
 
-      ../blenderphi/renderengine_tcp.cpp
-      ../blenderphi/renderengine_tcp.h
+      ${CMAKE_SOURCE_DIR}/lib/braas-hpc-renderengine/renderengine_tcp.cpp
+      ${CMAKE_SOURCE_DIR}/lib/braas-hpc-renderengine/renderengine_tcp.h
 
       ../app/cycles_xml_bin.cpp
       ../app/cycles_xml_bin.h
@@ -220,8 +220,8 @@ if(WITH_CYCLES_STANDALONE)
         frame_display_driver.cpp
         frame_display_driver.h
 
-        ../blenderphi/renderengine_tcp.cpp
-        ../blenderphi/renderengine_tcp.h
+        ${CMAKE_SOURCE_DIR}/lib/braas-hpc-renderengine/renderengine_tcp.cpp
+        ${CMAKE_SOURCE_DIR}/lib/braas-hpc-renderengine/renderengine_tcp.h
 
         ../app/cycles_xml_bin.cpp
         ../app/cycles_xml_bin.h

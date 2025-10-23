@@ -400,7 +400,7 @@ int cyclesphi(int ac, char** av, TcpConnection* blenderClientTcp, FromCL& fromCL
 	CyclesphiDataRenderAux* main_data_render_aux = &data_render_aux[0];
 	/////////
 
-	CyclesphiDataState cyclesphiDataState;
+	BRaaSHPCDataState cyclesphiDataState;
 	memset(&cyclesphiDataState, 0, sizeof(cyclesphiDataState));
 
 	///////////////////
