@@ -48,3 +48,6 @@
 	path = lib/legacy/windows_arm64
 	url = https://projects.blender.org/blender/lib-windows_arm64.git
 	branch = blender-v4.3-release
+[submodule "lib/braas-hpc-renderengine"]
+	path = lib/braas-hpc-renderengine
+	url = https://github.com/It4innovations/braas-hpc-renderengine.git
