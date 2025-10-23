@@ -529,6 +529,11 @@ if(WITH_CYCLES_CUDA_BINARIES)
         -D WITH_NANOVDB)
     endif()
 
+    if(WITH_GPU_CPUIMAGE)
+      set(cuda_flags ${cuda_flags}
+        -D WITH_GPU_CPUIMAGE)
+    endif()
+
     if(WITH_CYCLES_DEBUG)
       set(cuda_flags ${cuda_flags} -D WITH_CYCLES_DEBUG)
       set(cuda_flags ${cuda_flags} --ptxas-options="-v")
@@ -732,6 +737,11 @@ if(WITH_CYCLES_HIP_BINARIES AND WITH_CYCLES_DEVICE_HIP)
         -D WITH_NANOVDB)
     endif()
 
+    if(WITH_GPU_CPUIMAGE)
+      set(hip_flags ${hip_flags}
+        -D WITH_GPU_CPUIMAGE)
+    endif()
+
     if(WITH_CYCLES_DEBUG)
       set(hip_flags ${hip_flags} -D WITH_CYCLES_DEBUG)
     endif()
@@ -775,6 +785,10 @@ if(WITH_CYCLES_HIP_BINARIES AND WITH_CYCLES_DEVICE_HIPRT)
 
   if(WITH_NANOVDB)
     set(hiprt_compile_flags ${hiprt_compile_flags} -D WITH_NANOVDB)
+  endif()
+
+  if(WITH_GPU_CPUIMAGE)
+    set(hiprt_compile_flags ${hiprt_compile_flags} -D WITH_GPU_CPUIMAGE)
   endif()
 
   if(WITH_CYCLES_DEBUG)
@@ -869,6 +883,11 @@ if(WITH_CYCLES_DEVICE_OPTIX AND WITH_CYCLES_CUDA_BINARIES)
     if(WITH_NANOVDB)
       set(cuda_flags ${cuda_flags}
         -D WITH_NANOVDB)
+    endif()
+
+    if(WITH_GPU_CPUIMAGE)
+      set(cuda_flags ${cuda_flags}
+        -D WITH_GPU_CPUIMAGE)
     endif()
 
     if(WITH_CYCLES_OSL)
@@ -987,6 +1006,10 @@ if(WITH_CYCLES_DEVICE_ONEAPI)
     ${SYCL_CPP_FLAGS}
   )
 
+  if(WITH_GPU_CPUIMAGE)
+    list(APPEND sycl_compiler_flags -DWITH_GPU_CPUIMAGE)
+  endif()
+
   if(WITH_CYCLES_ONEAPI_HOST_TASK_EXECUTION)
     list(APPEND sycl_compiler_flags -DWITH_ONEAPI_SYCL_HOST_TASK)
   endif()
@@ -1056,6 +1079,11 @@ if(WITH_CYCLES_DEVICE_ONEAPI)
   if(WITH_NANOVDB)
     list(APPEND sycl_compiler_flags
       -DWITH_NANOVDB)
+  endif()
+
+  if(WITH_CYCLES_DEBUG)
+    list(APPEND sycl_compiler_flags 
+      -DWITH_CYCLES_DEBUG)
   endif()
 
   if(WITH_CYCLES_EMBREE AND EMBREE_SYCL_SUPPORT)

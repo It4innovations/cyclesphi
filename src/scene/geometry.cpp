@@ -423,6 +423,7 @@ void GeometryManager::device_update_preprocess(Device *device, Scene *scene, Pro
       }
 
       Volume *volume = static_cast<Volume *>(geom);
+      if (!volume->get_volume_mesh())
       create_volume_mesh(scene, volume, progress);
 
       /* always reallocate when we have a volume, as we need to rebuild the BVH */

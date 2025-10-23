@@ -20,6 +20,7 @@ class Volume : public Mesh {
   NODE_SOCKET_API(float, step_size)
   NODE_SOCKET_API(bool, object_space)
   NODE_SOCKET_API(float, velocity_scale)
+  NODE_SOCKET_API(bool, volume_mesh)
 
   void clear(bool preserve_shaders = false) override;
 };

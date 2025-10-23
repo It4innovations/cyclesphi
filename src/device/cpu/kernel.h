@@ -97,9 +97,17 @@ class CPUKernels {
                                  const int width,
                                  const int buffer_stride)>;
 
+  using FilmConvertByteRGBAFunction =
+      CPUKernelFunction<void (*)(const KernelFilmConvert* kfilm_convert,
+          const float* buffer,
+          uchar4* pixel,
+          const int width,
+          const int buffer_stride)>;
+
 #define KERNEL_FILM_CONVERT_FUNCTION(name) \
   FilmConvertFunction film_convert_##name; \
-  FilmConvertHalfRGBAFunction film_convert_half_rgba_##name;
+  FilmConvertHalfRGBAFunction film_convert_half_rgba_##name; \
+  FilmConvertByteRGBAFunction film_convert_byte_rgba_##name;
 
   KERNEL_FILM_CONVERT_FUNCTION(depth)
   KERNEL_FILM_CONVERT_FUNCTION(mist)

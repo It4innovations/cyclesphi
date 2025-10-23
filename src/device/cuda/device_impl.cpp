@@ -32,6 +32,8 @@ CCL_NAMESPACE_BEGIN
 
 class CUDADevice;
 
+CUDADevice* CUDADevice::main_device = nullptr;
+
 bool CUDADevice::have_precompiled_kernels()
 {
   string cubins_path = path_get("lib");
@@ -65,6 +67,12 @@ CUDADevice::CUDADevice(const DeviceInfo &info, Stats &stats, Profiler &profiler,
   first_error = true;
 
   cuDevId = info.num;
+
+  main_device = nullptr;
+  if (info.num == 0) {
+	  main_device = this;
+  }
+
   cuDevice = 0;
   cuContext = nullptr;
 
@@ -524,6 +532,463 @@ void CUDADevice::get_device_memory_info(size_t &total, size_t &free)
   cuMemGetInfo(&free, &total);
 }
 
+bool CUDADevice::check_managed_memory(const char * /*_name*/)
+{
+#if 0
+  CUDAContextScope scope(this);
+
+  if (_name == NULL) {
+    printf("WARNING: CUDADevice::check_managed_memory: name is NULL!\n");
+    return false;
+  }
+
+  if (strlen(_name) == 0) {
+    printf("WARNING: CUDADevice::check_managed_memory: name is empty!\n");
+    return false;
+  }
+
+  std::string name(_name);
+
+  if (name.find("texture_info") != std::string::npos) {
+    return false;
+  }
+
+  if (name.find("integrator_") != std::string::npos) {
+    return false;
+  }
+
+  if (name.find("queued_paths") != std::string::npos) {
+    return false;
+  }
+
+  if (name.find("work_tiles") != std::string::npos) {
+    return false;
+  }
+
+  if (name.find("kernel_params") != std::string::npos) {
+      return false;
+  }  
+
+  //if (name.find("client_buffer_passes") != std::string::npos) {
+  //  return false;
+  //}
+
+  //if (name.find("FILL_MEMORY") != std::string::npos) {
+  //  return false;
+  //}
+
+//#if 1 //def WITH_CLIENT_UNIMEM
+
+  // TODO: check if this is needed
+  //if (name.find("RenderBuffers") != std::string::npos) {
+  //  return true;
+  //}
+
+  const char *env_names_out = getenv("CLIENT_NOT_IN_UNIMEM");
+  if (env_names_out != NULL && !strcmp(env_names_out, "none"))
+    return true;
+
+  if (env_names_out != NULL && !strcmp(env_names_out, "all"))
+    return false;
+
+  if (env_names_out != NULL && strlen(env_names_out) > 0) {
+    std::string names(env_names_out);
+    if (names.find(name) != std::string::npos) {
+      return false;
+    }
+
+    if (name.find(names) != std::string::npos) {
+      return false;
+    }
+
+    if (names.find("tex_image") != std::string::npos) {
+      if (name.find("tex_image") != std::string::npos) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  const char *env_names_in = getenv("CLIENT_IN_UNIMEM");
+  if (env_names_in != NULL && !strcmp(env_names_in, "none"))
+    return false;
+
+  if (env_names_in != NULL && !strcmp(env_names_in, "all"))
+    return true;
+
+  if (env_names_in != NULL && strlen(env_names_in) > 0) {
+    std::string names(env_names_in);
+    if (names.find(name) != std::string::npos) {
+      return true;
+    }
+
+    if (name.find(names) != std::string::npos) {
+      return true;
+    }
+
+    if (names.find("tex_image") != std::string::npos) {
+      if (name.find("tex_image") != std::string::npos) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  printf("INFO: CUDADevice::check_managed_memory: In UNIMEM: %s\n", _name);
+
+  return true;
+#else
+  return false;
+#endif  
+}
+
+/////////////////////////////////////
+//#define UNITEST1_ROUND_ROBIN
+//#define UNITEST1_ROUND_ROBIN2
+
+#define UNITEST1_COUNTINOUS
+
+#ifndef _WIN32
+#   define _MEMADVISE
+#endif
+
+#define GPU_CHUNK_SIZE get_chunk_size()
+
+size_t CUDADevice::get_chunk_size()
+{
+    if (gpu_chunk_size == 0) {
+        const char* GPU_CHUNK_SIZE_MB = getenv("GPU_CHUNK_SIZE_MB");
+        if (GPU_CHUNK_SIZE_MB != NULL) {
+            gpu_chunk_size = atol(GPU_CHUNK_SIZE_MB) * 1024L * 1024L;
+            printf("GPU_CHUNK_SIZE_MB: %lld\n", gpu_chunk_size);
+        }
+        else {
+            gpu_chunk_size = 2L * 1024L * 1024L;
+        }
+    }
+    return gpu_chunk_size;
+}
+
+bool CUDADevice::check_writable_managed_memory(const char* _name)
+{
+    if (!strcmp(_name, "RenderBuffers")) {
+        return true;
+    }
+
+    if (!strcmp(_name, "pixels")) {
+        return true;
+    }
+
+    if (!strcmp(_name, "pixels1")) {
+        return true;
+    }
+
+    if (!strcmp(_name, "pixels2")) {
+        return true;
+    }
+
+    if (!strcmp(_name, "pixels3")) {
+        return true;
+    }
+
+    return false;
+}
+
+void CUDADevice::set_managed_memory_flag(CUdeviceptr device_pointer, size_t size, const char* name)
+{
+#ifdef UNITEST1_ROUND_ROBIN2
+    gpu_set_unimem_flag_round_robin_dev = 0;
+#endif
+
+    //CCL_GPUContextScope scope(0);
+    CUDAContextScope scope(this);
+
+    //CCL_GPUDevice::Mem* cmem = &scope.get().device_mem_map[map_id];
+
+    //LOG_FUNCTION_NAME(cmem->mem.name.c_str(), cmem->uni_mem ? 1.f : 0.f)
+
+        //if (cmem->uni_mem) 
+        //{
+            //int devices_size = ccl::gpu_devices.size();
+
+
+
+    int devices_size = 0;
+    cuda_assert(cuDeviceGetCount(&devices_size));
+
+    //DEVICE_PTR device_pointer = cmem->mem.device_pointer;
+    //size_t size = cmem->mem.device_size;
+
+    for (int id = 0; id < devices_size; id++) {
+#ifdef _MEMADVISE
+        //gpu_assert2(gpuMemAdvise((char*)device_pointer, size, gpuMemAdviseSetAccessedBy, id));
+        cuda_assert(cuMemAdvise((CUdeviceptr)device_pointer, size, CU_MEM_ADVISE_SET_ACCESSED_BY, id));
+#endif
+    }
+
+    // no flag
+    if (check_writable_managed_memory(name))
+        return;
+
+#ifdef WITH_CLIENT_GPU_CPU_STAT2v2
+#  ifdef _MEMADVISE
+    gpu_assert(gpuMemAdvise(
+        (char*)device_pointer, size, gpuMemAdviseSetPreferredLocation, GPU_DEVICE_CPU));
+#  endif
+    return;
+#endif
+
+#ifdef GPU_UTIL_PRINTF
+    printf(
+        "set_unimem_flag: gpuMemAdviseSetAccessedBy: %s: "
+        "gpu_set_unimem_flag_round_robin_dev:%d\n",
+        cmem->mem.name.c_str(),
+        gpu_set_unimem_flag_round_robin_dev);
+#endif
+    // std::string name_(cmem->mem.name);
+    // if(name_.find("RenderBuffers") != std::string::npos)
+    //   return;
+
+    // initialize random seed
+#if defined(UNITEST1_RANDOM)
+    srand(time(NULL));
+#endif
+
+    size_t advise_size_step = devices_size;
+    size_t csize = size / devices_size;
+
+    // continuos distribution
+#if defined(UNITEST1_COUNTINOUS)
+    csize = size / devices_size;
+    advise_size_step = devices_size;
+#endif
+
+    // chunks: round robin / random
+#if defined(UNITEST1_ROUND_ROBIN) || defined(UNITEST1_RANDOM) || defined(UNITEST1_CPU) || \
+    defined(UNITEST1_CREDITS_FILE)
+    csize = GPU_CHUNK_SIZE;
+    advise_size_step = (size_t)std::ceil((double)size / (double)csize);
+    if (advise_size_step < 1)
+        advise_size_step = 1;
+
+#endif
+
+    // int gpu_set_unimem_flag_round_robin_dev = 0; move to global
+
+#ifdef UNITEST3_PENALTY
+    gpu_set_unimem_flag_round_robin_dev = 1;  // skip first
+#endif
+
+    // file
+#if defined(UNITEST1_CREDITS_FILE)
+    g_total_size += size;
+
+    const char* crfp = std::getenv("CREDITS_READ_FROM_PATH");
+    std::vector<int> prefered_devices;
+    // FILE *file = NULL;
+    if (crfp != NULL) {
+        printf("CREDITS_READ_FROM_PATH: %s\n", crfp);
+        char credit_filename[1024];
+
+        // sprintf(credit_filename, "%s/%s_%lld_%lld", cwtp, data_name.c_str(), GPU_CHUNK_SIZE,
+        // adv_size_step);
+        sprintf(credit_filename,
+            "%s/%s_%lld_%lld",
+            crfp,
+            cmem->name.c_str(),
+            GPU_CHUNK_SIZE,
+            advise_size_step);
+        FILE* file = fopen(credit_filename, "rb");
+        if (file != NULL) {
+            prefered_devices.resize(advise_size_step);
+            fread(&prefered_devices[0], sizeof(int), advise_size_step, file);
+            fclose(file);
+        }
+    }
+    else {
+        printf("CREDITS_READ_FROM_PATH: File could not find for %s\n", cmem->name.c_str());
+    }
+#endif
+
+    //#pragma omp parallel for
+    for (int i = 0; i < advise_size_step; i++) {
+
+        size_t advise_offset = i * csize;
+        size_t advise_size = (i == advise_size_step - 1) ? size - (i * csize) : csize;
+
+        if (advise_size == 0)
+            continue;
+
+        // file
+#if defined(UNITEST1_CREDITS_FILE)
+        {
+            int prefered_device = GPU_DEVICE_CPU;
+            if (prefered_devices.size() > 0) {
+                // fread(&prefered_device, sizeof(int), 1, file);
+                prefered_device = prefered_devices[i];
+            }
+#  ifdef _MEMADVISE
+            // gpuMemoryAdvise advise_flag = gpuMemAdviseSetPreferredLocation;
+            if (prefered_device == 16) {
+                g_read_mostly += advise_size;
+                // advise_flag = gpuMemAdviseSetReadMostly;
+                // prefered_device = 0;
+                CCL_GPUContextScope scope(0);
+                gpu_assert(gpuMemAdvise(
+                    (char*)device_pointer + advise_offset, advise_size, gpuMemAdviseSetReadMostly, 0));
+
+#    if 0              
+                for (int id = 0; id < devices_size; id++) {
+                    CCL_GPUContextScope scope(id);
+                    gpuStream_t stream_memcpy = ccl::gpu_devices[id].stream[STREAM_PATH1_MEMCPY];
+                    gpu_assert(gpuMemPrefetchAsync((char*)device_pointer + advise_offset, advise_size, id, stream_memcpy));
+                }
+#    endif
+            }
+            else if (prefered_device >= 0 && prefered_device < devices_size) {
+                g_pref_loc += advise_size;
+                CCL_GPUContextScope scope(prefered_device);
+                gpu_assert(gpuMemAdvise((char*)device_pointer + advise_offset,
+                    advise_size,
+                    gpuMemAdviseSetPreferredLocation,
+                    prefered_device));
+#    if 0
+                gpuStream_t stream_memcpy = ccl::gpu_devices[prefered_device].stream[STREAM_PATH1_MEMCPY];
+                gpu_assert(gpuMemPrefetchAsync((char*)device_pointer + advise_offset,
+                    advise_size,
+                    prefered_device,
+                    stream_memcpy));
+#    endif
+            }
+            else if (prefered_device == GPU_DEVICE_CPU) {
+                g_pref_loc_cpu += advise_size;
+                gpu_assert(gpuMemAdvise((char*)device_pointer + advise_offset,
+                    advise_size,
+                    gpuMemAdviseSetPreferredLocation,
+                    prefered_device));
+
+#    if 0
+                gpuStream_t stream_memcpy = ccl::gpu_devices[prefered_device].stream[STREAM_PATH1_MEMCPY];
+                gpu_assert(gpuMemPrefetchAsync((char*)device_pointer + advise_offset,
+                    advise_size,
+                    prefered_device,
+                    stream_memcpy));
+#    endif
+            }
+            else {
+                printf("WARNING: prefered_device >= devices_size\n");
+            }
+#  endif
+        }
+#endif
+
+        // random
+#if defined(UNITEST1_RANDOM) || defined(UNITEST1_CPU)
+        int prefered_device = rand() % devices_size;
+
+#  ifdef UNITEST3_PENALTY
+        prefered_device = (rand() % (devices_size - 1)) + 1;  // skip first
+#  endif
+
+#  ifdef UNITEST3_PENALTYv2
+        prefered_device = 0;
+#  endif
+
+#  ifdef UNITEST1_CPU
+        prefered_device = GPU_DEVICE_CPU;
+#  endif
+
+#  ifdef _MEMADVISE
+        CCL_GPUContextScope scope(prefered_device);
+        gpu_assert2(gpuMemAdvise((char*)device_pointer + advise_offset,
+            advise_size,
+            gpuMemAdviseSetPreferredLocation,
+            prefered_device));
+#  endif
+#  if 0 //def _MEMADVISE
+        if (prefered_device != GPU_DEVICE_CPU) {
+            gpuStream_t stream_memcpy =
+                ccl::gpu_devices[prefered_device].stream[STREAM_PATH1_MEMCPY];
+            gpu_assert2(gpuMemPrefetchAsync(
+                (char*)device_pointer + advise_offset, advise_size, prefered_device, stream_memcpy));
+        }
+#  endif
+#endif
+
+        // round robin
+#if defined(UNITEST1_ROUND_ROBIN) || defined(UNITEST1_COUNTINOUS)
+        int prefered_device = gpu_set_unimem_flag_round_robin_dev;
+
+        CUmem_advise advise_flag = CU_MEM_ADVISE_SET_PREFERRED_LOCATION;
+
+#  ifdef UNITEST1_ROUND_ROBIN
+
+#  endif
+
+#  ifdef UNITEST3_PENALTYv2
+        prefered_device = 0;
+#  endif
+
+#  ifdef _MEMADVISE
+        //CUDAContextScope scope(prefered_device);
+        cuda_assert(cuMemAdvise((CUdeviceptr)((char*)device_pointer + advise_offset), advise_size, advise_flag, prefered_device));
+#  endif
+
+#  if 0 //def _MEMADVISE
+        gpuStream_t stream_memcpy = ccl::cuda_devices[prefered_device].stream[STREAM_PATH1_MEMCPY];
+        gpu_assert2(gpuMemPrefetchAsync(
+            (char*)device_pointer + advise_offset, advise_size, prefered_device, stream_memcpy));
+#  endif
+#endif
+
+        gpu_set_unimem_flag_round_robin_dev++;
+        if (gpu_set_unimem_flag_round_robin_dev > devices_size - 1) {
+            gpu_set_unimem_flag_round_robin_dev = 0;
+
+#ifdef UNITEST3_PENALTY
+            gpu_set_unimem_flag_round_robin_dev = 1;  // skip first
+#endif
+        }
+    }
+
+#if defined(UNITEST1_CREDITS_FILE)
+    printf("g_total_size: %lld, g_read_mostly: %lld, g_pref_loc: %lld, g_pref_loc_cpu: %lld\n",
+        g_total_size,
+        g_read_mostly,
+        g_pref_loc,
+        g_pref_loc_cpu);
+#endif
+    //}
+}
+
+bool CUDADevice::alloc_device_managed_memory(void *&device_pointer, const size_t size, device_memory& mem)
+{
+  CUDAContextScope scope(this);
+
+  if (main_device != nullptr) {
+      if (main_device != this) {
+
+          auto it = main_device->managed_memory_map.find(mem.name);
+          if (it == main_device->managed_memory_map.end()) {
+              printf("ERROR: CUDADevice::alloc_device_managed_memory: %s not found in map for dev: %d\n", mem.name, info.num);
+          }
+
+          device_pointer = (void*)main_device->managed_memory_map[mem.name]->device_pointer;
+          return true;
+      }
+      else {
+          main_device->managed_memory_map[mem.name] = &mem;
+      }
+  }
+
+  CUresult mem_alloc_result = cuMemAllocManaged((CUdeviceptr *)&device_pointer, size, CU_MEM_ATTACH_GLOBAL);
+  set_managed_memory_flag((CUdeviceptr)&device_pointer, size, mem.name);
+
+  return mem_alloc_result == CUDA_SUCCESS;  
+}
+
 bool CUDADevice::alloc_device(void *&device_pointer, const size_t size)
 {
   CUDAContextScope scope(this);
@@ -832,6 +1297,8 @@ void CUDADevice::tex_alloc(device_texture &mem)
   Mem *cmem = nullptr;
   CUarray array_3d = nullptr;
 
+  #ifndef WITH_GPU_CPUIMAGE
+
   if (!mem.is_resident(this)) {
     thread_scoped_lock lock(device_mem_map_mutex);
     cmem = &device_mem_map[&mem];
@@ -889,6 +1356,7 @@ void CUDADevice::tex_alloc(device_texture &mem)
     cuda_assert(cuMemcpy2DUnaligned(&param));
   }
   else {
+#endif
     /* 1D texture, using linear memory. */
     cmem = generic_alloc(mem);
     if (!cmem) {
@@ -896,11 +1364,13 @@ void CUDADevice::tex_alloc(device_texture &mem)
     }
 
     cuda_assert(cuMemcpyHtoD(mem.device_pointer, mem.host_pointer, mem.memory_size()));
+#ifndef WITH_GPU_CPUIMAGE    
   }
-
+#endif
   /* Set Mapping and tag that we need to (re-)upload to device */
   TextureInfo tex_info = mem.info;
 
+#ifndef WITH_GPU_CPUIMAGE
   if (mem.info.data_type != IMAGE_DATA_TYPE_NANOVDB_FLOAT &&
       mem.info.data_type != IMAGE_DATA_TYPE_NANOVDB_FLOAT3 &&
       mem.info.data_type != IMAGE_DATA_TYPE_NANOVDB_FPN &&
@@ -951,9 +1421,12 @@ void CUDADevice::tex_alloc(device_texture &mem)
     tex_info.data = (uint64_t)cmem->texobject;
   }
   else {
+#endif
     tex_info.data = (uint64_t)mem.device_pointer;
-  }
 
+#ifndef WITH_GPU_CPUIMAGE
+  }
+#endif
   {
     /* Update texture info. */
     thread_scoped_lock lock(texture_info_mutex);
@@ -973,6 +1446,7 @@ void CUDADevice::tex_copy_to(device_texture &mem)
     /* Not yet allocated on device. */
     tex_alloc(mem);
   }
+#ifndef WITH_GPU_CPUIMAGE
   else if (!mem.is_resident(this)) {
     /* Peering with another device, may still need to create texture info and object. */
     bool texture_allocated = false;
@@ -996,10 +1470,13 @@ void CUDADevice::tex_copy_to(device_texture &mem)
       const CUDA_MEMCPY2D param = tex_2d_copy_param(mem, pitch_alignment);
       cuda_assert(cuMemcpy2DUnaligned(&param));
     }
+#endif
     else {
       generic_copy_to(mem);
     }
+#ifndef WITH_GPU_CPUIMAGE
   }
+#endif
 }
 
 void CUDADevice::tex_free(device_texture &mem)

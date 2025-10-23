@@ -43,6 +43,12 @@ class OutputDriver {
     virtual bool get_pass_pixels(const string_view pass_name,
                                  const int num_channels,
                                  float *pixels) const = 0;
+
+    virtual bool get_pass_pixels(const string_view pass_name,
+                                 const bool device,
+                                 const int size_of_pixel,
+                                 void* pixels) const = 0;
+
     virtual bool set_pass_pixels(const string_view pass_name,
                                  const int num_channels,
                                  const float *pixels) const = 0;

@@ -760,6 +760,23 @@ ccl_gpu_kernel_postfix
  * Film.
  */
 
+ ccl_device_inline float float_linear2srgb(float c)
+ {
+ #if 1
+   //int index = (int)(c * 1000.0f);
+   //if (index < 0) {
+   //  index = 0;
+   //}
+   //if (index > 1000) {
+   //  index = 1000;
+   //}
+   //return linear_to_srgb_table[index];
+	return color_linear_to_srgb(c);
+ #else
+   return c;  
+ #endif
+ } 
+
 ccl_device_inline void kernel_gpu_film_convert_half_write(ccl_global uchar4 *rgba,
                                                           const int rgba_offset,
                                                           const int rgba_stride,
@@ -777,6 +794,26 @@ ccl_device_inline void kernel_gpu_film_convert_half_write(ccl_global uchar4 *rgb
 #else
   ccl_global half4 *out = ((ccl_global half4 *)rgba) + rgba_offset + y * rgba_stride + x;
   *out = half_pixel;
+#endif
+}
+
+ccl_device_inline void kernel_gpu_film_convert_byte_write(ccl_global uchar4* rgba,
+                                                        const int rgba_offset,
+                                                        const int rgba_stride,
+                                                        const int x,
+                                                        const int y,
+                                                        const uchar4 uchar_pixel)
+{
+    /* Work around HIP issue with uchar float display, see T92972. */
+#ifdef __KERNEL_HIP__
+    ccl_global uchar* out = ((ccl_global uchar*)rgba) + (rgba_offset + y * rgba_stride + x) * 4;
+    out[0] = uchar_pixel.x;
+    out[1] = uchar_pixel.y;
+    out[2] = uchar_pixel.z;
+    out[3] = uchar_pixel.w;
+#else
+    ccl_global uchar4* out = ((ccl_global uchar4*)rgba) + rgba_offset + y * rgba_stride + x;
+    *out = uchar_pixel;
 #endif
 }
 
@@ -879,6 +916,51 @@ ccl_device_inline void kernel_gpu_film_convert_half_write(ccl_global uchar4 *rgb
     const half4 half_pixel = float4_to_half4_display( \
         make_float4(pixel[0], pixel[1], pixel[2], pixel[3])); \
     kernel_gpu_film_convert_half_write(rgba, rgba_offset, rgba_stride, x, y, half_pixel); \
+  } \
+  ccl_gpu_kernel_postfix \
+\
+  ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS) \
+      ccl_gpu_kernel_signature(film_convert_##variant##_byte_rgba, \
+                               const KernelFilmConvert kfilm_convert, \
+                               ccl_global uchar4 *rgba, \
+                               ccl_global float *render_buffer, \
+                               int num_pixels, \
+                               int width, \
+                               int offset, \
+                               int stride, \
+                               int rgba_offset, \
+                               int rgba_stride) \
+  { \
+    const int render_pixel_index = ccl_gpu_global_id_x(); \
+    if (render_pixel_index >= num_pixels) { \
+      return; \
+    } \
+\
+    const int x = render_pixel_index % width; \
+    const int y = render_pixel_index / width; \
+\
+    const uint64_t buffer_pixel_index = x + y * stride; \
+    ccl_global const float *buffer = render_buffer + offset + \
+                                     buffer_pixel_index * kfilm_convert.pass_stride; \
+\
+    float pixel[4]; \
+    film_get_pass_pixel_##variant(&kfilm_convert, buffer, pixel); \
+\
+    if (input_channel_count == 1) { \
+      pixel[1] = pixel[2] = pixel[0]; \
+    } \
+    if (input_channel_count <= 3) { \
+      pixel[3] = 1.0f; \
+    } \
+\
+    film_apply_pass_pixel_overlays_rgba(&kfilm_convert, buffer, pixel); \
+\
+    const uchar4 uchar_pixel = make_uchar4( \
+        (uchar)(saturatef(float_linear2srgb(pixel[0])) * 255.0f), \
+        (uchar)(saturatef(float_linear2srgb(pixel[1])) * 255.0f), \
+        (uchar)(saturatef(float_linear2srgb(pixel[2])) * 255.0f), \
+        (uchar)(saturatef(pixel[3]) * 255.0f)); \
+    kernel_gpu_film_convert_byte_write(rgba, rgba_offset, rgba_stride, x, y, uchar_pixel); \
   } \
   ccl_gpu_kernel_postfix
 

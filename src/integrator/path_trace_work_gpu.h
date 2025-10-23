@@ -151,6 +151,7 @@ class PathTraceWorkGPU : public PathTraceWork {
   /* Temporary buffer used by the copy_to_display() whenever graphics interoperability is not
    * available. Is allocated on-demand. */
   device_vector<half4> display_rgba_half_;
+  device_vector<uchar4> display_rgba_byte_;
 
   unique_ptr<DeviceGraphicsInterop> device_graphics_interop_;
 

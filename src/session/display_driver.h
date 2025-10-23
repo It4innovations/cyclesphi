@@ -148,8 +148,12 @@ class DisplayDriver {
   /* Optionally flush outstanding display commands before ending the render loop. */
   virtual void flush(){};
 
+  virtual bool only_device_buffer() { return false; };
+  virtual bool buffer_linear2srgb() { return false; };
+
   virtual half4 *map_texture_buffer() = 0;
   virtual void unmap_texture_buffer() = 0;
+  virtual void copy_texture_buffer(const half4* /*rgba_pixels*/, int /*texture_x*/, int /*texture_y*/, int /*pixels_width*/, int /*pixels_height*/) {};
 
   GraphicsInteropBuffer graphics_interop_buffer_;
 

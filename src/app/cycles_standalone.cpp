@@ -27,7 +27,7 @@
 #  include "hydra/file_reader.h"
 #endif
 
-#include "app/cycles_xml.h"
+#include "app/cycles_xml_bin.h"
 #include "app/oiio_output_driver.h"
 
 #ifdef WITH_CYCLES_STANDALONE_GUI

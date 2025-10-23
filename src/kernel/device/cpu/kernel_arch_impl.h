@@ -229,6 +229,15 @@ void KERNEL_FUNCTION_FULL_NAME(cryptomatte_postprocess)(const ThreadKernelGlobal
         const int buffer_stride) \
     { \
       STUB_ASSERT(KERNEL_ARCH, film_convert_##name); \
+    } \
+    void KERNEL_FUNCTION_FULL_NAME(film_convert_byte_rgba_##name)( \
+        const KernelFilmConvert *kfilm_convert, \
+        const float *buffer, \
+        uchar4 *pixel, \
+        const int width, \
+        const int buffer_stride) \
+    { \
+      STUB_ASSERT(KERNEL_ARCH, film_convert_##name); \
     }
 
 #else
@@ -262,6 +271,27 @@ void KERNEL_FUNCTION_FULL_NAME(cryptomatte_postprocess)(const ThreadKernelGlobal
         film_apply_pass_pixel_overlays_rgba(kfilm_convert, buffer, pixel_rgba); \
         *pixel = float4_to_half4_display( \
             make_float4(pixel_rgba[0], pixel_rgba[1], pixel_rgba[2], pixel_rgba[3])); \
+      } \
+    } \
+    void KERNEL_FUNCTION_FULL_NAME(film_convert_byte_rgba_##name)( \
+        const KernelFilmConvert *kfilm_convert, \
+        const float *buffer, \
+        uchar4 *pixel, \
+        const int width, \
+        const int buffer_stride) \
+    { \
+      for (int i = 0; i < width; i++, buffer += buffer_stride, pixel++) { \
+        float pixel_rgba[4] = {0.0f, 0.0f, 0.0f, 1.0f}; \
+        film_get_pass_pixel_##name(kfilm_convert, buffer, pixel_rgba); \
+        if (is_float) { \
+          pixel_rgba[1] = pixel_rgba[0]; \
+          pixel_rgba[2] = pixel_rgba[0]; \
+        } \
+        film_apply_pass_pixel_overlays_rgba(kfilm_convert, buffer, pixel_rgba); \
+        *pixel = make_uchar4((uchar)(pixel_rgba[0] * 255.0f), \
+                             (uchar)(pixel_rgba[1] * 255.0f), \
+                             (uchar)(pixel_rgba[2] * 255.0f), \
+                             (uchar)(pixel_rgba[3] * 255.0f)); \
       } \
     }
 

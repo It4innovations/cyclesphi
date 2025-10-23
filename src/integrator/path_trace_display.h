@@ -148,6 +148,9 @@ class PathTraceDisplay {
   /* Flush outstanding display commands before ending the render loop. */
   void flush();
 
+  bool only_device_buffer();
+  bool buffer_linear2srgb();  
+
  private:
   /* Display driver implemented by the host application. */
   unique_ptr<DisplayDriver> driver_;

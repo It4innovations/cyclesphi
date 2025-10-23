@@ -115,7 +115,9 @@ const char *device_kernel_as_string(DeviceKernel kernel)
   case DEVICE_KERNEL_FILM_CONVERT_##variant: \
     return "film_convert_" #variant_lowercase; \
   case DEVICE_KERNEL_FILM_CONVERT_##variant##_HALF_RGBA: \
-    return "film_convert_" #variant_lowercase "_half_rgba";
+    return "film_convert_" #variant_lowercase "_half_rgba"; \
+  case DEVICE_KERNEL_FILM_CONVERT_##variant##_BYTE_RGBA: \
+    return "film_convert_" #variant_lowercase "_byte_rgba";
 
       FILM_CONVERT_KERNEL_AS_STRING(DEPTH, depth)
       FILM_CONVERT_KERNEL_AS_STRING(MIST, mist)

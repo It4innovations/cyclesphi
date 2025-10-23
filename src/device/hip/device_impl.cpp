@@ -795,6 +795,8 @@ void HIPDevice::tex_alloc(device_texture &mem)
   Mem *cmem = nullptr;
   hArray array_3d = nullptr;
 
+#ifndef WITH_GPU_CPUIMAGE
+
   if (!mem.is_resident(this)) {
     thread_scoped_lock lock(device_mem_map_mutex);
     cmem = &device_mem_map[&mem];
@@ -852,6 +854,7 @@ void HIPDevice::tex_alloc(device_texture &mem)
     hip_assert(hipDrvMemcpy2DUnaligned(&param));
   }
   else {
+#endif
     /* 1D texture, using linear memory. */
     cmem = generic_alloc(mem);
     if (!cmem) {
@@ -859,11 +862,13 @@ void HIPDevice::tex_alloc(device_texture &mem)
     }
 
     hip_assert(hipMemcpyHtoD(mem.device_pointer, mem.host_pointer, mem.memory_size()));
+#ifndef WITH_GPU_CPUIMAGE
   }
-
+#endif
   /* Set Mapping and tag that we need to (re-)upload to device */
   TextureInfo tex_info = mem.info;
 
+#ifndef WITH_GPU_CPUIMAGE
   if (mem.info.data_type != IMAGE_DATA_TYPE_NANOVDB_FLOAT &&
       mem.info.data_type != IMAGE_DATA_TYPE_NANOVDB_FLOAT3 &&
       mem.info.data_type != IMAGE_DATA_TYPE_NANOVDB_FPN &&
@@ -917,9 +922,12 @@ void HIPDevice::tex_alloc(device_texture &mem)
     tex_info.data = (uint64_t)cmem->texobject;
   }
   else {
+#endif
     tex_info.data = (uint64_t)mem.device_pointer;
-  }
 
+#ifndef WITH_GPU_CPUIMAGE
+  }
+#endif
   {
     /* Update texture info. */
     thread_scoped_lock lock(texture_info_mutex);
@@ -939,6 +947,7 @@ void HIPDevice::tex_copy_to(device_texture &mem)
     /* Not yet allocated on device. */
     tex_alloc(mem);
   }
+#ifndef WITH_GPU_CPUIMAGE
   else if (!mem.is_resident(this)) {
     /* Peering with another device, may still need to create texture info and object. */
     bool texture_allocated = false;
@@ -962,10 +971,13 @@ void HIPDevice::tex_copy_to(device_texture &mem)
       const hip_Memcpy2D param = tex_2d_copy_param(mem, pitch_alignment);
       hip_assert(hipDrvMemcpy2DUnaligned(&param));
     }
+#endif
     else {
       generic_copy_to(mem);
     }
+#ifndef WITH_GPU_CPUIMAGE
   }
+#endif
 }
 
 void HIPDevice::tex_free(device_texture &mem)

@@ -12,12 +12,31 @@
 CCL_NAMESPACE_BEGIN
 
 OIIOImageLoader::OIIOImageLoader(const string &filepath) : filepath(filepath) {}
+OIIOImageLoader::OIIOImageLoader(const string& name, std::vector<char>&& d, ImageMetaData& metadata) : filepath(name), data(std::move(d)), custom_metadata(metadata) {}
 
 OIIOImageLoader::~OIIOImageLoader() = default;
 
 bool OIIOImageLoader::load_metadata(const ImageDeviceFeatures & /*features*/,
                                     ImageMetaData &metadata)
 {
+  unique_ptr<ImageInput> in;
+  ImageSpec spec;
+  //std::shared_ptr<Filesystem::IOMemReader> mem_reader;
+
+  if (data.size() > 0) {
+      //mem_reader = std::make_shared<Filesystem::IOMemReader>(Filesystem::IOMemReader(data.data(), data.size()));
+      //in = unique_ptr<ImageInput>(ImageInput::open("image.exr", nullptr, mem_reader.get()));
+
+      //if (!in) {
+      //    return false;
+      //}
+
+      //spec = in->spec();
+
+      metadata = custom_metadata;
+      return true;
+  }
+  else {
   /* Perform preliminary checks, with meaningful logging. */
   if (!path_exists(filepath.string())) {
     VLOG_WARNING << "File '" << filepath.string() << "' does not exist.";
@@ -28,15 +47,15 @@ bool OIIOImageLoader::load_metadata(const ImageDeviceFeatures & /*features*/,
     return false;
   }
 
-  unique_ptr<ImageInput> in(ImageInput::create(filepath.string()));
+      in = unique_ptr<ImageInput>(ImageInput::create(filepath.string()));
 
   if (!in) {
     return false;
   }
 
-  ImageSpec spec;
   if (!in->open(filepath.string(), spec)) {
     return false;
+  }
   }
 
   metadata.width = spec.width;
@@ -171,7 +190,24 @@ bool OIIOImageLoader::load_pixels(const ImageMetaData &metadata,
                                   const bool associate_alpha)
 {
   unique_ptr<ImageInput> in = nullptr;
+  ImageSpec spec = ImageSpec();
+  ImageSpec config = ImageSpec();
+  //std::shared_ptr<Filesystem::IOMemReader> mem_reader;
 
+  if (data.size() > 0) {
+      //mem_reader = std::make_shared<Filesystem::IOMemReader>(Filesystem::IOMemReader(data.data(), data.size()));
+      //in = unique_ptr<ImageInput>(ImageInput::open("image.exr", nullptr, mem_reader.get()));
+
+      //if (!in) {
+      //    return false;
+      //}
+
+      //spec = in->spec();
+      memcpy(pixels, data.data(), data.size());
+
+      return true;
+  }
+  else {
   /* NOTE: Error logging is done in meta data acquisition. */
   if (!path_exists(filepath.string()) || path_is_directory(filepath.string())) {
     return false;
@@ -183,9 +219,6 @@ bool OIIOImageLoader::load_pixels(const ImageMetaData &metadata,
     return false;
   }
 
-  ImageSpec spec = ImageSpec();
-  ImageSpec config = ImageSpec();
-
   /* Load without automatic OIIO alpha conversion, we do it ourselves. OIIO
    * will associate alpha in the 8bit buffer for PNGs, which leads to too
    * much precision loss when we load it as half float to do a color-space transform. */
@@ -193,6 +226,7 @@ bool OIIOImageLoader::load_pixels(const ImageMetaData &metadata,
 
   if (!in->open(filepath.string(), spec, config)) {
     return false;
+  }
   }
 
   bool do_associate_alpha = false;

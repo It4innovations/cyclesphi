@@ -4,11 +4,30 @@
 
 #pragma once
 
+#if !defined(__KERNEL_CUDA__) && !defined(__KERNEL_HIP__) && !defined(__KERNEL_ONEAPI__)
 #include "kernel/device/cpu/compat.h"
 #include "kernel/device/cpu/globals.h"
+#endif
 
 #ifdef WITH_NANOVDB
 #  include "kernel/util/nanovdb.h"
+#endif
+
+#if defined(__KERNEL_CUDA__) || defined(__KERNEL_HIP__)
+#  define ccl_always_inline ccl_device
+#  define ccl_never_inline ccl_device
+#  define uint16_t unsigned short
+#endif
+
+#ifdef __KERNEL_ONEAPI__
+#  undef ccl_always_inline
+#  undef ccl_never_inline
+
+#  define ccl_always_inline ccl_device
+#  define ccl_never_inline ccl_device
+#  define ccl_custom_static static
+#else
+#  define ccl_custom_static
 #endif
 
 #include "util/half.h"
@@ -17,7 +36,10 @@ CCL_NAMESPACE_BEGIN
 
 /* Make template functions private so symbols don't conflict between kernels with different
  * instruction sets. */
+
+#ifndef __KERNEL_ONEAPI__
 namespace {
+#endif
 
 #define SET_CUBIC_SPLINE_WEIGHTS(u, t) \
   { \
@@ -28,7 +50,7 @@ namespace {
   } \
   (void)0
 
-ccl_device_inline float frac(const float x, int *ix)
+ccl_custom_static ccl_device_inline float frac(const float x, int *ix)
 {
   int i = float_to_int(x) - ((x < 0.0f) ? 1 : 0);
   *ix = i;
@@ -151,8 +173,7 @@ template<typename TexT, typename OutT = float4> struct TextureInterpolator {
                    const int niz,
                    const int width,
                    const int height,
-                   const int depth,
-                   OutT read(const TexT *, int, int, int, int, int, int))
+                   const int depth)
   {
     OutT r = (1.0f - tz) * (1.0f - ty) * (1.0f - tx) *
              read(data, ix, iy, iz, width, height, depth);
@@ -167,6 +188,34 @@ template<typename TexT, typename OutT = float4> struct TextureInterpolator {
     return r;
   }
 
+  static ccl_always_inline OutT
+  trilinear_lookup_clip(const TexT* data,
+          const float tx,
+          const float ty,
+          const float tz,
+          const int ix,
+          const int iy,
+          const int iz,
+          const int nix,
+          const int niy,
+          const int niz,
+          const int width,
+          const int height,
+          const int depth)
+  {
+      OutT r = (1.0f - tz) * (1.0f - ty) * (1.0f - tx) *
+          read_clip(data, ix, iy, iz, width, height, depth);
+      r += (1.0f - tz) * (1.0f - ty) * tx * read_clip(data, nix, iy, iz, width, height, depth);
+      r += (1.0f - tz) * ty * (1.0f - tx) * read_clip(data, ix, niy, iz, width, height, depth);
+      r += (1.0f - tz) * ty * tx * read_clip(data, nix, niy, iz, width, height, depth);
+
+      r += tz * (1.0f - ty) * (1.0f - tx) * read_clip(data, ix, iy, niz, width, height, depth);
+      r += tz * (1.0f - ty) * tx * read_clip(data, nix, iy, niz, width, height, depth);
+      r += tz * ty * (1.0f - tx) * read_clip(data, ix, niy, niz, width, height, depth);
+      r += tz * ty * tx * read_clip(data, nix, niy, niz, width, height, depth);
+      return r;
+  }
+
   /** Tricubic Interpolation */
   static ccl_always_inline OutT
   tricubic_lookup(const TexT *data,
@@ -178,8 +227,7 @@ template<typename TexT, typename OutT = float4> struct TextureInterpolator {
                   const int zc[4],
                   const int width,
                   const int height,
-                  const int depth,
-                  OutT read(const TexT *, int, int, int, int, int, int))
+                  const int depth)
   {
     float u[4], v[4], w[4];
 
@@ -198,6 +246,41 @@ template<typename TexT, typename OutT = float4> struct TextureInterpolator {
     SET_CUBIC_SPLINE_WEIGHTS(w, tz);
     /* Actual interpolation. */
     return ROW_TERM(0) + ROW_TERM(1) + ROW_TERM(2) + ROW_TERM(3);
+
+#undef COL_TERM
+#undef ROW_TERM
+#undef DATA
+  }
+
+  static ccl_always_inline OutT
+      tricubic_lookup_clip(const TexT* data,
+          const float tx,
+          const float ty,
+          const float tz,
+          const int xc[4],
+          const int yc[4],
+          const int zc[4],
+          const int width,
+          const int height,
+          const int depth)
+  {
+      float u[4], v[4], w[4];
+
+      /* Some helper macros to keep code size reasonable.
+       * Lets the compiler inline all the matrix multiplications.
+       */
+#define DATA(x, y, z) (read_clip(data, xc[x], yc[y], zc[z], width, height, depth))
+#define COL_TERM(col, row) \
+  (v[col] * (u[0] * DATA(0, col, row) + u[1] * DATA(1, col, row) + u[2] * DATA(2, col, row) + \
+             u[3] * DATA(3, col, row)))
+#define ROW_TERM(row) \
+  (w[row] * (COL_TERM(0, row) + COL_TERM(1, row) + COL_TERM(2, row) + COL_TERM(3, row)))
+
+      SET_CUBIC_SPLINE_WEIGHTS(u, tx);
+      SET_CUBIC_SPLINE_WEIGHTS(v, ty);
+      SET_CUBIC_SPLINE_WEIGHTS(w, tz);
+      /* Actual interpolation. */
+      return ROW_TERM(0) + ROW_TERM(1) + ROW_TERM(2) + ROW_TERM(3);
 
 #undef COL_TERM
 #undef ROW_TERM
@@ -510,7 +593,7 @@ template<typename TexT, typename OutT = float4> struct TextureInterpolator {
 
         /* The linear samples span the clip border.
          * #read_clip is used to ensure proper interpolation across the clip border. */
-        return trilinear_lookup((const TexT *)info.data,
+        return trilinear_lookup_clip((const TexT *)info.data,
                                 tx,
                                 ty,
                                 tz,
@@ -522,8 +605,7 @@ template<typename TexT, typename OutT = float4> struct TextureInterpolator {
                                 niz,
                                 width,
                                 height,
-                                depth,
-                                read_clip);
+                                depth);
       case EXTENSION_EXTEND:
         nix = wrap_clamp(ix + 1, width);
         ix = wrap_clamp(ix, width);
@@ -561,8 +643,7 @@ template<typename TexT, typename OutT = float4> struct TextureInterpolator {
                             niz,
                             width,
                             height,
-                            depth,
-                            read);
+                            depth);
   }
 
   /* Tricubic b-spline interpolation.
@@ -640,8 +721,8 @@ template<typename TexT, typename OutT = float4> struct TextureInterpolator {
         const int xc[4] = {pix, ix, nix, nnix};
         const int yc[4] = {piy, iy, niy, nniy};
         const int zc[4] = {piz, iz, niz, nniz};
-        return tricubic_lookup(
-            (const TexT *)info.data, tx, ty, tz, xc, yc, zc, width, height, depth, read_clip);
+        return tricubic_lookup_clip(
+            (const TexT *)info.data, tx, ty, tz, xc, yc, zc, width, height, depth);
       }
       case EXTENSION_EXTEND:
         pix = wrap_clamp(ix - 1, width);
@@ -683,7 +764,7 @@ template<typename TexT, typename OutT = float4> struct TextureInterpolator {
     const int yc[4] = {piy, iy, niy, nniy};
     const int zc[4] = {piz, iz, niz, nniz};
     const TexT *data = (const TexT *)info.data;
-    return tricubic_lookup(data, tx, ty, tz, xc, yc, zc, width, height, depth, read);
+    return tricubic_lookup(data, tx, ty, tz, xc, yc, zc, width, height, depth);
   }
 
   static ccl_always_inline OutT interp_3d(
@@ -935,6 +1016,7 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
   }
 }
 
+#ifndef __KERNEL_ONEAPI__
 } /* Namespace. */
-
+#endif
 CCL_NAMESPACE_END

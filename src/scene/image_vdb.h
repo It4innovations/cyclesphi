@@ -44,8 +44,19 @@ class VDBImageLoader : public ImageLoader {
 
   bool is_vdb_loader() const override;
 
+  virtual bool is_simple_mesh() const;
+
+  virtual void get_bbox(int3& min_bbox, int3& max_bbox);
+
+  virtual float3 index_to_world(float3 in);
+
 #ifdef WITH_OPENVDB
   openvdb::GridBase::ConstPtr get_grid();
+#endif
+
+#if defined(WITH_OPENVDB) && defined(WITH_NANOVDB)
+  static nanovdb::GridHandle<> convert(openvdb::GridBase::ConstPtr g, int precision = 32);
+  static void get_texture_info(nanovdb::NanoGrid<float>* ng, size_t ng_size, TextureInfo &info);
 #endif
 
  protected:
@@ -56,8 +67,88 @@ class VDBImageLoader : public ImageLoader {
 #endif
 #ifdef WITH_NANOVDB
   nanovdb::GridHandle<> nanogrid;
-  int precision = 0;
+  int precision = 32;
 #endif
+};
+
+#ifdef WITH_NANOVDB
+class NanoVDBImageLoader : public VDBImageLoader {
+public:
+    NanoVDBImageLoader(vector<char> &g);
+    ~NanoVDBImageLoader();
+
+    virtual bool load_metadata(const ImageDeviceFeatures& features,
+        ImageMetaData& metadata) override;
+
+    virtual bool load_pixels(const ImageMetaData& metadata,
+        void* pixels,
+        const size_t pixels_size,
+        const bool associate_alpha) override;
+
+    virtual string name() const override;
+
+    virtual bool equals(const ImageLoader& other) const override;
+
+    virtual void cleanup() override;
+
+    virtual bool is_vdb_loader() const override;
+
+    virtual bool is_simple_mesh() const override;
+
+    virtual void get_bbox(int3& min_bbox, int3& max_bbox) override;
+
+    virtual float3 index_to_world(float3 in) override;
+
+protected:
+    vector<char> nanogrid_data;
+    nanovdb::NanoGrid<float>* get_nanogrid() const {
+        return (nanovdb::NanoGrid<float>*) nanogrid_data.data();
+    }
+
+};
+#endif
+
+class RAWImageLoader : public VDBImageLoader {
+public:
+    enum RAWImageLoaderType {
+        eRawFloat,
+        eRawByte,
+        eRawHalf,
+        eRawUShort
+    };
+
+public:
+    RAWImageLoader(vector<char> &g, int dx, int dy, int dz, float sx, float sy, float sz, RAWImageLoaderType t, int c);
+    ~RAWImageLoader();
+
+    virtual bool load_metadata(const ImageDeviceFeatures& features,
+        ImageMetaData& metadata) override;
+
+    virtual bool load_pixels(const ImageMetaData& metadata,
+        void* pixels,
+        const size_t pixels_size,
+        const bool associate_alpha) override;
+
+    virtual string name() const override;
+
+    virtual bool equals(const ImageLoader& other) const override;
+
+    virtual void cleanup() override;
+
+    virtual bool is_vdb_loader() const override;
+
+    virtual bool is_simple_mesh() const override;
+
+    virtual void get_bbox(int3 &min_bbox, int3 &max_bbox) override;
+
+    virtual float3 index_to_world(float3 in) override;
+
+protected:
+    int dimx, dimy, dimz;
+    float scal_x, scal_y, scal_z;
+    int channels;
+    RAWImageLoaderType raw_type;
+    vector<char> grid;
 };
 
 CCL_NAMESPACE_END

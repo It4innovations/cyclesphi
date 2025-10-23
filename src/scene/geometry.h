@@ -254,6 +254,7 @@ class GeometryManager {
   bool displace(Device *device, Scene *scene, Mesh *mesh, Progress &progress);
 
   void create_volume_mesh(const Scene *scene, Volume *volume, Progress &progress);
+  void create_volume_mesh_cube(const Scene *scene, Volume *volume, VDBImageLoader *vdb_loader);
 
   /* Attributes */
   void update_osl_globals(Device *device, Scene *scene);

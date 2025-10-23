@@ -11,6 +11,7 @@ CCL_NAMESPACE_BEGIN
 class OIIOImageLoader : public ImageLoader {
  public:
   OIIOImageLoader(const string &filepath);
+  OIIOImageLoader(const string& name, std::vector<char>&& d, ImageMetaData& metadata);
   ~OIIOImageLoader() override;
 
   bool load_metadata(const ImageDeviceFeatures &features, ImageMetaData &metadata) override;
@@ -28,6 +29,8 @@ class OIIOImageLoader : public ImageLoader {
 
  protected:
   ustring filepath;
+  std::vector<char> data;
+  ImageMetaData custom_metadata;
 };
 
 CCL_NAMESPACE_END

@@ -464,6 +464,7 @@ if(WITH_CYCLES_BLENDER)
 endif()
 
 add_subdirectory(app)
+add_subdirectory(cyclesphi)
 add_subdirectory(bvh)
 add_subdirectory(device)
 add_subdirectory(doc)

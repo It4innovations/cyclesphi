@@ -54,10 +54,12 @@ class PassAccessor {
     /* CPU-side pointers. only usable by the `PassAccessorCPU`. */
     float *pixels = nullptr;
     half4 *pixels_half_rgba = nullptr;
+    uchar4* pixels_uchar_srgba = nullptr;
 
     /* Device-side pointers. */
     device_ptr d_pixels = 0;
     device_ptr d_pixels_half_rgba = 0;
+    device_ptr d_pixels_uchar_srgba = 0;
 
     /* Number of components per pixel in the floating-point destination.
      * Is ignored for half4 destination (where number of components is implied to be 4). */

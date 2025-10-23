@@ -71,6 +71,30 @@ inline void PassAccessorCPU::run_get_pass_kernel_processor_half_rgba(
   });
 }
 
+inline void PassAccessorCPU::run_get_pass_kernel_processor_byte_rgba(
+    const KernelFilmConvert* kfilm_convert,
+    const RenderBuffers* render_buffers,
+    const BufferParams& buffer_params,
+    const Destination& destination,
+    const CPUKernels::FilmConvertByteRGBAFunction func) const
+{
+    const int64_t pass_stride = buffer_params.pass_stride;
+    const int64_t buffer_row_stride = buffer_params.stride * buffer_params.pass_stride;
+
+    const float* window_data = render_buffers->buffer.data() + buffer_params.window_x * pass_stride +
+        buffer_params.window_y * buffer_row_stride;
+
+    uchar4* dst_start = destination.pixels_uchar_srgba + destination.offset;
+    const int destination_stride = destination.stride != 0 ? destination.stride :
+        buffer_params.width;
+
+    tbb::parallel_for(0, buffer_params.window_height, [&](int64_t y) {
+        const float* buffer = window_data + y * buffer_row_stride;
+        uchar4* pixel = dst_start + y * destination_stride;
+        func(kfilm_convert, buffer, pixel, buffer_params.window_width, pass_stride);
+    });
+}
+
 /* --------------------------------------------------------------------
  * Pass accessors.
  */
@@ -98,6 +122,14 @@ inline void PassAccessorCPU::run_get_pass_kernel_processor_half_rgba(
                                               buffer_params, \
                                               destination, \
                                               kernels.film_convert_half_rgba_##pass); \
+    } \
+\
+    if (destination.pixels_uchar_srgba) { \
+      run_get_pass_kernel_processor_byte_rgba(&kfilm_convert, \
+                                              render_buffers, \
+                                              buffer_params, \
+                                              destination, \
+                                              kernels.film_convert_byte_rgba_##pass); \
     } \
   }
 

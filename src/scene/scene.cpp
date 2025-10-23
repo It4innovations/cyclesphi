@@ -29,6 +29,8 @@
 #include "scene/volume.h"
 #include "session/session.h"
 
+#include "scene/scene_write_xml.h"
+
 #include "util/guarded_allocator.h"
 #include "util/log.h"
 #include "util/progress.h"
@@ -380,6 +382,18 @@ void Scene::device_update(Device *device_, Progress &progress)
               << "  Peak: " << string_human_readable_number(mem_peak) << " ("
               << string_human_readable_size(mem_peak) << ")";
   }
+
+  //////////////////////////////EXPORT XML/////////////////////////////////////
+  //static void xml_read_scene(XMLReadState & state, xml_node scene_node)
+  const char* filepath_xml = getenv("CYCLES_XML_PATH");
+  scene_write_xml_file(this, filepath_xml);
+
+  const char* filepath_xml_exit = getenv("CYCLES_XML_EXIT");
+  if (filepath_xml_exit) {
+      //TODO: MJ
+      exit(0);
+  }
+  /////////////////////////////////////////////////////////////////////////
 }
 
 Scene::MotionType Scene::need_motion() const

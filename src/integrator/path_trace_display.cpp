@@ -107,6 +107,11 @@ void PathTraceDisplay::copy_pixels_to_texture(const half4 *rgba_pixels,
 
   mark_texture_updated();
 
+  if (driver_->only_device_buffer()) {
+      driver_->copy_texture_buffer(rgba_pixels, texture_x, texture_y, pixels_width, pixels_height);
+      return;
+  }
+
   /* This call copies pixels to a mapped texture buffer which is typically much cheaper from CPU
    * time point of view than to copy data directly to a texture.
    *
@@ -259,6 +264,16 @@ bool PathTraceDisplay::draw()
 void PathTraceDisplay::flush()
 {
   driver_->flush();
+}
+
+bool PathTraceDisplay::only_device_buffer()
+{
+    return driver_->only_device_buffer();
+}
+
+bool PathTraceDisplay::buffer_linear2srgb()
+{
+    return driver_->buffer_linear2srgb();
 }
 
 CCL_NAMESPACE_END

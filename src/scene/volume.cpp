@@ -30,6 +30,7 @@ NODE_DEFINE(Volume)
   SOCKET_FLOAT(step_size, "Step Size", 0.0f);
   SOCKET_BOOLEAN(object_space, "Object Space", false);
   SOCKET_FLOAT(velocity_scale, "Velocity Scale", 1.0f);
+  SOCKET_BOOLEAN(volume_mesh, "Volume Mesh", false);
 
   return type;
 }
@@ -39,6 +40,7 @@ Volume::Volume() : Mesh(get_node_type(), Geometry::VOLUME)
   clipping = 0.001f;
   step_size = 0.0f;
   object_space = false;
+  volume_mesh = false;
 }
 
 void Volume::clear(bool preserve_shaders)
@@ -622,6 +624,176 @@ static void merge_scalar_grids_for_velocity(const Scene *scene, Volume *volume)
 #endif
 
 /* ************************************************************************** */
+void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* volume, VDBImageLoader* vdb_loader)
+{
+#if 1
+    const float face_overlap_avoidance = 0.1f *
+        hash_uint_to_float(hash_string(volume->name.c_str()));
+
+    /////////// Create mesh
+    vector<float3> vertices;
+    vector<int> indices;
+    //vector<float3> face_normals;
+    //  builder.create_mesh(vertices, indices, face_normals, face_overlap_avoidance);
+
+    /* We create vertices in index space (is), and only convert them to object
+    * space when done. */
+    vector<int3> vertices_is;
+    vector<QuadData> quads;
+
+    /* make sure we only have leaf nodes in the tree, as tiles are not handled by
+     * this algorithm */
+     //topology_grid->tree().voxelizeActiveTiles();
+
+     ////////////////////////////////////generate_vertices_and_quads(vertices_is, quads);
+
+    //nanovdb::NanoGrid<float>* nanogrid = (nanovdb::NanoGrid<float> *)m_data->data();
+    //auto bbox_index = nanogrid->indexBBox();
+    //auto bbox_world = nanogrid->worldBBox();
+
+    //auto vdb_spacing = nanogrid->voxelSize();
+    int3 min; //= make_int3(bbox_index.min().x(), bbox_index.min().y(), bbox_index.min().z());
+    int3 max; //= make_int3(bbox_index.max().x(), bbox_index.max().y(), bbox_index.max().z());
+
+    vdb_loader->get_bbox(min, max);
+
+    const int3 resolution = make_int3(max[0] - min[0] + 1, max[1] - min[1] + 1, max[2] - min[2] + 1);
+
+    unordered_map<size_t, int> used_verts;
+
+    //int3 min = make_int3(bbox_index.min().x(), bbox_index.min().y(), bbox_index.min().z());
+    //int3 max = make_int3(bbox_index.max().x(), bbox_index.max().y(), bbox_index.max().z());
+
+    int3 corners[8] = {
+        make_int3(min[0], min[1], min[2]),
+        make_int3(max[0], min[1], min[2]),
+        make_int3(max[0], max[1], min[2]),
+        make_int3(min[0], max[1], min[2]),
+        make_int3(min[0], min[1], max[2]),
+        make_int3(max[0], min[1], max[2]),
+        make_int3(max[0], max[1], max[2]),
+        make_int3(min[0], max[1], max[2]),
+    };
+
+    create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_X_MIN);
+    create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_X_MAX);
+    create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_Y_MIN);
+    create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_Y_MAX);
+    create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_Z_MIN);
+    create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_Z_MAX);
+
+    ///////////////////////////////convert_object_space(vertices_is, vertices, face_overlap_avoidance);
+      /* compute the offset for the face overlap avoidance */
+    //bbox = topology_grid->evalActiveVoxelBoundingBox();
+    //openvdb::Coord dim = bbox.dim();
+
+    //float3 cell_size = make_float3(1.0f / bbox.dim()[0], 1.0f / bbox.dim()[1], 1.0f / bbox.dim()[2]);
+    float3 cell_size = make_float3(1.0f / resolution[0], 1.0f / resolution[1], 1.0f / resolution[2]);
+    float3 point_offset = cell_size * face_overlap_avoidance;
+
+    vertices.reserve(vertices_is.size());
+
+    for (size_t i = 0; i < vertices_is.size(); ++i) {
+        float3 vertex = vdb_loader->index_to_world(make_float3(vertices_is[i].x, vertices_is[i].y, vertices_is[i].z));
+        //float3 vertex = make_float3((float)p[0], (float)p[1], (float)p[2]);
+        vertices.push_back(vertex + point_offset);
+    }
+    ///////////////////////////////convert_quads_to_tris(quads, indices, face_normals);
+    int index_offset = 0;
+    indices.resize(quads.size() * 6);
+    //face_normals.reserve(quads.size() * 2);
+
+    for (size_t i = 0; i < quads.size(); ++i) {
+        indices[index_offset++] = quads[i].v0;
+        indices[index_offset++] = quads[i].v2;
+        indices[index_offset++] = quads[i].v1;
+
+        //face_normals.push_back(quads[i].normal);
+
+        indices[index_offset++] = quads[i].v0;
+        indices[index_offset++] = quads[i].v3;
+        indices[index_offset++] = quads[i].v2;
+
+        //face_normals.push_back(quads[i].normal);
+    }
+
+    volume->reserve_mesh(vertices.size(), indices.size() / 3);
+    //volume->used_shaders.clear();
+    //volume->used_shaders.push_back_slow(volume_shader);
+
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        volume->add_vertex(vertices[i]);
+    }
+
+    for (size_t i = 0; i < indices.size(); i += 3) {
+        volume->add_triangle(indices[i], indices[i + 1], indices[i + 2], 0, false);
+    }
+
+    //Attribute* attr_fN = volume->attributes.add(ATTR_STD_FACE_NORMAL);
+    //float3* fN = attr_fN->data_float3();
+
+    //for (size_t i = 0; i < face_normals.size(); ++i) {
+    //    fN[i] = face_normals[i];
+    //}
+#else
+    ImageDeviceFeatures features;
+    ImageMetaData metadata;
+    vdb_loader->load_metadata(features, metadata);
+    auto v_min = make_float3(0.5, 0.5f, 0.5f);
+    auto v_max = make_float3(metadata.width - 0.5f, metadata.height - 0.5f, metadata.depth - 0.5f);
+    auto vertices = std::vector<float3>{
+        {v_min.x, v_min.y, v_max.z},
+        {v_max.x, v_min.y, v_max.z},
+        {v_min.x, v_max.y, v_max.z},
+        {v_max.x, v_max.y, v_max.z},
+        {v_min.x, v_min.y, v_min.z},
+        {v_max.x, v_min.y, v_min.z},
+        {v_min.x, v_max.y, v_min.z},
+        {v_max.x, v_max.y, v_min.z}
+    };
+    ccl::array<ccl::float3> P;
+    P.resize(8);
+    std::copy(cbegin(vertices), cend(vertices), P.begin());
+    volume->set_verts(P);
+
+    auto faces = std::vector<int3>{
+        {0, 1, 2},
+        {2, 1, 3},
+        {1, 5, 3},
+        {3, 5, 7},
+        {5, 4, 7},
+        {7, 4, 6},
+        {4, 0, 6},
+        {6, 0, 2},
+        {2, 3, 6},
+        {6, 3, 7},
+        {5, 4, 1},
+        {1, 4, 0}
+    };
+    auto numTriangles = faces.size();
+    volume->reserve_mesh(numTriangles * 3, numTriangles);
+    for (const auto& f : faces) {
+        volume->add_triangle(f.x, f.y, f.z, 0, true);
+    }
+
+    std::vector<float3> face_normals;
+    for (const auto& f : faces) {
+        auto v1 = vertices[f.x];
+        auto v2 = vertices[f.y];
+        auto v3 = vertices[f.z];
+        auto e1 = normalize(v2 - v1);
+        auto e2 = normalize(v3 - v1);
+
+        face_normals.push_back(cross(e1, e2));
+    }
+
+    Attribute* attr_fN = volume->attributes.add(ATTR_STD_FACE_NORMAL);
+    float3* fN = attr_fN->data_float3();
+    for (size_t i = 0; i < face_normals.size(); ++i) {
+        fN[i] = face_normals[i];
+    }
+#endif
+}
 
 void GeometryManager::create_volume_mesh(const Scene *scene, Volume *volume, Progress &progress)
 {
@@ -679,6 +851,12 @@ void GeometryManager::create_volume_mesh(const Scene *scene, Volume *volume, Pro
 
     /* Try building from OpenVDB grid directly. */
     VDBImageLoader *vdb_loader = handle.vdb_loader();
+
+    if (vdb_loader && vdb_loader->is_simple_mesh()) {
+        create_volume_mesh_cube(scene, volume, vdb_loader);
+      continue;
+    }
+
     openvdb::GridBase::ConstPtr grid;
     if (vdb_loader) {
       grid = vdb_loader->get_grid();

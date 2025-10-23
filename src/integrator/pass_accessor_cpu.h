@@ -32,6 +32,13 @@ class PassAccessorCPU : public PassAccessor {
       const Destination &destination,
       const CPUKernels::FilmConvertHalfRGBAFunction func) const;
 
+  inline void run_get_pass_kernel_processor_byte_rgba(
+      const KernelFilmConvert* kfilm_convert,
+      const RenderBuffers* render_buffers,
+      const BufferParams& buffer_params,
+      const Destination& destination,
+      const CPUKernels::FilmConvertByteRGBAFunction func) const;
+
 #define DECLARE_PASS_ACCESSOR(pass) \
   virtual void get_pass_##pass(const RenderBuffers *render_buffers, \
                                const BufferParams &buffer_params, \

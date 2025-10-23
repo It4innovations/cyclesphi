@@ -12,14 +12,16 @@ set(INC_SYS
 set(SRC
   node.cpp
   node_type.cpp
-  node_xml.cpp
+  #node_xml.cpp
+  node_xml_bin.cpp
 )
 
 set(SRC_HEADERS
   node.h
   node_enum.h
   node_type.h
-  node_xml.h
+  #node_xml.h
+  node_xml_bin.h
 )
 
 set(LIB

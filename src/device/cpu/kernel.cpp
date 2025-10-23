@@ -13,7 +13,8 @@ CCL_NAMESPACE_BEGIN
 #define REGISTER_KERNEL(name) name(KERNEL_FUNCTIONS(name))
 #define REGISTER_KERNEL_FILM_CONVERT(name) \
   film_convert_##name(KERNEL_FUNCTIONS(film_convert_##name)), \
-      film_convert_half_rgba_##name(KERNEL_FUNCTIONS(film_convert_half_rgba_##name))
+      film_convert_half_rgba_##name(KERNEL_FUNCTIONS(film_convert_half_rgba_##name)), \
+      film_convert_byte_rgba_##name(KERNEL_FUNCTIONS(film_convert_byte_rgba_##name))
 
 CPUKernels::CPUKernels()
     : /* Integrator. */

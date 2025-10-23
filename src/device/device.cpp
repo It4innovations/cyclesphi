@@ -668,7 +668,12 @@ GPUDevice::Mem *GPUDevice::generic_alloc(device_memory &mem, const size_t pitch_
 
   /* Allocate in device memory. */
   if ((!mem.move_to_host && (size + headroom) < free) || (mem.type == MEM_DEVICE_ONLY)) {
+    if (check_managed_memory(mem.name)) {
+      mem_alloc_result = alloc_device_managed_memory(device_pointer, size, mem);
+    }
+    else
     mem_alloc_result = alloc_device(device_pointer, size);
+
     if (mem_alloc_result) {
       device_mem_in_use += size;
       status = " in device memory";

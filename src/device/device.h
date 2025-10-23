@@ -112,7 +112,7 @@ class DeviceInfo {
   {
     /* Multiple Devices with the same ID would be very bad. */
     assert(id != info.id ||
-           (type == info.type && num == info.num && description == info.description));
+           (type == info.type && num == info.num /*&& description == info.description*/)); // TODO: MJ
     return id == info.id && use_hardware_raytracing == info.use_hardware_raytracing &&
            kernel_optimization_level == info.kernel_optimization_level;
   }
@@ -397,6 +397,8 @@ class GPUDevice : public Device {
   /* Device side memory. */
   virtual bool alloc_device(void *&device_pointer, const size_t size) = 0;
   virtual void free_device(void *device_pointer) = 0;
+  virtual bool alloc_device_managed_memory(void *& /*device_pointer*/, const size_t /*size*/, device_memory& /*mem*/) { return false; };
+  virtual bool check_managed_memory(const char * /*name*/) { return false; };
 
   /* Shared memory. */
   virtual bool shared_alloc(void *&shared_pointer, const size_t size) = 0;

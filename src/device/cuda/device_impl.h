@@ -33,6 +33,9 @@ class CUDADevice : public GPUDevice {
   int cuDevArchitecture;
   bool first_error;
 
+  map<string, device_memory*> managed_memory_map;
+  static CUDADevice* main_device;
+
   CUDADeviceKernels kernels;
 
   static bool have_precompiled_kernels();
@@ -86,6 +89,8 @@ class CUDADevice : public GPUDevice {
   void get_device_memory_info(size_t &total, size_t &free) override;
   bool alloc_device(void *&device_pointer, const size_t size) override;
   void free_device(void *device_pointer) override;
+  bool alloc_device_managed_memory(void *&device_pointer, const size_t size, device_memory& mem) override;
+  bool check_managed_memory(const char *name);
 
   /* Shared memory. */
   bool shared_alloc(void *&shared_pointer, const size_t size) override;
@@ -107,6 +112,19 @@ class CUDADevice : public GPUDevice {
  protected:
   bool get_device_attribute(CUdevice_attribute attribute, int *value);
   int get_device_default_attribute(CUdevice_attribute attribute, const int default_value);
+
+ private:
+     int gpu_set_unimem_flag_round_robin_dev = 0;
+     //size_t g_total_size = 0;
+     //size_t g_read_mostly = 0;
+     //size_t g_pref_loc = 0;
+     //size_t g_pref_loc_cpu = 0;
+
+     size_t gpu_chunk_size = 0;
+     size_t get_chunk_size();
+
+     bool check_writable_managed_memory(const char* _name);
+     void set_managed_memory_flag(CUdeviceptr device_pointer, size_t size, const char* name);
 };
 
 CCL_NAMESPACE_END

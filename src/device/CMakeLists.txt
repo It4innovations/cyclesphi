@@ -209,6 +209,9 @@ if(WITH_CYCLES_OSL)
   )
 endif()
 
+if(WITH_GPU_CPUIMAGE)
+  add_definitions(-DWITH_GPU_CPUIMAGE)
+endif()
 
 include_directories(${INC})
 include_directories(SYSTEM ${INC_SYS})

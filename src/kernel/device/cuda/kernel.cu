@@ -10,7 +10,12 @@
 #  include "kernel/device/cuda/config.h"
 #  include "kernel/device/cuda/globals.h"
 
-#  include "kernel/device/gpu/image.h"
+#  if defined(WITH_GPU_CPUIMAGE)
+#    include "kernel/device/cpu/image.h"
+#  else
+#    include "kernel/device/gpu/image.h"
+#  endif
+
 #  include "kernel/device/gpu/kernel.h"
 
 #endif

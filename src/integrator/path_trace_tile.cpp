@@ -72,6 +72,76 @@ bool PathTraceTile::get_pass_pixels(const string_view pass_name,
   return path_trace_.get_render_tile_pixels(pass_accessor, destination);
 }
 
+bool PathTraceTile::get_pass_pixels(const string_view pass_name, 
+    const bool device, const int size_of_pixel, void* pixels) const
+{
+    /* NOTE: The code relies on a fact that session is fully update and no scene/buffer modification
+     * is happening while this function runs. */
+
+    if (!copied_from_device_) {
+        /* Copy from device on demand. */
+        path_trace_.copy_render_tile_from_device();
+        copied_from_device_ = true;
+    }
+
+    const BufferParams& buffer_params = path_trace_.get_render_tile_params();
+
+    const BufferPass* pass = buffer_params.find_pass(pass_name);
+    if (pass == nullptr) {
+        return false;
+    }
+
+    const bool has_denoised_result = path_trace_.has_denoised_result();
+    if (pass->mode == PassMode::DENOISED && !has_denoised_result) {
+        pass = buffer_params.find_pass(pass->type);
+        if (pass == nullptr) {
+            /* Happens when denoised result pass is requested but is never written by the kernel. */
+            return false;
+        }
+    }
+
+    pass = buffer_params.get_actual_display_pass(pass);
+    if (pass == nullptr) {
+        /* Happens when interactive session changes display pass but render
+         * buffer does not contain it yet. */
+        return false;
+    }
+
+    const float exposure = buffer_params.exposure;
+    const int num_samples = path_trace_.get_num_render_tile_samples();
+
+    PassAccessor::PassAccessInfo pass_access_info(*pass);
+    pass_access_info.use_approximate_shadow_catcher = buffer_params.use_approximate_shadow_catcher;
+    pass_access_info.use_approximate_shadow_catcher_background =
+        pass_access_info.use_approximate_shadow_catcher && !buffer_params.use_transparent_background;
+
+    const PassAccessorCPU pass_accessor(pass_access_info, exposure, num_samples);
+
+        PassAccessor::Destination destination;
+        if (size_of_pixel == sizeof(uchar4)) {
+        if (device)
+            destination.d_pixels_uchar_srgba = (ccl::device_ptr)pixels;
+        else
+            destination.pixels_uchar_srgba = (uchar4*)pixels;
+        }
+        else if (size_of_pixel == sizeof(half4)) {
+        if (device)
+            destination.d_pixels_half_rgba = (ccl::device_ptr)pixels;
+        else
+            destination.pixels_half_rgba = (half4*)pixels;
+        }
+        else {
+        if (device)
+            destination.d_pixels = (ccl::device_ptr)pixels;
+        else
+            destination.pixels = (float*)pixels;
+        }
+
+        destination.num_components = 4;
+
+        return path_trace_.get_render_tile_pixels(pass_accessor, destination);
+    }
+
 bool PathTraceTile::set_pass_pixels(const string_view pass_name,
                                     const int num_channels,
                                     const float *pixels) const

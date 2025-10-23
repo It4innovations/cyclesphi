@@ -79,8 +79,11 @@ include_directories(SYSTEM ${INC_SYS})
 if(WITH_CYCLES_STANDALONE)
   set(SRC
     cycles_standalone.cpp
-    cycles_xml.cpp
-    cycles_xml.h
+    #cycles_xml.cpp
+    cycles_xml_bin.cpp
+    #cycles_xml.h
+    cycles_xml_bin.h
+    
     oiio_output_driver.cpp
     oiio_output_driver.h
   )

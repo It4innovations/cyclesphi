@@ -98,6 +98,7 @@ PathTraceWorkGPU::PathTraceWorkGPU(Device *device,
       num_queued_paths_(device, "num_queued_paths", MEM_READ_WRITE),
       work_tiles_(device, "work_tiles", MEM_READ_WRITE),
       display_rgba_half_(device, "display buffer half", MEM_READ_WRITE),
+      display_rgba_byte_(device, "display buffer byte", MEM_READ_WRITE),
       max_num_paths_(0),
       min_num_active_main_paths_(0),
       max_active_main_path_index_(0)
@@ -1004,6 +1005,32 @@ void PathTraceWorkGPU::copy_to_display_naive(PathTraceDisplay *display,
    * NOTE: allocation happens to the final resolution so that no re-allocation happens on every
    * change of the resolution divider. However, if the display becomes smaller, shrink the
    * allocated memory as well. */
+  if (display->buffer_linear2srgb()) {
+      if (display_rgba_byte_.data_width != final_width ||
+          display_rgba_byte_.data_height != final_height)
+      {
+          display_rgba_byte_.alloc(final_width, final_height);
+          /* TODO(sergey): There should be a way to make sure device-side memory is allocated without
+           * transferring zeroes to the device. */
+          queue_->zero_to_device(display_rgba_byte_);
+      }
+
+      PassAccessor::Destination destination(film_->get_display_pass());
+      destination.d_pixels_uchar_srgba = display_rgba_byte_.device_pointer;
+
+      get_render_tile_film_pixels(destination, pass_mode, num_samples);
+
+      if (display->only_device_buffer()) {
+          display->copy_pixels_to_texture((half4*)display_rgba_byte_.device_pointer, texture_x, texture_y, width, height);
+      }
+      else {
+          queue_->copy_from_device(display_rgba_byte_);
+          queue_->synchronize();
+
+          display->copy_pixels_to_texture((half4*)display_rgba_byte_.data(), texture_x, texture_y, width, height);
+      }
+  }
+  else {
   if (display_rgba_half_.data_width != final_width ||
       display_rgba_half_.data_height != final_height)
   {
@@ -1018,10 +1045,16 @@ void PathTraceWorkGPU::copy_to_display_naive(PathTraceDisplay *display,
 
   get_render_tile_film_pixels(destination, pass_mode, num_samples);
 
+      if (display->only_device_buffer()) {
+          display->copy_pixels_to_texture((half4*)display_rgba_half_.device_pointer, texture_x, texture_y, width, height);
+      }
+      else {
   queue_->copy_from_device(display_rgba_half_);
   queue_->synchronize();
 
-  display->copy_pixels_to_texture(display_rgba_half_.data(), texture_x, texture_y, width, height);
+          display->copy_pixels_to_texture((half4*)display_rgba_half_.data(), texture_x, texture_y, width, height);
+      }
+  }
 }
 
 bool PathTraceWorkGPU::copy_to_display_interop(PathTraceDisplay *display,

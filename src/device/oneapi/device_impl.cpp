@@ -755,6 +755,8 @@ void OneapiDevice::tex_alloc(device_texture &mem)
 
   try {
     Mem *cmem = nullptr;
+
+#ifndef WITH_GPU_CPUIMAGE
     sycl::ext::oneapi::experimental::image_mem_handle memHandle{0};
     sycl::ext::oneapi::experimental::image_descriptor desc{};
 
@@ -826,19 +828,23 @@ void OneapiDevice::tex_alloc(device_texture &mem)
       /* 1D texture -- Linear memory */
       desc = sycl::ext::oneapi::experimental::image_descriptor(
           {mem.data_width}, mem.data_elements, channel_type);
+#endif
       cmem = generic_alloc(mem);
       if (!cmem) {
         return;
       }
 
       queue->memcpy((void *)mem.device_pointer, mem.host_pointer, size);
+#ifndef WITH_GPU_CPUIMAGE
     }
+#endif
 
     queue->wait_and_throw();
 
     /* Set Mapping and tag that we need to (re-)upload to device */
     TextureInfo tex_info = mem.info;
 
+#ifndef WITH_GPU_CPUIMAGE
     sycl::ext::oneapi::experimental::bindless_image_sampler samp(
         address_mode, sycl::coordinate_normalization_mode::normalized, filter_mode);
 
@@ -866,8 +872,12 @@ void OneapiDevice::tex_alloc(device_texture &mem)
       tex_info.data = (uint64_t)cmem->texobject;
     }
     else {
+#endif
       tex_info.data = (uint64_t)mem.device_pointer;
+
+#ifndef WITH_GPU_CPUIMAGE
     }
+#endif
 
     {
       /* Update texture info. */
@@ -891,6 +901,7 @@ void OneapiDevice::tex_copy_to(device_texture &mem)
   if (!mem.device_pointer) {
     tex_alloc(mem);
   }
+#ifndef WITH_GPU_CPUIMAGE
   else {
     if (mem.data_height > 0) {
       /* 2D/3D texture -- Tile optimized */
@@ -914,10 +925,13 @@ void OneapiDevice::tex_copy_to(device_texture &mem)
         set_error("oneAPI texture copy error: got runtime exception \"" + string(e.what()) + "\"");
       }
     }
+#endif
     else {
       generic_copy_to(mem);
     }
+#ifndef WITH_GPU_CPUIMAGE
   }
+#endif
 }
 
 void OneapiDevice::tex_free(device_texture &mem)

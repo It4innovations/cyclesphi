@@ -45,6 +45,12 @@ KERNEL_INTEGRATOR_SHADE_FUNCTION(megakernel);
       const float *buffer, \
       half4 *pixel, \
       const int width, \
+      const int buffer_stride); \
+  void KERNEL_FUNCTION_FULL_NAME(film_convert_byte_rgba_##name)( \
+      const KernelFilmConvert *kfilm_convert, \
+      const float *buffer, \
+      uchar4 *pixel, \
+      const int width, \
       const int buffer_stride);
 
 KERNEL_FILM_CONVERT_FUNCTION(depth)

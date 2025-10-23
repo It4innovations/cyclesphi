@@ -70,6 +70,21 @@ void PassAccessorGPU::run_film_convert_kernels(DeviceKernel kernel,
 
     queue_->enqueue(kernel_half_float, work_size, args);
   }
+  if (destination.d_pixels_uchar_srgba) {
+      const DeviceKernel kernel_uchar_float = static_cast<DeviceKernel>(kernel + 2);
+
+      DeviceKernelArguments args(&kfilm_convert,
+          &destination.d_pixels_uchar_srgba,
+          &render_buffers->buffer.device_pointer,
+          &work_size,
+          &buffer_params.window_width,
+          &offset,
+          &buffer_params.stride,
+          &destination.offset,
+          &destination_stride);
+
+      queue_->enqueue(kernel_uchar_float, work_size, args);
+  }
 
   queue_->synchronize();
 }
