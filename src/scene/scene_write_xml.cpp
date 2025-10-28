@@ -42,7 +42,9 @@
 #include <OpenImageIO/imagebufalgo.h>
 #include <OpenImageIO/filesystem.h>
 
-#include <openvdb/io/Stream.h>
+#ifdef WITH_OPENVDB
+#	include <openvdb/io/Stream.h>
+#endif
 
 #define ADD_ATTR(name) \
 			xml_attribute attr_##name = node_attribute.append_attribute(#name); \
@@ -843,6 +845,7 @@ void scene_write_xml_geom(XMLWriteState& state, xml_node node)
 					//string filename(path_join(state.base, ss.str()));
 					//openvdb::io::File(filename).write({ vdb_loader->get_grid() });
 					
+#ifdef WITH_OPENVDB  
 					// Convert the stringstream to a vector<char>
 					vector<char> file_content;
 					std::ostringstream stream(std::ios_base::binary);
@@ -853,7 +856,8 @@ void scene_write_xml_geom(XMLWriteState& state, xml_node node)
 					ss << write_vector_to_binary_file(state, file_content);
 
 					xml_attribute attr_volume_type = node_attribute.append_attribute("volume_type");
-					attr_volume_type = "openvdb";					
+					attr_volume_type = "openvdb";
+#endif				
 				}
 				else {
 					ss << write_vector_to_binary_file(state, attr.buffer);

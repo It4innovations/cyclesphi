@@ -397,18 +397,24 @@ bool VDBImageLoader::is_simple_mesh() const
 
 void VDBImageLoader::get_bbox(int3& min_bbox, int3& max_bbox)
 {
+#ifdef WITH_OPENVDB  
     auto bbox = grid->evalActiveVoxelBoundingBox();
     auto grid_bbox_min = bbox.min();
     auto grid_bbox_max = bbox.max();
 
     min_bbox = make_int3(grid_bbox_min.x(), grid_bbox_min.y(), grid_bbox_min.z());
     max_bbox = make_int3(grid_bbox_max.x(), grid_bbox_max.y(), grid_bbox_max.z());
+#endif    
 }
 
 float3 VDBImageLoader::index_to_world(float3 in)
 {
+#ifdef WITH_OPENVDB  
     openvdb::Vec3d p = grid->indexToWorld(openvdb::Vec3d(in[0], in[1], in[2]));
     return make_float3((float)p[0], (float)p[1], (float)p[2]);
+#else
+    return make_float3(0, 0, 0);
+#endif    
 }
 
 #ifdef WITH_OPENVDB

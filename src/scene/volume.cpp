@@ -63,7 +63,7 @@ enum {
   QUAD_Z_MAX = 5,
 };
 
-#ifdef WITH_OPENVDB
+#if 1 //def WITH_OPENVDB
 const int quads_indices[6][4] = {
     /* QUAD_X_MIN */
     {4, 0, 3, 7},
@@ -674,7 +674,7 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
         make_int3(max[0], max[1], max[2]),
         make_int3(min[0], max[1], max[2]),
     };
-
+    
     create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_X_MIN);
     create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_X_MAX);
     create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_Y_MIN);
