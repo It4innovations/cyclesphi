@@ -40,8 +40,9 @@
 #include "app/cycles_xml_bin.h"
 
 #ifdef WITH_OPENVDB
-#include <openvdb/io/Stream.h>
-#include <nanovdb/io/IO.h>
+#	include <openvdb/io/Stream.h>
+//#	include <nanovdb/io/IO.h>
+#	include <nanovdb/util/IO.h>
 #endif
 
 #include "scene/image_oiio.h"
