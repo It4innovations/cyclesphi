@@ -18,7 +18,7 @@
 
 set(INC
   ..
-  ../../lib/braas-hpc-renderengine
+  ../../lib/braas-hpc-renderengine/src
   #../../third_party
   ../app
 )
@@ -141,8 +141,8 @@ if(WITH_CYCLES_STANDALONE)
       frame_display_driver.cpp
       frame_display_driver.h
       
-      ../../lib/braas-hpc-renderengine/renderengine_tcp.cpp
-      ../../lib/braas-hpc-renderengine/renderengine_tcp.h
+      ../../lib/braas-hpc-renderengine/src/renderengine_tcp.cpp
+      ../../lib/braas-hpc-renderengine/src/renderengine_tcp.h
 
       ../app/cycles_xml_bin.cpp
       ../app/cycles_xml_bin.h
@@ -183,8 +183,8 @@ if(WITH_CYCLES_STANDALONE)
       frame_display_driver.cpp
       frame_display_driver.h
 
-      ../../lib/braas-hpc-renderengine/renderengine_tcp.cpp
-      ../../lib/braas-hpc-renderengine/renderengine_tcp.h
+      ../../lib/braas-hpc-renderengine/src/renderengine_tcp.cpp
+      ../../lib/braas-hpc-renderengine/src/renderengine_tcp.h
 
       ../app/cycles_xml_bin.cpp
       ../app/cycles_xml_bin.h
@@ -220,8 +220,8 @@ if(WITH_CYCLES_STANDALONE)
         frame_display_driver.cpp
         frame_display_driver.h
 
-        ../../lib/braas-hpc-renderengine/renderengine_tcp.cpp
-        ../../lib/braas-hpc-renderengine/renderengine_tcp.h
+        ../../lib/braas-hpc-renderengine/src/renderengine_tcp.cpp
+        ../../lib/braas-hpc-renderengine/src/renderengine_tcp.h
 
         ../app/cycles_xml_bin.cpp
         ../app/cycles_xml_bin.h
