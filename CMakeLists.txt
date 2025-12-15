@@ -133,6 +133,10 @@ option(WITH_CYCLES_DEBUG_NAN         "Build Cycles with additional asserts for d
 option(WITH_CYCLES_NATIVE_ONLY       "Build Cycles with native kernel only (which fits current CPU, use for development only)" OFF)
 option(WITH_CYCLES_STANDALONE_GUI    "Build Cycles standalone with GUI" OFF)
 
+# CyclesPhi Features
+option(WITH_CYCLESPHI "Enable CyclesPhi" ON)
+option(WITH_CLIENT_GPUJPEG "Enable GPUJPEG" OFF)
+
 # NVIDIA CUDA & OptiX
 if(NOT APPLE AND NOT (WIN32 AND CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64"))
   option(WITH_CYCLES_DEVICE_CUDA "Enable Cycles NVIDIA CUDA compute support" ON)

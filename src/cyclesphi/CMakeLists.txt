@@ -16,14 +16,25 @@
 #
 #####################################################################################################################
 
+if(WITH_CLIENT_GPUJPEG)
+  find_package(GPUJPEG REQUIRED)
+endif()
+
+find_package(braas_hpc_renderengine REQUIRED)
+
+#message("LIB: ${braas_hpc_renderengine_LIBRARIES}")
+#message("INCLUDE: ${braas_hpc_renderengine_INCLUDE_DIR}")
+
 set(INC
   ..
-  ../../lib/braas-hpc-renderengine/src
+  #../../lib/braas-hpc-renderengine/src
   #../../third_party
   ../app
 )
+
 set(INC_SYS
-   ${GPUJPEG_INCLUDE_DIR}
+   #${GPUJPEG_INCLUDE_DIR}
+   #${braas_hpc_renderengine_INCLUDE_DIR}
    ${MPI_CXX_HEADER_DIR}
 )
 
@@ -36,15 +47,17 @@ set(LIB
   cycles_subd
   cycles_graph
   cycles_util
+  braas_hpc_renderengine::braas_hpc_renderengine
+  #${braas_hpc_renderengine_LIBRARIES}
 )
 
 #find_package(CUDA REQUIRED)
 
-if(WITH_CLIENT_GPUJPEG)
-    list(APPEND LIB
-      ${GPUJPEG_LIBRARIES}
-    )
-endif()
+#if(WITH_CLIENT_GPUJPEG)
+#    list(APPEND LIB
+#      ${GPUJPEG_LIBRARIES}
+#    )
+#endif()
 
 # if(WITH_CYCLES_DEVICE_OPTIX OR WITH_CYCLES_DEVICE_CUDA)
 #   if(WITH_CUDA_DYNLOAD)
@@ -141,8 +154,8 @@ if(WITH_CYCLES_STANDALONE)
       frame_display_driver.cpp
       frame_display_driver.h
       
-      ../../lib/braas-hpc-renderengine/src/renderengine_tcp.cpp
-      ../../lib/braas-hpc-renderengine/src/renderengine_tcp.h
+      #../../lib/braas-hpc-renderengine/src/renderengine_tcp.cpp
+      #../../lib/braas-hpc-renderengine/src/renderengine_tcp.h
 
       ../app/cycles_xml_bin.cpp
       ../app/cycles_xml_bin.h
@@ -183,8 +196,8 @@ if(WITH_CYCLES_STANDALONE)
       frame_display_driver.cpp
       frame_display_driver.h
 
-      ../../lib/braas-hpc-renderengine/src/renderengine_tcp.cpp
-      ../../lib/braas-hpc-renderengine/src/renderengine_tcp.h
+      #../../lib/braas-hpc-renderengine/src/renderengine_tcp.cpp
+      #../../lib/braas-hpc-renderengine/src/renderengine_tcp.h
 
       ../app/cycles_xml_bin.cpp
       ../app/cycles_xml_bin.h
@@ -220,8 +233,8 @@ if(WITH_CYCLES_STANDALONE)
         frame_display_driver.cpp
         frame_display_driver.h
 
-        ../../lib/braas-hpc-renderengine/src/renderengine_tcp.cpp
-        ../../lib/braas-hpc-renderengine/src/renderengine_tcp.h
+        #../../lib/braas-hpc-renderengine/src/renderengine_tcp.cpp
+        #../../lib/braas-hpc-renderengine/src/renderengine_tcp.h
 
         ../app/cycles_xml_bin.cpp
         ../app/cycles_xml_bin.h
