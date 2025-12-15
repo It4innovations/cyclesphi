@@ -539,45 +539,72 @@ float3 NanoVDBImageLoader::index_to_world(float3 in)
     return make_float3((float)p[0], (float)p[1], (float)p[2]);
 }
 
-NanoVDBImageLoader::NanoVDBImageLoader(vector<char> &g)
-    : nanogrid_data(std::move(g)), VDBImageLoader("")
+///////////////////// NanoVDBMultiResImageLoader
+// format description of bin file:
+// int32 : number of levels
+// for each level - size_t : size of nanovdb grid data
+// for each level - char[] : nanovdb grid data
+NanoVDBMultiResImageLoader::NanoVDBMultiResImageLoader(vector<char>& g)
+    : VDBImageLoader("")
 {
+    grids = std::move(g);
+
+	size_t offset = 0;
+	// read number of levels
+	levels = *((int32_t*)(grids.data() + offset));
+	offset += sizeof(int32_t);
+	// read grid sizes
+	grid_sizes.resize(levels);
+	for (int i = 0; i < levels; ++i) {
+		grid_sizes[i] = *((size_t*)(grids.data() + offset));
+		offset += sizeof(size_t);
+	}
+	// read grid data
+	grid_offsets.resize(levels);
+	for (int i = 0; i < levels; ++i) {
+		grid_offsets[i] = offset;
+		offset += grid_sizes[i];
+	}
 }
 
-///////////////////// NanoVDBMultiResImageLoader
 NanoVDBMultiResImageLoader::~NanoVDBMultiResImageLoader()
 {
 }
 
 bool NanoVDBMultiResImageLoader::load_metadata(const ImageDeviceFeatures& features, ImageMetaData& metadata)
 {
-    metadata.channels = (get_nanogrid()->gridType() == nanovdb::GridType::Float) ? 1 : 3; // TODO
+    /* Set dimensions. */    
+    nanovdb::Vec3dBBox bbox;
+	for (int l = 0; l < levels; l++) {
+		auto level_bbox = get_nanogrid(l)->worldBBox();
+		if (l == 0) {
+			bbox = level_bbox;
+		}
+		else {
+			bbox.expand(level_bbox);
+		}
+	}
 
-    /* Set dimensions. */
-    auto bbox = get_nanogrid()->worldBBox();
-    if (bbox.empty()) {
-        return false;
-    }
-
+    //TODO
     auto dim = bbox.dim();
     metadata.width = dim[0];
     metadata.height = dim[1];
     metadata.depth = dim[2];
 
-    if (get_nanogrid()) {
-        metadata.byte_size = nanogrid_data.size();
-        if (metadata.channels == 1) {
-            metadata.type = IMAGE_DATA_TYPE_NANOVDB_FLOAT;
-        }
-        else {
-            metadata.type = IMAGE_DATA_TYPE_NANOVDB_FLOAT3;
-        }
+    metadata.byte_size = grids.size();
+
+    metadata.channels = (get_nanogrid(0)->gridType() == nanovdb::GridType::Float) ? 1 : 3; // TODO
+    if (metadata.channels == 1) {
+        metadata.type = IMAGE_DATA_TYPE_NANOVDB_FLOAT;
+    }
+    else {
+        metadata.type = IMAGE_DATA_TYPE_NANOVDB_FLOAT3;
     }
 
     /* Set transform from object space to voxel index. */
     //matMult(mInvMatD, Vec3T(xyz[0] - mVecD[0], xyz[1] - mVecD[1], xyz[2] - mVecD[2]));
-    const double* matD = get_nanogrid()->map().mMatD;
-    const double* vecD = get_nanogrid()->map().mVecD;
+    const double* matD = get_nanogrid(0)->map().mMatD;
+    const double* vecD = get_nanogrid(0)->map().mVecD;
 
     Transform index_to_object;
     //for (int col = 0; col < 4; col++) {
@@ -606,8 +633,8 @@ bool NanoVDBMultiResImageLoader::load_metadata(const ImageDeviceFeatures& featur
 
 bool NanoVDBMultiResImageLoader::load_pixels(const ImageMetaData&, void* pixels, const size_t, const bool)
 {
-    if (nanogrid_data.size() > 0) {
-        memcpy(pixels, get_nanogrid(), nanogrid_data.size());
+    if (grids.size() > 0) {
+        memcpy(pixels, grids.data(), grids.size());
     }
 
     return true;
@@ -615,13 +642,13 @@ bool NanoVDBMultiResImageLoader::load_pixels(const ImageMetaData&, void* pixels,
 
 string NanoVDBMultiResImageLoader::name() const
 {
-    return get_nanogrid()->gridName();
+    return get_nanogrid(0)->gridName();
 }
 
 bool NanoVDBMultiResImageLoader::equals(const ImageLoader& other) const
 {
     const NanoVDBMultiResImageLoader& other_loader = (const NanoVDBMultiResImageLoader&)other;
-    return get_nanogrid() == other_loader.get_nanogrid();
+    return get_nanogrid(0) == other_loader.get_nanogrid(0);
 }
 
 void NanoVDBMultiResImageLoader::cleanup()
@@ -639,7 +666,17 @@ bool NanoVDBMultiResImageLoader::is_simple_mesh() const
 
 void NanoVDBMultiResImageLoader::get_bbox(int3 &min_bbox, int3 &max_bbox)
 {
-    auto bbox = get_nanogrid()->indexBBox();
+    nanovdb::CoordBBox bbox;
+    
+	for (int l = 0; l < levels; l++) {
+		auto level_bbox = get_nanogrid(l)->indexBBox();
+		if (l == 0) {
+			bbox = level_bbox;
+		}
+		else {
+			bbox.expand(level_bbox);
+		}
+	}
 
     auto grid_bbox_min = bbox.min();
     auto grid_bbox_max = bbox.max();
@@ -650,7 +687,7 @@ void NanoVDBMultiResImageLoader::get_bbox(int3 &min_bbox, int3 &max_bbox)
 
 float3 NanoVDBMultiResImageLoader::index_to_world(float3 in)
 {
-    nanovdb::Vec3d p = get_nanogrid()->indexToWorld(nanovdb::Vec3d(in[0], in[1], in[2]));
+    nanovdb::Vec3d p = get_nanogrid(0)->indexToWorld(nanovdb::Vec3d(in[0], in[1], in[2]));
     return make_float3((float)p[0], (float)p[1], (float)p[2]);
 }
 

@@ -258,6 +258,44 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb(const ccl_global Textur
     }
   }
 }
+
+#  if defined(__KERNEL_METAL__)
+template<typename OutT, typename T>
+__attribute__((noinline)) OutT kernel_tex_image_interp_nanovdb_multires(const ccl_global TextureInfo &info,
+                                                               const float x,
+                                                               const float y,
+                                                               const float z,
+                                                               const uint interpolation)
+#  else
+template<typename OutT, typename T>
+ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_multires(const ccl_global TextureInfo &info,
+                                                         const float x,
+                                                         const float y,
+                                                         const float z,
+                                                         const uint interpolation)
+#  endif
+{
+  using namespace nanovdb;
+
+  ccl_global NanoGrid<T> *const grid = (ccl_global NanoGrid<T> *)info.data;
+
+  switch (interpolation) {
+    case INTERPOLATION_CLOSEST: {
+      ReadAccessor<T> acc(grid->tree().root());
+      const nanovdb::Coord coord((int32_t)floorf(x), (int32_t)floorf(y), (int32_t)floorf(z));
+      return OutT(acc.getValue(coord));
+    }
+    case INTERPOLATION_LINEAR: {
+      CachedReadAccessor<T> acc(grid->tree().root());
+      return kernel_tex_image_interp_trilinear_nanovdb<OutT>(acc, x, y, z);
+    }
+    default: {
+      CachedReadAccessor<T> acc(grid->tree().root());
+      return kernel_tex_image_interp_tricubic_nanovdb<OutT>(acc, x, y, z);
+    }
+  }
+}
+
 #endif
 
 ccl_device float4 kernel_tex_image_interp(KernelGlobals kg, const int id, const float x, float y)
@@ -330,7 +368,7 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
     return make_float4(f, f, f, 1.0f);
   }
   if (texture_type == IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT) {
-    float f = kernel_tex_image_interp_nanovdb<float, float>(info, x, y, z, interpolation);
+    float f = kernel_tex_image_interp_nanovdb_multires<float, float>(info, x, y, z, interpolation);
     return make_float4(f, f, f, 1.0f);
   }  
 #endif
