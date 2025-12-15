@@ -434,6 +434,7 @@ void scene_write_xml_shader_graph(XMLWriteState& state, Shader* shader, xml_node
 					//case ImageDataType::IMAGE_DATA_TYPE_NANOVDB_FLOAT3:
 					//case ImageDataType::IMAGE_DATA_TYPE_NANOVDB_FPN:
 					//case ImageDataType::IMAGE_DATA_TYPE_NANOVDB_FP16:
+					//case ImageDataType::IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT:
 				default:
 					fprintf(stderr, "Wrong image type");
 					return;

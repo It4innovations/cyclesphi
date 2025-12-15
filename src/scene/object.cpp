@@ -342,7 +342,8 @@ float Object::compute_volume_step_size() const
           if (metadata.type != IMAGE_DATA_TYPE_NANOVDB_FLOAT &&
               metadata.type != IMAGE_DATA_TYPE_NANOVDB_FLOAT3 &&
               metadata.type != IMAGE_DATA_TYPE_NANOVDB_FPN &&
-              metadata.type != IMAGE_DATA_TYPE_NANOVDB_FP16)
+              metadata.type != IMAGE_DATA_TYPE_NANOVDB_FP16 &&
+              metadata.type != IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT)
 #endif
           {
             size /= make_float3(metadata.width, metadata.height, metadata.depth);

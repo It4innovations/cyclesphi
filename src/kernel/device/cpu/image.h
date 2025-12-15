@@ -1008,6 +1008,10 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
           info, P.x, P.y, P.z, interp);
       return make_float4(f, f, f, 1.0f);
     }
+    case IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT: {
+      const float f = NanoVDBInterpolator<float, float>::interp_3d(info, P.x, P.y, P.z, interp);
+      return make_float4(f, f, f, 1.0f);
+    }    
 #endif
     default:
       assert(0);

@@ -539,6 +539,121 @@ float3 NanoVDBImageLoader::index_to_world(float3 in)
     return make_float3((float)p[0], (float)p[1], (float)p[2]);
 }
 
+NanoVDBImageLoader::NanoVDBImageLoader(vector<char> &g)
+    : nanogrid_data(std::move(g)), VDBImageLoader("")
+{
+}
+
+///////////////////// NanoVDBMultiResImageLoader
+NanoVDBMultiResImageLoader::~NanoVDBMultiResImageLoader()
+{
+}
+
+bool NanoVDBMultiResImageLoader::load_metadata(const ImageDeviceFeatures& features, ImageMetaData& metadata)
+{
+    metadata.channels = (get_nanogrid()->gridType() == nanovdb::GridType::Float) ? 1 : 3; // TODO
+
+    /* Set dimensions. */
+    auto bbox = get_nanogrid()->worldBBox();
+    if (bbox.empty()) {
+        return false;
+    }
+
+    auto dim = bbox.dim();
+    metadata.width = dim[0];
+    metadata.height = dim[1];
+    metadata.depth = dim[2];
+
+    if (get_nanogrid()) {
+        metadata.byte_size = nanogrid_data.size();
+        if (metadata.channels == 1) {
+            metadata.type = IMAGE_DATA_TYPE_NANOVDB_FLOAT;
+        }
+        else {
+            metadata.type = IMAGE_DATA_TYPE_NANOVDB_FLOAT3;
+        }
+    }
+
+    /* Set transform from object space to voxel index. */
+    //matMult(mInvMatD, Vec3T(xyz[0] - mVecD[0], xyz[1] - mVecD[1], xyz[2] - mVecD[2]));
+    const double* matD = get_nanogrid()->map().mMatD;
+    const double* vecD = get_nanogrid()->map().mVecD;
+
+    Transform index_to_object;
+    //for (int col = 0; col < 4; col++) {
+    //    for (int row = 0; row < 3; row++) {
+    //        index_to_object[row][col] = (float)grid_matrix[col][row];
+    //    }
+    //}
+
+    for (int i = 0; i < 3; ++i) {
+        index_to_object[i].x = static_cast<float>(matD[i * 3 + 0]);
+        index_to_object[i].y = static_cast<float>(matD[i * 3 + 1]);
+        index_to_object[i].z = static_cast<float>(matD[i * 3 + 2]);
+        index_to_object[i].w = static_cast<float>(vecD[i]);
+    }
+
+    //Transform texture_to_index;
+    //if (get_nanogrid()) {
+    //    texture_to_index = transform_identity();
+    //}
+
+    metadata.transform_3d = transform_inverse(index_to_object);
+    metadata.use_transform_3d = true;
+
+    return true;
+}
+
+bool NanoVDBMultiResImageLoader::load_pixels(const ImageMetaData&, void* pixels, const size_t, const bool)
+{
+    if (nanogrid_data.size() > 0) {
+        memcpy(pixels, get_nanogrid(), nanogrid_data.size());
+    }
+
+    return true;
+}
+
+string NanoVDBMultiResImageLoader::name() const
+{
+    return get_nanogrid()->gridName();
+}
+
+bool NanoVDBMultiResImageLoader::equals(const ImageLoader& other) const
+{
+    const NanoVDBMultiResImageLoader& other_loader = (const NanoVDBMultiResImageLoader&)other;
+    return get_nanogrid() == other_loader.get_nanogrid();
+}
+
+void NanoVDBMultiResImageLoader::cleanup()
+{
+}
+
+bool NanoVDBMultiResImageLoader::is_vdb_loader() const
+{
+    return true;
+}
+bool NanoVDBMultiResImageLoader::is_simple_mesh() const
+{
+    return true;
+}
+
+void NanoVDBMultiResImageLoader::get_bbox(int3 &min_bbox, int3 &max_bbox)
+{
+    auto bbox = get_nanogrid()->indexBBox();
+
+    auto grid_bbox_min = bbox.min();
+    auto grid_bbox_max = bbox.max();
+
+    min_bbox = make_int3(grid_bbox_min.x(), grid_bbox_min.y(), grid_bbox_min.z());
+    max_bbox = make_int3(grid_bbox_max.x(), grid_bbox_max.y(), grid_bbox_max.z());
+}
+
+float3 NanoVDBMultiResImageLoader::index_to_world(float3 in)
+{
+    nanovdb::Vec3d p = get_nanogrid()->indexToWorld(nanovdb::Vec3d(in[0], in[1], in[2]));
+    return make_float3((float)p[0], (float)p[1], (float)p[2]);
+}
+
 #endif
 
 RAWImageLoader::RAWImageLoader(vector<char> &g, int dx, int dy, int dz, float sx, float sy, float sz, RAWImageLoaderType t, int c)

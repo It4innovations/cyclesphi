@@ -685,8 +685,51 @@ static void xml_read_geom(XMLReadState& state, const xml_node xml_node_geom)
 
 					unique_ptr<ImageLoader> loader = make_unique<NanoVDBImageLoader>(nanogrid);
 					const ImageParams params;
-					attr->data_voxel() = state.scene->image_manager->add_image(std::move(loader), params, false);					
+					attr->data_voxel() = state.scene->image_manager->add_image(std::move(loader), params, false);
 				}
+				else if (volume_type == "nanovdb_multires") {
+					//nanovdb::NanoGrid<float>* nanogrid = nullptr;
+					//size_t nanogrid_size = 0;
+					// vector<char> nanogrid;
+					vector<char> raw_data;
+					std::string filename = attr_buffer.value();
+
+					// if (xml_is_digit(filename)) {
+					// 	// TODO: using multires read
+					// 	// read_vector_from_binary_file(state, nanogrid, filename.c_str());
+					// }
+					// else {
+					// 	nanovdb::GridHandle<nanovdb::HostBuffer> grid_handle = nanovdb::io::readGrid<nanovdb::HostBuffer>(filename);
+					// 	size_t nanogrid_size = grid_handle.size();
+					// 	nanogrid.resize(nanogrid_size);
+					// 	memcpy(nanogrid.data(), grid_handle.data(), nanogrid_size);						
+					// }
+
+					// Open file in binary mode and move pointer to end to get file size
+					std::ifstream file(filename, std::ios::binary | std::ios::ate);
+
+					if (!file) {
+						std::cerr << "Error: Could not open file " << filename << std::endl;
+						continue;
+					}
+
+					// Get file size
+					std::streamsize size = file.tellg();
+					file.seekg(0, std::ios::beg);
+
+					// Allocate buffer and read file into it
+					raw_data.resize(size);
+					if (!file.read(raw_data.data(), size)) {
+						std::cerr << "Error reading file!" << std::endl;
+						continue;
+					}
+
+					file.close();			
+
+					unique_ptr<ImageLoader> loader = make_unique<NanoVDBMultiResImageLoader>(raw_data);
+					const ImageParams params;
+					attr->data_voxel() = state.scene->image_manager->add_image(std::move(loader), params, false);
+				}				
 				else 
 #endif				
 				if (volume_type == "raw") {

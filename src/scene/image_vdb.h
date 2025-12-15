@@ -106,6 +106,39 @@ protected:
     }
 
 };
+
+class NanoVDBMultiResImageLoader : public VDBImageLoader {
+
+public:
+    NanoVDBMultiResImageLoader(vector<char> &g);
+    ~NanoVDBMultiResImageLoader();
+
+    virtual bool load_metadata(const ImageDeviceFeatures& features,
+        ImageMetaData& metadata) override;
+
+    virtual bool load_pixels(const ImageMetaData& metadata,
+        void* pixels,
+        const size_t pixels_size,
+        const bool associate_alpha) override;
+
+    virtual string name() const override;
+
+    virtual bool equals(const ImageLoader& other) const override;
+
+    virtual void cleanup() override;
+
+    virtual bool is_vdb_loader() const override;
+
+    virtual bool is_simple_mesh() const override;
+
+    virtual void get_bbox(int3 &min_bbox, int3 &max_bbox) override;
+
+    virtual float3 index_to_world(float3 in) override;
+
+protected:
+    vector<char> grids;
+};
+
 #endif
 
 class RAWImageLoader : public VDBImageLoader {
