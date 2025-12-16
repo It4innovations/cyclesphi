@@ -376,13 +376,13 @@ bool VDBImageLoader::equals(const ImageLoader &other) const
 
 void VDBImageLoader::cleanup()
 {
-#ifdef WITH_OPENVDB
-  /* Free OpenVDB grid memory as soon as we can. */
-  grid.reset();
-#endif
-#ifdef WITH_NANOVDB
-  nanogrid.reset();
-#endif
+//#ifdef WITH_OPENVDB
+//  /* Free OpenVDB grid memory as soon as we can. */
+//  grid.reset();
+//#endif
+//#ifdef WITH_NANOVDB
+//  nanogrid.reset();
+//#endif
 }
 
 bool VDBImageLoader::is_vdb_loader() const
@@ -392,7 +392,7 @@ bool VDBImageLoader::is_vdb_loader() const
 
 bool VDBImageLoader::is_simple_mesh() const
 {
-    return true;
+    return false;
 }
 
 void VDBImageLoader::get_bbox(int3& min_bbox, int3& max_bbox)
@@ -573,32 +573,32 @@ NanoVDBMultiResImageLoader::~NanoVDBMultiResImageLoader()
 
 bool NanoVDBMultiResImageLoader::load_metadata(const ImageDeviceFeatures& features, ImageMetaData& metadata)
 {
-    /* Set dimensions. */    
-    nanovdb::Vec3dBBox bbox;
-	for (int l = 0; l < levels; l++) {
-		auto level_bbox = get_nanogrid(l)->worldBBox();
-		if (l == 0) {
-			bbox = level_bbox;
-		}
-		else {
-			bbox.expand(level_bbox);
-		}
+    metadata.channels = (get_nanogrid(0)->gridType() == nanovdb::GridType::Float) ? 1 : 3; // TODO
+
+    /* Set dimensions. */
+	nanovdb::Vec3dBBox bbox = get_nanogrid(0)->worldBBox();
+    //auto bbox = get_nanogrid(0)->worldBBox();
+    //if (bbox.empty()) {
+    //    return false;
+    //}
+	for (int i = 1; i < levels; ++i) {
+		nanovdb::Vec3dBBox lbbox = get_nanogrid(i)->worldBBox();
+		bbox.expand(lbbox);
 	}
 
-    //TODO
     auto dim = bbox.dim();
     metadata.width = dim[0];
     metadata.height = dim[1];
     metadata.depth = dim[2];
 
     metadata.byte_size = grids.size();
-
-    metadata.channels = (get_nanogrid(0)->gridType() == nanovdb::GridType::Float) ? 1 : 3; // TODO
     if (metadata.channels == 1) {
-        metadata.type = IMAGE_DATA_TYPE_NANOVDB_FLOAT;
+        metadata.type = IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT;
     }
     else {
-        metadata.type = IMAGE_DATA_TYPE_NANOVDB_FLOAT3;
+        //TODO
+		printf("NanoVDBMultiResImageLoader: only float type supported now.\n");
+        //metadata.type = IMAGE_DATA_TYPE_NANOVDB_FLOAT3;
     }
 
     /* Set transform from object space to voxel index. */
@@ -626,7 +626,7 @@ bool NanoVDBMultiResImageLoader::load_metadata(const ImageDeviceFeatures& featur
     //}
 
     metadata.transform_3d = transform_inverse(index_to_object);
-    metadata.use_transform_3d = true;
+    metadata.use_transform_3d = false;
 
     return true;
 }
@@ -666,16 +666,11 @@ bool NanoVDBMultiResImageLoader::is_simple_mesh() const
 
 void NanoVDBMultiResImageLoader::get_bbox(int3 &min_bbox, int3 &max_bbox)
 {
-    nanovdb::CoordBBox bbox;
-    
-	for (int l = 0; l < levels; l++) {
-		auto level_bbox = get_nanogrid(l)->indexBBox();
-		if (l == 0) {
-			bbox = level_bbox;
-		}
-		else {
-			bbox.expand(level_bbox);
-		}
+    nanovdb::CoordBBox bbox = get_nanogrid(0)->indexBBox();
+    //auto bbox = get_nanogrid(0)->indexBBox();
+	for (int i = 1; i < levels; ++i) {
+		nanovdb::CoordBBox lbbox = get_nanogrid(i)->indexBBox();
+		bbox.expand(lbbox);
 	}
 
     auto grid_bbox_min = bbox.min();
@@ -789,7 +784,7 @@ bool RAWImageLoader::equals(const ImageLoader& other) const
 
 void RAWImageLoader::cleanup()
 {
-    grid.clear();
+    //grid.clear();
 }
 
 bool RAWImageLoader::is_vdb_loader() const

@@ -46,12 +46,19 @@
 #endif
 
 #include "scene/image_oiio.h"
+#include "graph/node_xml_util.h"
 
 #define READ_ATTR_I(name,type) \
     const xml_attribute attr_##name = node_attribute.attribute(#name); \
     type name = (type) 0; \
     if (attr_##name) \
         name = (type) atoi(attr_##name.value());
+
+#define READ_ATTR_ENUM(name,type) \
+    const xml_attribute attr_##name = node_attribute.attribute(#name); \
+    type name = (type) 0; \
+    if (attr_##name) \
+        str_to_enum(attr_##name.value(), name);
 
 #define READ_ATTR_ULL(name,type) \
     const xml_attribute attr_##name = node_attribute.attribute(#name); \
@@ -64,6 +71,12 @@
     type name; \
     if (attr_##name) \
         name = (type) (attr_##name.value());
+
+#define READ_ATTR_TYPE_DESC(name,type) \
+    const xml_attribute attr_##name = node_attribute.attribute(#name); \
+    type name; \
+    if (attr_##name) \
+        name = (type) str_to_typedesc(attr_##name.value());
 
 CCL_NAMESPACE_BEGIN
 
@@ -470,8 +483,8 @@ static void xml_read_shader_graph(XMLReadState& state, Shader* shader, const xml
 					//READ_ATTR_ULL(byte_size, size_t);
 					//attr.byte_size = byte_size;
 					//ImageDataType type;
-					READ_ATTR_I(type, int);
-					attr.type = (ImageDataType)type;
+					READ_ATTR_ENUM(type, ImageDataType);
+					//attr.type = (ImageDataType)type;
 
 					///* Optional color space, defaults to raw. */
 					//ustring colorspace;
@@ -586,28 +599,84 @@ static void xml_read_geom(XMLReadState& state, const xml_node xml_node_geom)
 		if (attr_name)
 			name = attr_name.value();
 
-		READ_ATTR_I(std, AttributeStandard);
+		READ_ATTR_ENUM(std, AttributeStandard);
 
-		TypeDesc type;
+		//TypeDesc type_desc;
+		READ_ATTR_TYPE_DESC(type, TypeDesc);
 
-		READ_ATTR_I(basetype, unsigned char);      ///< C data type at the heart of our type
-		READ_ATTR_I(aggregate, unsigned char);     ///< What kind of AGGREGATE is it?
-		READ_ATTR_I(vecsemantics, unsigned char);  ///< Hint: What does the aggregate represent?
-		READ_ATTR_I(reserved, unsigned char);      ///< Reserved for future expansion
-		READ_ATTR_I(arraylen, int);      ///< Array length, 0 = not array, -1 = unsized
+		//READ_ATTR_I(basetype, unsigned char);      ///< C data type at the heart of our type
+		//READ_ATTR_I(aggregate, unsigned char);     ///< What kind of AGGREGATE is it?
+		//READ_ATTR_I(vecsemantics, unsigned char);  ///< Hint: What does the aggregate represent?
+		//READ_ATTR_I(reserved, unsigned char);      ///< Reserved for future expansion
+		//READ_ATTR_I(arraylen, int);      ///< Array length, 0 = not array, -1 = unsized
 
-		type.basetype = basetype;
-		type.aggregate = aggregate;
-		type.vecsemantics = vecsemantics;
-		type.reserved = reserved;
-		type.arraylen = arraylen;
+		//type.basetype = basetype;
+		//type.aggregate = aggregate;
+		//type.vecsemantics = vecsemantics;
+		//type.reserved = reserved;
+		//type.arraylen = arraylen;
 
-		READ_ATTR_I(element, AttributeElement);
+		READ_ATTR_ENUM(element, AttributeElement);
 		READ_ATTR_I(flags, uint);
 
 		Attribute* attr = geom->attributes.add(name, type, element);
 		attr->std = std;
 		attr->flags = flags;
+
+		//Attribute* attr = nullptr;
+
+		//AttributeStandard std_volume = ATTR_STD_NONE;
+
+		//if (name == Attribute::standard_name(ATTR_STD_VOLUME_DENSITY)) {
+		//	std_volume = ATTR_STD_VOLUME_DENSITY;
+		//}
+		//else if (name == Attribute::standard_name(ATTR_STD_VOLUME_COLOR)) {
+		//	std_volume = ATTR_STD_VOLUME_COLOR;
+		//}
+		//else if (name == Attribute::standard_name(ATTR_STD_VOLUME_FLAME)) {
+		//	std_volume = ATTR_STD_VOLUME_FLAME;
+		//}
+		//else if (name == Attribute::standard_name(ATTR_STD_VOLUME_HEAT)) {
+		//	std_volume = ATTR_STD_VOLUME_HEAT;
+		//}
+		//else if (name == Attribute::standard_name(ATTR_STD_VOLUME_TEMPERATURE)) {
+		//	std_volume = ATTR_STD_VOLUME_TEMPERATURE;
+		//}
+		//else if (name == Attribute::standard_name(ATTR_STD_VOLUME_VELOCITY))
+		//{
+		//	std_volume = ATTR_STD_VOLUME_VELOCITY;
+		//}
+		//else if (name == Attribute::standard_name(ATTR_STD_VOLUME_VELOCITY_X))
+		//{
+		//	std_volume = ATTR_STD_VOLUME_VELOCITY_X;
+		//}
+		//else if (name == Attribute::standard_name(ATTR_STD_VOLUME_VELOCITY_Y))
+		//{
+		//	std_volume = ATTR_STD_VOLUME_VELOCITY_Y;
+		//}
+		//else if (name == Attribute::standard_name(ATTR_STD_VOLUME_VELOCITY_Z))
+		//{
+		//	std_volume = ATTR_STD_VOLUME_VELOCITY_Z;
+		//}
+
+		//if (std_volume != ATTR_STD_NONE)
+		//{
+		//	attr = (std_volume != ATTR_STD_NONE) ?
+		//		geom->attributes.add(std_volume) :
+		//		geom->attributes.add(name, TypeFloat, ATTR_ELEMENT_VOXEL);
+
+		//	//unique_ptr<ImageLoader> loader = make_unique<BlenderVolumeLoader>(
+		//	//	b_data, b_volume, name.string(), b_render.precision());
+		//	//ImageParams params;
+		//	//params.frame = b_volume.grids.frame();
+
+		//	//attr->data_voxel() = scene->image_manager->add_image(std::move(loader), params, false);
+		//}
+		//else {
+		//	attr = geom->attributes.add(name, type_desc, element);
+		//	attr->std = std;
+		//	attr->flags = flags;
+		//}
 
 		const xml_attribute attr_buffer = node_attribute.attribute("buffer");
 		if (attr_buffer) {
@@ -843,6 +912,9 @@ static void xml_read_geom(XMLReadState& state, const xml_node xml_node_geom)
 					fprintf(stderr, "attr_volume_type is empty\n");
 				}
 			}
+
+			//geom->tag_modified();
+			//geom->tag_update(state.scene, true);
 		}
 	}
 }
@@ -894,19 +966,20 @@ static void xml_read_object(XMLReadState& state, const xml_node xml_node_obj)
 		if (attr_name)
 			name = attr_name.value();
 
-		TypeDesc type;
+		//TypeDesc type_desc;
+		READ_ATTR_TYPE_DESC(type, TypeDesc);
 
-		READ_ATTR_I(basetype, unsigned char);      ///< C data type at the heart of our type
-		READ_ATTR_I(aggregate, unsigned char);     ///< What kind of AGGREGATE is it?
-		READ_ATTR_I(vecsemantics, unsigned char);  ///< Hint: What does the aggregate represent?
-		READ_ATTR_I(reserved, unsigned char);      ///< Reserved for future expansion
-		READ_ATTR_I(arraylen, int);      ///< Array length, 0 = not array, -1 = unsized
+		//READ_ATTR_I(basetype, unsigned char);      ///< C data type at the heart of our type
+		//READ_ATTR_I(aggregate, unsigned char);     ///< What kind of AGGREGATE is it?
+		//READ_ATTR_I(vecsemantics, unsigned char);  ///< Hint: What does the aggregate represent?
+		//READ_ATTR_I(reserved, unsigned char);      ///< Reserved for future expansion
+		//READ_ATTR_I(arraylen, int);      ///< Array length, 0 = not array, -1 = unsized
 
-		type.basetype = basetype;
-		type.aggregate = aggregate;
-		type.vecsemantics = vecsemantics;
-		type.reserved = reserved;
-		type.arraylen = arraylen;
+		//type.basetype = basetype;
+		//type.aggregate = aggregate;
+		//type.vecsemantics = vecsemantics;
+		//type.reserved = reserved;
+		//type.arraylen = arraylen;
 
 		const xml_attribute attr_data = node_attribute.attribute("data");
 		vector<char> data;
@@ -914,7 +987,7 @@ static void xml_read_object(XMLReadState& state, const xml_node xml_node_obj)
 			read_vector_from_binary_file(state, data, attr_data.value());
 		}
 
-		READ_ATTR_I(interp, ParamValue::Interp);
+		READ_ATTR_ENUM(interp, ParamValue::Interp);
 		ParamValue param_value(name, type, data.size() / type.size(), interp, (void*)data.data());
 		object->attributes.push_back(param_value);
 	}

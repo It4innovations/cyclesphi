@@ -22,6 +22,7 @@ set(SRC_HEADERS
   node_type.h
   #node_xml.h
   node_xml_bin.h
+  node_xml_util.h
 )
 
 set(LIB

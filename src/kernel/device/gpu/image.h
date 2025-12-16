@@ -8,7 +8,8 @@ CCL_NAMESPACE_BEGIN
 
 #if !defined __KERNEL_METAL__
 #  ifdef WITH_NANOVDB
-#    include "kernel/util/nanovdb.h"
+//#    include "kernel/util/nanovdb.h"
+#  include <nanovdb/NanoVDB.h>
 #  endif
 #endif
 
@@ -242,21 +243,24 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb(const ccl_global Textur
 
   ccl_global NanoGrid<T> *const grid = (ccl_global NanoGrid<T> *)info.data;
 
-  switch (interpolation) {
-    case INTERPOLATION_CLOSEST: {
-      ReadAccessor<T> acc(grid->tree().root());
-      const nanovdb::Coord coord((int32_t)floorf(x), (int32_t)floorf(y), (int32_t)floorf(z));
-      return OutT(acc.getValue(coord));
-    }
-    case INTERPOLATION_LINEAR: {
-      CachedReadAccessor<T> acc(grid->tree().root());
-      return kernel_tex_image_interp_trilinear_nanovdb<OutT>(acc, x, y, z);
-    }
-    default: {
-      CachedReadAccessor<T> acc(grid->tree().root());
-      return kernel_tex_image_interp_tricubic_nanovdb<OutT>(acc, x, y, z);
-    }
-  }
+  // switch (interpolation) {
+  //   case INTERPOLATION_CLOSEST: {
+  //     ReadAccessor<T> acc(grid->tree().root());
+  //     const nanovdb::Coord coord((int32_t)floorf(x), (int32_t)floorf(y), (int32_t)floorf(z));
+  //     return OutT(acc.getValue(coord));
+  //   }
+  //   case INTERPOLATION_LINEAR: {
+  //     CachedReadAccessor<T> acc(grid->tree().root());
+  //     return kernel_tex_image_interp_trilinear_nanovdb<OutT>(acc, x, y, z);
+  //   }
+  //   default: {
+  //     CachedReadAccessor<T> acc(grid->tree().root());
+  //     return kernel_tex_image_interp_tricubic_nanovdb<OutT>(acc, x, y, z);
+  //   }
+  // }
+  ReadAccessor<T> acc(grid->tree().root());
+  const nanovdb::Coord coord((int32_t)floorf(x), (int32_t)floorf(y), (int32_t)floorf(z));
+  return OutT(acc.getValue(coord));
 }
 
 #  if defined(__KERNEL_METAL__)
@@ -275,25 +279,37 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_multires(const ccl_glob
                                                          const uint interpolation)
 #  endif
 {
-  using namespace nanovdb;
+    using namespace nanovdb;    
+    
+    // Read number of levels
+    int levels = *((int*)((char*)info.data));
+    //offset += sizeof(int);    
+    
+    size_t offset = 0;
+    for (int i = 0; i < levels; ++i) {
+        // Read size of this level's grid data
+        size_t grid_size = *((size_t*)((char*)info.data + (sizeof(int) + i * sizeof(size_t))));
+        //offset += sizeof(size_t);
+        
+        // Get pointer to grid data
+        ccl_global NanoGrid<T>* const grid = (ccl_global NanoGrid<T>*)((char*)info.data + (offset + sizeof(int) + levels * sizeof(size_t)));
+		    offset += grid_size;
 
-  ccl_global NanoGrid<T> *const grid = (ccl_global NanoGrid<T> *)info.data;
+        nanovdb::Vec3d coord_i = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
 
-  switch (interpolation) {
-    case INTERPOLATION_CLOSEST: {
-      ReadAccessor<T> acc(grid->tree().root());
-      const nanovdb::Coord coord((int32_t)floorf(x), (int32_t)floorf(y), (int32_t)floorf(z));
-      return OutT(acc.getValue(coord));
+        ReadAccessor<T> acc(grid->tree().root());
+        //float f = interp_3d_closest(acc, coord[0], coord[1], coord[2]);
+        const nanovdb::Coord coord((int32_t)floorf(coord_i[0]), (int32_t)floorf(coord_i[1]), (int32_t)floorf(coord_i[2]));
+        OutT f = acc.getValue(coord);
+
+        if (f != 0.0f)
+            return f;
+
+        // Move to next level
+        //offset += grid_size;
     }
-    case INTERPOLATION_LINEAR: {
-      CachedReadAccessor<T> acc(grid->tree().root());
-      return kernel_tex_image_interp_trilinear_nanovdb<OutT>(acc, x, y, z);
-    }
-    default: {
-      CachedReadAccessor<T> acc(grid->tree().root());
-      return kernel_tex_image_interp_tricubic_nanovdb<OutT>(acc, x, y, z);
-    }
-  }
+
+    return 0.0f;
 }
 
 #endif

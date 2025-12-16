@@ -10,7 +10,8 @@
 #endif
 
 #ifdef WITH_NANOVDB
-#  include "kernel/util/nanovdb.h"
+//#  include "kernel/util/nanovdb.h"
+#  include <nanovdb/NanoVDB.h>
 #endif
 
 #if defined(__KERNEL_CUDA__) || defined(__KERNEL_HIP__)
@@ -892,20 +893,22 @@ template<typename TexT, typename OutT> struct NanoVDBInterpolator {
 
     NanoGrid<TexT> *const grid = (NanoGrid<TexT> *)info.data;
 
-    switch ((interp == INTERPOLATION_NONE) ? info.interpolation : interp) {
-      case INTERPOLATION_CLOSEST: {
-        ReadAccessor<TexT> acc(grid->tree().root());
-        return interp_3d_closest(acc, x, y, z);
-      }
-      case INTERPOLATION_LINEAR: {
-        CachedReadAccessor<TexT> acc(grid->tree().root());
-        return interp_3d_linear(acc, x, y, z);
-      }
-      default: {
-        CachedReadAccessor<TexT> acc(grid->tree().root());
-        return interp_3d_cubic(acc, x, y, z);
-      }
-    }
+    //switch ((interp == INTERPOLATION_NONE) ? info.interpolation : interp) {
+    //  case INTERPOLATION_CLOSEST: {
+    //    ReadAccessor<TexT> acc(grid->tree().root());
+    //    return interp_3d_closest(acc, x, y, z);
+    //  }
+    //  case INTERPOLATION_LINEAR: {
+    //    CachedReadAccessor<TexT> acc(grid->tree().root());
+    //    return interp_3d_linear(acc, x, y, z);
+    //  }
+    //  default: {
+    //    CachedReadAccessor<TexT> acc(grid->tree().root());
+    //    return interp_3d_cubic(acc, x, y, z);
+    //  }
+    //}
+    ReadAccessor<TexT> acc(grid->tree().root());
+    return interp_3d_closest(acc, x, y, z);
   }
 };
 
@@ -924,7 +927,7 @@ template<typename TexT, typename OutT> struct NanoVDBMultiResInterpolator {
   template<typename Acc>
   static ccl_always_inline OutT
   interp_3d_closest(const Acc &acc, const float x, float y, const float z)
-  {
+  {   
     const nanovdb::Coord coord((int32_t)floorf(x), (int32_t)floorf(y), (int32_t)floorf(z));
     return read(acc.getValue(coord));
   }
@@ -1017,22 +1020,34 @@ template<typename TexT, typename OutT> struct NanoVDBMultiResInterpolator {
   {
     using namespace nanovdb;
 
-    NanoGrid<TexT> *const grid = (NanoGrid<TexT> *)info.data;
+    
+    
+    // Read number of levels
+    int levels = *((int*)((char*)info.data));
+    //offset += sizeof(int);    
+    
+    size_t offset = 0;
+    for (int i = 0; i < levels; ++i) {
+        // Read size of this level's grid data
+        size_t grid_size = *((size_t*)((char*)info.data + (sizeof(int) + i * sizeof(size_t))));
+        //offset += sizeof(size_t);
+        
+        // Get pointer to grid data
+        NanoGrid<TexT>* const grid = (NanoGrid<TexT>*)((char*)info.data + (offset + sizeof(int) + levels * sizeof(size_t)));
+		offset += grid_size;
 
-    switch ((interp == INTERPOLATION_NONE) ? info.interpolation : interp) {
-      case INTERPOLATION_CLOSEST: {
+        nanovdb::Vec3d coord = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
+
         ReadAccessor<TexT> acc(grid->tree().root());
-        return interp_3d_closest(acc, x, y, z);
-      }
-      case INTERPOLATION_LINEAR: {
-        CachedReadAccessor<TexT> acc(grid->tree().root());
-        return interp_3d_linear(acc, x, y, z);
-      }
-      default: {
-        CachedReadAccessor<TexT> acc(grid->tree().root());
-        return interp_3d_cubic(acc, x, y, z);
-      }
+        float f = interp_3d_closest(acc, coord[0], coord[1], coord[2]);
+        if (f != 0.0f)
+            return f;
+
+        // Move to next level
+        //offset += grid_size;
     }
+
+    return 0.0f;
   }
 };
 #endif
