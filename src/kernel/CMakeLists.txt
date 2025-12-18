@@ -526,7 +526,7 @@ if(WITH_CYCLES_CUDA_BINARIES)
 
     if(WITH_NANOVDB)
       set(cuda_flags ${cuda_flags}
-        -D WITH_NANOVDB -I ${NANOVDB_INCLUDE_DIR} -g -G)
+        -D WITH_NANOVDB -I ${NANOVDB_INCLUDE_DIR})
     endif()
 
     if(WITH_GPU_CPUIMAGE)
@@ -882,7 +882,7 @@ if(WITH_CYCLES_DEVICE_OPTIX AND WITH_CYCLES_CUDA_BINARIES)
 
     if(WITH_NANOVDB)
       set(cuda_flags ${cuda_flags}
-        -D WITH_NANOVDB -I ${NANOVDB_INCLUDE_DIR} -g -G)
+        -D WITH_NANOVDB -I ${NANOVDB_INCLUDE_DIR})
     endif()
 
     if(WITH_GPU_CPUIMAGE)

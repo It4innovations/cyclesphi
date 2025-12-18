@@ -541,9 +541,12 @@ float3 NanoVDBImageLoader::index_to_world(float3 in)
 
 ///////////////////// NanoVDBMultiResImageLoader
 // format description of bin file:
-// int32 : number of levels
-// for each level - size_t : size of nanovdb grid data
-// for each level - char[] : nanovdb grid data
+// size_t : number of levels (aligned to 32 bytes)
+// size_t : offset to grid1
+// grid0 data (aligned to 32 bytes)
+// size_t : offset to grid2
+// grid1 data (aligned to 32 bytes)
+// ...
 NanoVDBMultiResImageLoader::NanoVDBMultiResImageLoader(vector<char>& g)
     : VDBImageLoader("")
 {
@@ -551,19 +554,25 @@ NanoVDBMultiResImageLoader::NanoVDBMultiResImageLoader(vector<char>& g)
 
 	size_t offset = 0;
 	// read number of levels
-	levels = *((int32_t*)(grids.data() + offset));
-	offset += sizeof(int32_t);
-	// read grid sizes
-	grid_sizes.resize(levels);
-	for (int i = 0; i < levels; ++i) {
-		grid_sizes[i] = *((size_t*)(grids.data() + offset));
-		offset += sizeof(size_t);
-	}
-	// read grid data
+	levels = *((size_t*)(grids.data() + offset));	
+	// align to 32 bytes after num_levels
+	offset = 32;
+
+	// read grid offsets
 	grid_offsets.resize(levels);
 	for (int i = 0; i < levels; ++i) {
-		grid_offsets[i] = offset;
-		offset += grid_sizes[i];
+		// grid data starts at current offset (after optional offset field)
+		if (i < levels - 1) {
+			// read next grid offset (but we track positions sequentially)
+			size_t next_offset = *((size_t*)(grids.data() + offset));
+			grid_offsets[i] = offset + sizeof(size_t);
+			// jump to next aligned position
+			offset = next_offset - sizeof(size_t);
+		}
+		else {
+			// last grid has no offset field
+			grid_offsets[i] = offset;
+		}
 	}
 }
 

@@ -136,9 +136,8 @@ public:
     virtual float3 index_to_world(float3 in) override;
 
 protected:
-    int levels;
+    size_t levels;
 	
-    vector<size_t> grid_sizes;
     vector<size_t> grid_offsets;
     vector<char> grids;
 

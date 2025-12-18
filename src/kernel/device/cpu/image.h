@@ -1013,38 +1013,54 @@ template<typename TexT, typename OutT> struct NanoVDBMultiResInterpolator {
 #  undef COL_TERM
 #  undef ROW_TERM
 #  undef DATA
-  }
+  }  
 
   static ccl_always_inline OutT interp_3d(
       const TextureInfo &info, const float x, float y, const float z, InterpolationType interp)
   {
     using namespace nanovdb;
 
-    
-    
-    // Read number of levels
-    int levels = *((int*)((char*)info.data));
-    //offset += sizeof(int);    
-    
+    // Format description of bin file:
+    // size_t : number of levels (aligned to 32 bytes)
+    // size_t : offset to grid1
+    // grid0 data (aligned to 32 bytes)
+    // size_t : offset to grid2
+    // grid1 data (aligned to 32 bytes)
+    // ...
+
     size_t offset = 0;
-    for (int i = 0; i < levels; ++i) {
-        // Read size of this level's grid data
-        size_t grid_size = *((size_t*)((char*)info.data + (sizeof(int) + i * sizeof(size_t))));
-        //offset += sizeof(size_t);
-        
-        // Get pointer to grid data
-        NanoGrid<TexT>* const grid = (NanoGrid<TexT>*)((char*)info.data + (offset + sizeof(int) + levels * sizeof(size_t)));
-		offset += grid_size;
-
-        nanovdb::Vec3d coord = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
-
-        ReadAccessor<TexT> acc(grid->tree().root());
-        float f = interp_3d_closest(acc, coord[0], coord[1], coord[2]);
-        if (f != 0.0f)
-            return f;
-
-        // Move to next level
-        //offset += grid_size;
+    // Read number of levels
+    size_t levels = *((size_t*)((char*)info.data + offset));
+    // Align to 32 bytes after num_levels
+    offset = 32;
+    
+    for (size_t i = 0; i < levels; ++i) {
+        // Get pointer to current grid data        
+        if (i < levels - 1) {
+            // Read next grid offset
+            size_t next_offset = *((size_t*)((char*)info.data + offset));
+            // Grid data starts after the offset field
+            NanoGrid<TexT>* const grid = (NanoGrid<TexT>*)((char*)info.data + (offset + sizeof(size_t)));
+            
+            nanovdb::Vec3d coord = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
+            ReadAccessor<TexT> acc(grid->tree().root());
+            float f = interp_3d_closest(acc, coord[0], coord[1], coord[2]);
+            if (f != 0.0f)
+                return f;
+            
+            // Jump to next offset position
+            offset = next_offset - sizeof(size_t);
+        }
+        else {
+            // Last grid has no offset field
+            NanoGrid<TexT>* const grid = (NanoGrid<TexT>*)((char*)info.data + offset);
+            
+            nanovdb::Vec3d coord = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
+            ReadAccessor<TexT> acc(grid->tree().root());
+            float f = interp_3d_closest(acc, coord[0], coord[1], coord[2]);
+            if (f != 0.0f)
+                return f;
+        }
     }
 
     return 0.0f;
