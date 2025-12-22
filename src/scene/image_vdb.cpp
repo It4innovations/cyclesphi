@@ -134,7 +134,11 @@ VDBImageLoader::VDBImageLoader(openvdb::GridBase::ConstPtr grid_, const string &
 }
 #endif
 
-VDBImageLoader::VDBImageLoader(const string &grid_name) : grid_name(grid_name) {}
+VDBImageLoader::VDBImageLoader(const string &grid_name) : grid_name(grid_name) 
+{
+    if(!grid_name.empty())
+        printf("VDBImageLoader: grid_name: %s\n", grid_name.c_str());
+}
 
 VDBImageLoader::~VDBImageLoader() = default;
 
@@ -428,6 +432,7 @@ openvdb::GridBase::ConstPtr VDBImageLoader::get_grid()
 NanoVDBImageLoader::NanoVDBImageLoader(vector<char> &g)
     : nanogrid_data(std::move(g)), VDBImageLoader("")
 {
+    printf("NanoVDBImageLoader: size in bytes: %lld\n", nanogrid_data.size());
 }
 
 NanoVDBImageLoader::~NanoVDBImageLoader()
@@ -557,6 +562,8 @@ NanoVDBMultiResImageLoader::NanoVDBMultiResImageLoader(vector<char>& g)
 	levels = *((size_t*)(grids.data() + offset));	
 	// align to 32 bytes after num_levels
 	offset = 32;
+
+	printf("NanoVDBMultiResImageLoader: number of levels: %zu\n", levels);
 
 	// read grid offsets
 	grid_offsets.resize(levels);
@@ -700,6 +707,7 @@ float3 NanoVDBMultiResImageLoader::index_to_world(float3 in)
 RAWImageLoader::RAWImageLoader(vector<char> &g, int dx, int dy, int dz, float sx, float sy, float sz, RAWImageLoaderType t, int c)
     : grid(std::move(g)), dimx(dx), dimy(dy), dimz(dz), scal_x(sx), scal_y(sy), scal_z(sz), raw_type(t), channels(c), VDBImageLoader("")
 {
+    printf("RAWImageLoader: size in bytes: %lld\n", grid.size());
 }
 
 RAWImageLoader::~RAWImageLoader()

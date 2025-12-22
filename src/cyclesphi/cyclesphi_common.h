@@ -32,7 +32,7 @@
 class FromCL {
 public:
 	FromCL(): 
-		port(8000), 
+		port(7000), 
 		anim(-1), 
 		use_anim(false), 
 		used_device("CPU"), 		

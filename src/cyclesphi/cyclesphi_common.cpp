@@ -665,7 +665,7 @@ int cyclesphi(int ac, char** av, TcpConnection* blenderClientTcp, FromCL& fromCL
 #ifdef WITH_CLIENT_GPUJPEG     
 			if (main_options->display_driver) {
 				DEBUG_START_TIME(send_gpujpeg_display);
-				blenderClientTcp->send_gpujpeg((char*)main_options->display_driver->d_pixels, pixels_buf_empty.data(), main_options->width, main_options->height, 0);
+				blenderClientTcp->send_gpujpeg((char*)main_options->display_driver->d_pixels, pixels_buf_empty.data(), main_options->width, main_options->height, 8);
 				//blenderClientTcp->send_gpujpeg((char*)main_options->display_driver->pixels.data(), pixels_buf_empty.data(), main_options->width, main_options->height, 0);
 				DEBUG_END_TIME(send_gpujpeg_display);
 			}
