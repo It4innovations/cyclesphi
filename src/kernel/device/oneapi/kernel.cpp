@@ -9,31 +9,6 @@
 #  include <map>
 #  include <set>
 
-CYCLES_KERNEL_ONEAPI_EXPORT bool oneapi_run_test_kernel(SyclQueue *queue_){return true;}
-CYCLES_KERNEL_ONEAPI_EXPORT bool oneapi_zero_memory_on_device(SyclQueue *queue_,
-                                                              void *device_pointer,
-                                                              size_t num_bytes){return true;}
-CYCLES_KERNEL_ONEAPI_EXPORT void oneapi_set_error_cb(OneAPIErrorCallback cb, void *user_ptr){}
-CYCLES_KERNEL_ONEAPI_EXPORT size_t oneapi_suggested_gpu_kernel_size(const DeviceKernel kernel){return 0;}
-CYCLES_KERNEL_ONEAPI_EXPORT bool oneapi_enqueue_kernel(KernelContext *context,
-                                                       const int kernel,
-                                                       const size_t global_size,
-                                                       const size_t local_size,
-                                                       const unsigned int kernel_features,
-                                                       bool use_hardware_raytracing,
-                                                       void **args){return true;}
-CYCLES_KERNEL_ONEAPI_EXPORT bool oneapi_load_kernels(SyclQueue *queue,
-                                                     const unsigned int kernel_features,
-                                                     bool use_hardware_raytracing){return true;}
-#endif
-
-#if 0 //def WITH_ONEAPI
-
-#  include "kernel.h"
-#  include <iostream>
-#  include <map>
-#  include <set>
-
 /* <algorithm> is needed until included upstream in sycl/detail/property_list_base.hpp */
 #  include <algorithm>
 #  include <sycl/sycl.hpp>
