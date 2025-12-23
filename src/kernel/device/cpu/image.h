@@ -9,7 +9,7 @@
 #include "kernel/device/cpu/globals.h"
 #endif
 
-#ifdef WITH_NANOVDB
+#if defined(WITH_NANOVDB) && !defined(__KERNEL_ONEAPI__)
 //#  include "kernel/util/nanovdb.h"
 #  include <nanovdb/NanoVDB.h>
 #endif
@@ -1149,7 +1149,7 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
       return TextureInterpolator<ushort4>::interp_3d(info, P.x, P.y, P.z, interp);
     case IMAGE_DATA_TYPE_FLOAT4:
       return TextureInterpolator<float4>::interp_3d(info, P.x, P.y, P.z, interp);
-#ifdef WITH_NANOVDB
+#if defined(WITH_NANOVDB) && !defined(__KERNEL_ONEAPI__)
     case IMAGE_DATA_TYPE_NANOVDB_FLOAT: {
       const float f = NanoVDBInterpolator<float, float>::interp_3d(info, P.x, P.y, P.z, interp);
       return make_float4(f, f, f, 1.0f);
