@@ -4,9 +4,10 @@
 
 // clang-format off
 
-#ifdef WITH_NANOVDB
-#  include "kernel/util/nanovdb.h"
-#endif
+#  ifdef WITH_NANOVDB
+//#    include "kernel/util/nanovdb.h"
+#  include <nanovdb/NanoVDB.h>
+#  endif
 
 /* Open the Metal kernel context class
  * Necessary to access resource bindings */

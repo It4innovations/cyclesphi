@@ -1044,7 +1044,7 @@ template<typename TexT, typename OutT> struct NanoVDBMultiResInterpolator {
             
             nanovdb::Vec3d coord = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
             ReadAccessor<TexT> acc(grid->tree().root());
-            float f = interp_3d_closest(acc, coord[0], coord[1], coord[2]);
+            float f = interp_3d_closest(acc, (float)coord[0], (float)coord[1], (float)coord[2]);
             if (f != 0.0f)
                 return f;
             
@@ -1057,7 +1057,7 @@ template<typename TexT, typename OutT> struct NanoVDBMultiResInterpolator {
             
             nanovdb::Vec3d coord = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
             ReadAccessor<TexT> acc(grid->tree().root());
-            float f = interp_3d_closest(acc, coord[0], coord[1], coord[2]);
+            float f = interp_3d_closest(acc, (float)coord[0], (float)coord[1], (float)coord[2]);
             if (f != 0.0f)
                 return f;
         }
@@ -1149,7 +1149,7 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
       return TextureInterpolator<ushort4>::interp_3d(info, P.x, P.y, P.z, interp);
     case IMAGE_DATA_TYPE_FLOAT4:
       return TextureInterpolator<float4>::interp_3d(info, P.x, P.y, P.z, interp);
-#if defined(WITH_NANOVDB) && !defined(__KERNEL_ONEAPI__)
+#if defined(WITH_NANOVDB)
     case IMAGE_DATA_TYPE_NANOVDB_FLOAT: {
       const float f = NanoVDBInterpolator<float, float>::interp_3d(info, P.x, P.y, P.z, interp);
       return make_float4(f, f, f, 1.0f);
@@ -1169,7 +1169,7 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
     case IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT: {
       const float f = NanoVDBMultiResInterpolator<float, float>::interp_3d(info, P.x, P.y, P.z, interp);
       return make_float4(f, f, f, 1.0f);
-    }    
+    }
 #endif
     default:
       assert(0);

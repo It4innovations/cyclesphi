@@ -2,7 +2,11 @@
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
-#include "kernel/util/nanovdb.h"
+//#include "kernel/util/nanovdb.h"
+#if defined(WITH_NANOVDB)
+//#  include "kernel/util/nanovdb.h"
+#  include <nanovdb/NanoVDB.h>
+#endif
 
 /* clang-format off */
 struct ONEAPIKernelContext : public KernelGlobalsGPU {
