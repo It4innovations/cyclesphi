@@ -1031,29 +1031,29 @@ void PathTraceWorkGPU::copy_to_display_naive(PathTraceDisplay *display,
       }
   }
   else {
-  if (display_rgba_half_.data_width != final_width ||
-      display_rgba_half_.data_height != final_height)
-  {
-    display_rgba_half_.alloc(final_width, final_height);
-    /* TODO(sergey): There should be a way to make sure device-side memory is allocated without
-     * transferring zeroes to the device. */
-    queue_->zero_to_device(display_rgba_half_);
-  }
+    if (display_rgba_half_.data_width != final_width ||
+        display_rgba_half_.data_height != final_height)
+    {
+        display_rgba_half_.alloc(final_width, final_height);
+        /* TODO(sergey): There should be a way to make sure device-side memory is allocated without
+            * transferring zeroes to the device. */
+        queue_->zero_to_device(display_rgba_half_);
+    }
 
-  PassAccessor::Destination destination(film_->get_display_pass());
-  destination.d_pixels_half_rgba = display_rgba_half_.device_pointer;
+    PassAccessor::Destination destination(film_->get_display_pass());
+    destination.d_pixels_half_rgba = display_rgba_half_.device_pointer;
 
-  get_render_tile_film_pixels(destination, pass_mode, num_samples);
+    get_render_tile_film_pixels(destination, pass_mode, num_samples);
 
-      if (display->only_device_buffer()) {
-          display->copy_pixels_to_texture((half4*)display_rgba_half_.device_pointer, texture_x, texture_y, width, height);
-      }
-      else {
-  queue_->copy_from_device(display_rgba_half_);
-  queue_->synchronize();
+    if (display->only_device_buffer()) {
+        display->copy_pixels_to_texture((half4*)display_rgba_half_.device_pointer, texture_x, texture_y, width, height);
+    }
+    else {
+        queue_->copy_from_device(display_rgba_half_);
+        queue_->synchronize();
 
-          display->copy_pixels_to_texture((half4*)display_rgba_half_.data(), texture_x, texture_y, width, height);
-      }
+        display->copy_pixels_to_texture((half4*)display_rgba_half_.data(), texture_x, texture_y, width, height);
+    }
   }
 }
 

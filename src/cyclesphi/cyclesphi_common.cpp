@@ -264,6 +264,13 @@ void session_init(FromCL& fromCL, Options& options, int session_id)
 	auto display_driver = std::make_unique<ccl::FrameDisplayDriver>();
 	options.display_driver = display_driver.get();
 	options.session->set_display_driver(std::move(display_driver));
+#ifdef WITH_CLIENT_GPUJPEG
+	if (options.session_params.device.type != ccl::DEVICE_CPU) {
+		options.display_driver->use_device_buffer = true;
+		options.display_driver->use_linear2srgb = true;
+	}
+#endif
+
 	//	}
 	//	else 
 	//#endif
@@ -344,8 +351,10 @@ void renderFrame(Options* options)
 	//if (options->output_driver)
 	//	options->output_driver->wait();		
 
-	if (options->display_driver)
-		options->display_driver->wait();
+	//if (options->display_driver->use_device_buffer)
+	options->display_driver->wait();
+	//else
+	//	options->session->wait();
 }
 
 struct CyclesphiDataRenderAux {
@@ -665,7 +674,14 @@ int cyclesphi(int ac, char** av, TcpConnection* blenderClientTcp, FromCL& fromCL
 #ifdef WITH_CLIENT_GPUJPEG     
 			if (main_options->display_driver) {
 				DEBUG_START_TIME(send_gpujpeg_display);
-				blenderClientTcp->send_gpujpeg((char*)main_options->display_driver->d_pixels, pixels_buf_empty.data(), main_options->width, main_options->height, 8);
+				int format = main_options->display_driver->use_linear2srgb ? 8 : 16;
+				if (main_options->display_driver->d_pixels) {
+					blenderClientTcp->send_gpujpeg((char*)main_options->display_driver->d_pixels, pixels_buf_empty.data(), main_options->width, main_options->height, format);
+				}
+				else {
+					// TODO
+					blenderClientTcp->send_gpujpeg((char*)main_options->display_driver->pixels.data(), pixels_buf_empty.data(), main_options->width, main_options->height, format);
+				}
 				//blenderClientTcp->send_gpujpeg((char*)main_options->display_driver->pixels.data(), pixels_buf_empty.data(), main_options->width, main_options->height, 0);
 				DEBUG_END_TIME(send_gpujpeg_display);
 			}

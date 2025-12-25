@@ -49,20 +49,12 @@ class FrameDisplayDriver : public DisplayDriver {
 
   virtual bool only_device_buffer() override 
   { 
-#ifdef WITH_CLIENT_GPUJPEG
-	  return true;
-#else
-	  return false;
-#endif
+	  return use_device_buffer;
   };
 
   virtual bool buffer_linear2srgb() override 
   { 
-#ifdef WITH_CLIENT_GPUJPEG
-	  return true;
-#else
-	  return false;
-#endif
+	  return use_linear2srgb;
   };
 
   ///* Make sure texture is allocated and its initial configuration is performed. */
@@ -151,6 +143,9 @@ public:
 	thread_condition_variable cv;
 	std::chrono::time_point<std::chrono::steady_clock> start;
 	float duration;
+
+	bool use_device_buffer = false;
+	bool use_linear2srgb = false;
 
 	int width = 0;
 	int height = 0;

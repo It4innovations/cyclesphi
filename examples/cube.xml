@@ -1,98 +1,55 @@
 <?xml version="1.0"?>
 <cycles>
-	<film name="film" ui_name="film">
-		<socket name="exposure" ui_name="Exposure" value="1" type_name="float" />
-		<socket name="pass_alpha_threshold" ui_name="Pass Alpha Threshold" value="0.5" type_name="float" />
-		<socket name="filter_type" ui_name="Filter Type" value="blackman_harris" type_name="enum" />
-		<socket name="filter_width" ui_name="Filter Width" value="1.5" type_name="float" />
-		<socket name="mist_start" ui_name="Mist Start" value="5" type_name="float" />
-		<socket name="mist_depth" ui_name="Mist Depth" value="25" type_name="float" />
-		<socket name="mist_falloff" ui_name="Mist Falloff" value="2" type_name="float" />
-		<socket name="display_pass" ui_name="Display Pass" value="combined" type_name="enum" />
-		<socket name="show_active_pixels" ui_name="Show Active Pixels" value="false" type_name="boolean" />
-		<socket name="cryptomatte_passes" ui_name="Cryptomatte Passes" value="none" type_name="enum" />
-		<socket name="cryptomatte_depth" ui_name="Cryptomatte Depth" value="3" type_name="int" />
-		<socket name="use_approximate_shadow_catcher" ui_name="Use Approximate Shadow Catcher" value="true" type_name="boolean" />
-	</film>
-	<integrator name="integrator" ui_name="integrator">
-		<socket name="min_bounce" ui_name="Min Bounce" value="0" type_name="int" />
-		<socket name="max_bounce" ui_name="Max Bounce" value="12" type_name="int" />
-		<socket name="max_diffuse_bounce" ui_name="Max Diffuse Bounce" value="4" type_name="int" />
-		<socket name="max_glossy_bounce" ui_name="Max Glossy Bounce" value="4" type_name="int" />
-		<socket name="max_transmission_bounce" ui_name="Max Transmission Bounce" value="12" type_name="int" />
-		<socket name="max_volume_bounce" ui_name="Max Volume Bounce" value="0" type_name="int" />
-		<socket name="transparent_min_bounce" ui_name="Transparent Min Bounce" value="0" type_name="int" />
-		<socket name="transparent_max_bounce" ui_name="Transparent Max Bounce" value="8" type_name="int" />
-		<socket name="ao_bounces" ui_name="AO Bounces" value="0" type_name="int" />
-		<socket name="ao_factor" ui_name="AO Factor" value="0" type_name="float" />
-		<socket name="ao_distance" ui_name="AO Distance" value="10" type_name="float" />
-		<socket name="ao_additive_factor" ui_name="AO Additive Factor" value="0" type_name="float" />
-		<socket name="volume_max_steps" ui_name="Volume Max Steps" value="1024" type_name="int" />
-		<socket name="volume_step_rate" ui_name="Volume Step Rate" value="1" type_name="float" />
-		<socket name="use_guiding" ui_name="Guiding" value="false" type_name="boolean" />
-		<socket name="deterministic_guiding" ui_name="Deterministic Guiding" value="true" type_name="boolean" />
-		<socket name="use_surface_guiding" ui_name="Surface Guiding" value="true" type_name="boolean" />
-		<socket name="surface_guiding_probability" ui_name="Surface Guiding Probability" value="0.5" type_name="float" />
-		<socket name="use_volume_guiding" ui_name="Volume Guiding" value="true" type_name="boolean" />
-		<socket name="volume_guiding_probability" ui_name="Volume Guiding Probability" value="0.5" type_name="float" />
-		<socket name="guiding_training_samples" ui_name="Training Samples" value="128" type_name="int" />
-		<socket name="use_guiding_direct_light" ui_name="Guide Direct Light" value="true" type_name="boolean" />
-		<socket name="use_guiding_mis_weights" ui_name="Use MIS Weights" value="true" type_name="boolean" />
-		<socket name="guiding_distribution_type" ui_name="Guiding Distribution Type" value="PARALLAX_AWARE_VMM" type_name="enum" />
-		<socket name="guiding_directional_sampling_type" ui_name="Guiding Directional Sampling Type" value="RIS" type_name="enum" />
-		<socket name="guiding_roughness_threshold" ui_name="Guiding Roughness Threshold" value="0.05" type_name="float" />
-		<socket name="caustics_reflective" ui_name="Reflective Caustics" value="true" type_name="boolean" />
-		<socket name="caustics_refractive" ui_name="Refractive Caustics" value="true" type_name="boolean" />
-		<socket name="filter_glossy" ui_name="Filter Glossy" value="1" type_name="float" />
-		<socket name="use_direct_light" ui_name="Use Direct Light" value="true" type_name="boolean" />
-		<socket name="use_indirect_light" ui_name="Use Indirect Light" value="true" type_name="boolean" />
-		<socket name="use_diffuse" ui_name="Use Diffuse" value="true" type_name="boolean" />
-		<socket name="use_glossy" ui_name="Use Glossy" value="true" type_name="boolean" />
-		<socket name="use_transmission" ui_name="Use Transmission" value="true" type_name="boolean" />
-		<socket name="use_emission" ui_name="Use Emission" value="true" type_name="boolean" />
-		<socket name="seed" ui_name="Seed" value="0" type_name="int" />
-		<socket name="sample_clamp_direct" ui_name="Sample Clamp Direct" value="0" type_name="float" />
-		<socket name="sample_clamp_indirect" ui_name="Sample Clamp Indirect" value="10" type_name="float" />
-		<socket name="motion_blur" ui_name="Motion Blur" value="false" type_name="boolean" />
-		<socket name="aa_samples" ui_name="AA Samples" value="1" type_name="int" />
-		<socket name="start_sample" ui_name="Start Sample" value="0" type_name="int" />
-		<socket name="use_adaptive_sampling" ui_name="Use Adaptive Sampling" value="false" type_name="boolean" />
-		<socket name="adaptive_threshold" ui_name="Adaptive Threshold" value="0.01" type_name="float" />
-		<socket name="adaptive_min_samples" ui_name="Adaptive Min Samples" value="0" type_name="int" />
-		<socket name="use_light_tree" ui_name="Use light tree to optimize many light sampling" value="true" type_name="boolean" />
-		<socket name="light_sampling_threshold" ui_name="Light Sampling Threshold" value="0.01" type_name="float" />
-		<socket name="sampling_pattern" ui_name="Sampling Pattern" value="blue_noise_pure" type_name="enum" />
-		<socket name="scrambling_distance" ui_name="Scrambling Distance" value="1" type_name="float" />
-		<socket name="use_denoise" ui_name="Use Denoiser" value="false" type_name="boolean" />
-		<socket name="denoiser_type" ui_name="Denoiser Type" value="openimagedenoise" type_name="enum" />
-		<socket name="denoise_start_sample" ui_name="Start Sample to Denoise" value="0" type_name="int" />
-		<socket name="use_denoise_pass_albedo" ui_name="Use Albedo Pass for Denoiser" value="true" type_name="boolean" />
-		<socket name="use_denoise_pass_normal" ui_name="Use Normal Pass for Denoiser" value="true" type_name="boolean" />
-		<socket name="denoiser_prefilter" ui_name="Denoiser Prefilter" value="accurate" type_name="enum" />
-		<socket name="denoise_use_gpu" ui_name="Denoise on GPU" value="true" type_name="boolean" />
-		<socket name="denoiser_quality" ui_name="Denoiser Quality" value="high" type_name="enum" />
-	</integrator>
+	<shader name="default_surface" ui_name="default_surface">
+		<diffuse_bsdf name="2173916276608" ui_name="diffuse_bsdf" />
+		<geometry name="2173918409152" ui_name="geometry" />
+		<connect from_node="2173916276608" from_socket="BSDF" from_socket_ui="BSDF" to_node="output" to_socket="surface" to_socket_ui="Surface" />
+		<connect from_node="2173918409152" from_socket="normal" from_socket_ui="Normal" to_node="2173916276608" to_socket="normal" to_socket_ui="Normal" />
+	</shader>
+	<shader name="default_volume" ui_name="default_volume">
+		<principled_volume name="2174300902032" ui_name="principled_volume">
+			<socket name="density_attribute" ui_name="Density Attribute" value="density" type_name="string" />
+			<socket name="temperature_attribute" ui_name="Temperature Attribute" value="temperature" type_name="string" />
+		</principled_volume>
+		<connect from_node="2174300902032" from_socket="volume" from_socket_ui="Volume" to_node="output" to_socket="volume" to_socket_ui="Volume" />
+	</shader>
+	<shader name="default_light" ui_name="default_light" />
+	<shader name="default_background" ui_name="default_background">
+		<socket name="volume_sampling_method" ui_name="Volume Sampling Method" value="equiangular" type_name="enum" />
+		<background_shader name="2173800864656" ui_name="Background">
+			<socket name="color" ui_name="Color" value="0.0508761 0.0508761 0.0508761 0" type_name="color" />
+		</background_shader>
+		<connect from_node="2173800864656" from_socket="background" from_socket_ui="Background" to_node="output" to_socket="surface" to_socket_ui="Surface" />
+	</shader>
+	<shader name="default_empty" ui_name="default_empty" />
+	<shader name="2173859330688" ui_name="shader">
+		<emission name="2173800855248" ui_name="emission">
+			<socket name="color" ui_name="Color" value="1 1 1 0" type_name="color" />
+			<socket name="strength" ui_name="Strength" value="1" type_name="float" />
+		</emission>
+		<connect from_node="2173800855248" from_socket="emission" from_socket_ui="Emission" to_node="output" to_socket="surface" to_socket_ui="Surface" />
+	</shader>
+	<shader name="2173859327344" ui_name="Material">
+		<principled_bsdf name="2174296998192" ui_name="Principled BSDF">
+			<socket name="ior" ui_name="IOR" value="1.45" type_name="float" />
+			<socket name="subsurface_scale" ui_name="Subsurface Scale" value="0.05" type_name="float" />
+			<socket name="subsurface_radius" ui_name="Subsurface Radius" value="1 0.2 0.1 -1.07374e+08" type_name="vector" />
+			<socket name="specular_ior_level" ui_name="Specular IOR Level" value="0.5" type_name="float" />
+			<socket name="thin_film_ior" ui_name="Thin Film IOR" value="1.33" type_name="float" />
+		</principled_bsdf>
+		<geometry name="2173918403776" ui_name="geometry" />
+		<connect from_node="2174296998192" from_socket="BSDF" from_socket_ui="BSDF" to_node="output" to_socket="surface" to_socket_ui="Surface" />
+		<connect from_node="2173918403776" from_socket="normal" from_socket_ui="Normal" to_node="2174296998192" to_socket="normal" to_socket_ui="Normal" />
+		<connect from_node="2173918403776" from_socket="normal" from_socket_ui="Normal" to_node="2174296998192" to_socket="coat_normal" to_socket_ui="Coat Normal" />
+		<connect from_node="2173918403776" from_socket="tangent" from_socket_ui="Tangent" to_node="2174296998192" to_socket="tangent" to_socket_ui="Tangent" />
+	</shader>
 	<camera name="camera" ui_name="camera">
 		<socket name="shuttertime" ui_name="Shutter Time" value="0.5" type_name="float" />
-		<socket name="motion_position" ui_name="Motion Position" value="center" type_name="enum" />
-		<socket name="rolling_shutter_type" ui_name="Rolling Shutter Type" value="none" type_name="enum" />
-		<socket name="rolling_shutter_duration" ui_name="Rolling Shutter Duration" value="0.1" type_name="float" />
 		<socket name="shutter_curve" ui_name="Shutter Curve" value="0" type_name="array_float" />
-		<socket name="aperturesize" ui_name="Aperture Size" value="0" type_name="float" />
 		<socket name="focaldistance" ui_name="Focal Distance" value="0" type_name="float" />
-		<socket name="blades" ui_name="Blades" value="0" type_name="uint" />
-		<socket name="bladesrotation" ui_name="Blades Rotation" value="0" type_name="float" />
 		<socket name="matrix" ui_name="Matrix" value="0.685921 -0.324013 -0.651558 7.35889 0.727676 0.305421 0.61417 -6.92579 0 0.895396 -0.445271 4.95831" type_name="transform" />
 		<socket name="motion" ui_name="Motion" value="1036" type_name="array_transform" />
-		<socket name="aperture_ratio" ui_name="Aperture Ratio" value="1" type_name="float" />
-		<socket name="camera_type" ui_name="Type" value="perspective" type_name="enum" />
 		<socket name="panorama_type" ui_name="Panorama Type" value="fisheye_equisolid" type_name="enum" />
-		<socket name="fisheye_fov" ui_name="Fisheye FOV" value="3.14159" type_name="float" />
-		<socket name="fisheye_lens" ui_name="Fisheye Lens" value="10.5" type_name="float" />
-		<socket name="latitude_min" ui_name="Latitude Min" value="-1.5708" type_name="float" />
-		<socket name="latitude_max" ui_name="Latitude Max" value="1.5708" type_name="float" />
-		<socket name="longitude_min" ui_name="Longitude Min" value="-3.14159" type_name="float" />
-		<socket name="longitude_max" ui_name="Longitude Max" value="3.14159" type_name="float" />
 		<socket name="fov" ui_name="FOV" value="0.399596" type_name="float" />
 		<socket name="fov_pre" ui_name="FOV Pre" value="0.399596" type_name="float" />
 		<socket name="fov_post" ui_name="FOV Post" value="0.399596" type_name="float" />
@@ -101,307 +58,117 @@
 		<socket name="fisheye_polynomial_k2" ui_name="Fisheye Polynomial K2" value="-3.35253e-06" type_name="float" />
 		<socket name="fisheye_polynomial_k3" ui_name="Fisheye Polynomial K3" value="3.09928e-06" type_name="float" />
 		<socket name="fisheye_polynomial_k4" ui_name="Fisheye Polynomial K4" value="-2.60646e-08" type_name="float" />
-		<socket name="stereo_eye" ui_name="Stereo Eye" value="none" type_name="enum" />
-		<socket name="use_spherical_stereo" ui_name="Use Spherical Stereo" value="false" type_name="boolean" />
-		<socket name="interocular_distance" ui_name="Interocular Distance" value="0.065" type_name="float" />
-		<socket name="convergence_distance" ui_name="Convergence Distance" value="1.95" type_name="float" />
-		<socket name="use_pole_merge" ui_name="Use Pole Merge" value="false" type_name="boolean" />
-		<socket name="pole_merge_angle_from" ui_name="Pole Merge Angle From" value="1.0472" type_name="float" />
-		<socket name="pole_merge_angle_to" ui_name="Pole Merge Angle To" value="1.309" type_name="float" />
-		<socket name="sensorwidth" ui_name="Sensor Width" value="0.036" type_name="float" />
-		<socket name="sensorheight" ui_name="Sensor Height" value="0.024" type_name="float" />
 		<socket name="nearclip" ui_name="Near Clip" value="0.1" type_name="float" />
 		<socket name="farclip" ui_name="Far Clip" value="100" type_name="float" />
 		<socket name="viewplane.left" ui_name="Viewplane Left" value="-1.77778" type_name="float" />
 		<socket name="viewplane.right" ui_name="Viewplane Right" value="1.77778" type_name="float" />
 		<socket name="viewplane.bottom" ui_name="Viewplane Bottom" value="-1" type_name="float" />
 		<socket name="viewplane.top" ui_name="Viewplane Top" value="1" type_name="float" />
-		<socket name="border.left" ui_name="Border Left" value="0" type_name="float" />
 		<socket name="border.right" ui_name="Border Right" value="1" type_name="float" />
-		<socket name="border.bottom" ui_name="Border Bottom" value="0" type_name="float" />
 		<socket name="border.top" ui_name="Border Top" value="1" type_name="float" />
-		<socket name="viewport_camera_border.left" ui_name="Viewport Border Left" value="0" type_name="float" />
 		<socket name="viewport_camera_border.right" ui_name="Viewport Border Right" value="1" type_name="float" />
-		<socket name="viewport_camera_border.bottom" ui_name="Viewport Border Bottom" value="0" type_name="float" />
 		<socket name="viewport_camera_border.top" ui_name="Viewport Border Top" value="1" type_name="float" />
 		<socket name="offscreen_dicing_scale" ui_name="Offscreen Dicing Scale" value="4" type_name="float" />
 		<socket name="full_width" ui_name="Full Width" value="1920" type_name="int" />
 		<socket name="full_height" ui_name="Full Height" value="1080" type_name="int" />
-		<socket name="use_perspective_motion" ui_name="Use Perspective Motion" value="false" type_name="boolean" />
 	</camera>
+	<camera name="dicing_camera" ui_name="camera">
+		<socket name="shuttertime" ui_name="Shutter Time" value="0.5" type_name="float" />
+		<socket name="shutter_curve" ui_name="Shutter Curve" value="1188" type_name="array_float" />
+		<socket name="focaldistance" ui_name="Focal Distance" value="0" type_name="float" />
+		<socket name="matrix" ui_name="Matrix" value="0.685921 -0.324013 -0.651558 7.35889 0.727676 0.305421 0.61417 -6.92579 0 0.895396 -0.445271 4.95831" type_name="transform" />
+		<socket name="motion" ui_name="Motion" value="2224" type_name="array_transform" />
+		<socket name="panorama_type" ui_name="Panorama Type" value="fisheye_equisolid" type_name="enum" />
+		<socket name="fov" ui_name="FOV" value="0.399596" type_name="float" />
+		<socket name="fov_pre" ui_name="FOV Pre" value="0.399596" type_name="float" />
+		<socket name="fov_post" ui_name="FOV Post" value="0.399596" type_name="float" />
+		<socket name="fisheye_polynomial_k0" ui_name="Fisheye Polynomial K0" value="-1.17351e-05" type_name="float" />
+		<socket name="fisheye_polynomial_k1" ui_name="Fisheye Polynomial K1" value="-0.0199887" type_name="float" />
+		<socket name="fisheye_polynomial_k2" ui_name="Fisheye Polynomial K2" value="-3.35253e-06" type_name="float" />
+		<socket name="fisheye_polynomial_k3" ui_name="Fisheye Polynomial K3" value="3.09928e-06" type_name="float" />
+		<socket name="fisheye_polynomial_k4" ui_name="Fisheye Polynomial K4" value="-2.60646e-08" type_name="float" />
+		<socket name="nearclip" ui_name="Near Clip" value="0.1" type_name="float" />
+		<socket name="farclip" ui_name="Far Clip" value="100" type_name="float" />
+		<socket name="viewplane.left" ui_name="Viewplane Left" value="-1.77778" type_name="float" />
+		<socket name="viewplane.right" ui_name="Viewplane Right" value="1.77778" type_name="float" />
+		<socket name="viewplane.bottom" ui_name="Viewplane Bottom" value="-1" type_name="float" />
+		<socket name="viewplane.top" ui_name="Viewplane Top" value="1" type_name="float" />
+		<socket name="border.right" ui_name="Border Right" value="1" type_name="float" />
+		<socket name="border.top" ui_name="Border Top" value="1" type_name="float" />
+		<socket name="viewport_camera_border.right" ui_name="Viewport Border Right" value="1" type_name="float" />
+		<socket name="viewport_camera_border.top" ui_name="Viewport Border Top" value="1" type_name="float" />
+		<socket name="offscreen_dicing_scale" ui_name="Offscreen Dicing Scale" value="4" type_name="float" />
+		<socket name="full_width" ui_name="Full Width" value="1920" type_name="int" />
+		<socket name="full_height" ui_name="Full Height" value="1080" type_name="int" />
+	</camera>
+	<film name="film" ui_name="film">
+		<socket name="pass_alpha_threshold" ui_name="Pass Alpha Threshold" value="0.5" type_name="float" />
+		<socket name="filter_type" ui_name="Filter Type" value="blackman_harris" type_name="enum" />
+		<socket name="filter_width" ui_name="Filter Width" value="1.5" type_name="float" />
+		<socket name="mist_start" ui_name="Mist Start" value="5" type_name="float" />
+		<socket name="mist_depth" ui_name="Mist Depth" value="25" type_name="float" />
+		<socket name="mist_falloff" ui_name="Mist Falloff" value="2" type_name="float" />
+		<socket name="cryptomatte_depth" ui_name="Cryptomatte Depth" value="3" type_name="int" />
+		<socket name="use_approximate_shadow_catcher" ui_name="Use Approximate Shadow Catcher" value="true" type_name="boolean" />
+	</film>
 	<background name="background" ui_name="background">
-		<socket name="use_shader" ui_name="Use Shader" value="true" type_name="boolean" />
 		<socket name="visibility" ui_name="Visibility" value="157" type_name="uint" />
-		<socket name="transparent" ui_name="Transparent" value="false" type_name="boolean" />
-		<socket name="transparent_glass" ui_name="Transparent Glass" value="false" type_name="boolean" />
-		<socket name="transparent_roughness_threshold" ui_name="Transparent Roughness Threshold" value="0" type_name="float" />
-		<socket name="volume_step_size" ui_name="Volume Step Size" value="0.1" type_name="float" />
 	</background>
-	<shader name="default_surface" ui_name="default_surface">
-		<socket name="emission_sampling_method" ui_name="Emission Sampling Method" value="auto" type_name="enum" />
-		<socket name="use_transparent_shadow" ui_name="Use Transparent Shadow" value="true" type_name="boolean" />
-		<socket name="use_bump_map_correction" ui_name="Bump Map Correction" value="true" type_name="boolean" />
-		<socket name="heterogeneous_volume" ui_name="Heterogeneous Volume" value="true" type_name="boolean" />
-		<socket name="volume_sampling_method" ui_name="Volume Sampling Method" value="multiple_importance" type_name="enum" />
-		<socket name="volume_interpolation_method" ui_name="Volume Interpolation Method" value="linear" type_name="enum" />
-		<socket name="volume_step_rate" ui_name="Volume Step Rate" value="1" type_name="float" />
-		<socket name="displacement_method" ui_name="Displacement Method" value="bump" type_name="enum" />
-		<socket name="pass_id" ui_name="Pass ID" value="0" type_name="int" />
-		<diffuse_bsdf name="1946627432192" ui_name="diffuse_bsdf">
-			<socket name="color" ui_name="Color" value="0.8 0.8 0.8 0" type_name="color" />
-			<socket name="normal" ui_name="Normal" value="0 0 0 0" type_name="normal" />
-			<socket name="roughness" ui_name="Roughness" value="0" type_name="float" />
-		</diffuse_bsdf>
-		<geometry name="1946820804496" ui_name="geometry" />
-		<connect from_node="1946627432192" from_socket="BSDF" from_socket_ui="BSDF" to_node="output" to_socket="surface" to_socket_ui="Surface" />
-		<connect from_node="1946820804496" from_socket="normal" from_socket_ui="Normal" to_node="1946627432192" to_socket="normal" to_socket_ui="Normal" />
-	</shader>
-	<shader name="default_volume" ui_name="default_volume">
-		<socket name="emission_sampling_method" ui_name="Emission Sampling Method" value="auto" type_name="enum" />
-		<socket name="use_transparent_shadow" ui_name="Use Transparent Shadow" value="true" type_name="boolean" />
-		<socket name="use_bump_map_correction" ui_name="Bump Map Correction" value="true" type_name="boolean" />
-		<socket name="heterogeneous_volume" ui_name="Heterogeneous Volume" value="true" type_name="boolean" />
-		<socket name="volume_sampling_method" ui_name="Volume Sampling Method" value="multiple_importance" type_name="enum" />
-		<socket name="volume_interpolation_method" ui_name="Volume Interpolation Method" value="linear" type_name="enum" />
-		<socket name="volume_step_rate" ui_name="Volume Step Rate" value="1" type_name="float" />
-		<socket name="displacement_method" ui_name="Displacement Method" value="bump" type_name="enum" />
-		<socket name="pass_id" ui_name="Pass ID" value="0" type_name="int" />
-		<principled_volume name="1946493278528" ui_name="principled_volume">
-			<socket name="density_attribute" ui_name="Density Attribute" value="density" type_name="string" />
-			<socket name="temperature_attribute" ui_name="Temperature Attribute" value="temperature" type_name="string" />
-			<socket name="color" ui_name="Color" value="0.5 0.5 0.5 0" type_name="color" />
-			<socket name="density" ui_name="Density" value="1" type_name="float" />
-			<socket name="anisotropy" ui_name="Anisotropy" value="0" type_name="float" />
-			<socket name="absorption_color" ui_name="Absorption Color" value="0 0 0 0" type_name="color" />
-			<socket name="emission_strength" ui_name="Emission Strength" value="0" type_name="float" />
-			<socket name="emission_color" ui_name="Emission Color" value="1 1 1 0" type_name="color" />
-			<socket name="blackbody_intensity" ui_name="Blackbody Intensity" value="0" type_name="float" />
-			<socket name="blackbody_tint" ui_name="Blackbody Tint" value="1 1 1 0" type_name="color" />
-			<socket name="temperature" ui_name="Temperature" value="1000" type_name="float" />
-		</principled_volume>
-		<connect from_node="1946493278528" from_socket="volume" from_socket_ui="Volume" to_node="output" to_socket="volume" to_socket_ui="Volume" />
-	</shader>
-	<shader name="default_light" ui_name="default_light">
-		<socket name="emission_sampling_method" ui_name="Emission Sampling Method" value="auto" type_name="enum" />
-		<socket name="use_transparent_shadow" ui_name="Use Transparent Shadow" value="true" type_name="boolean" />
-		<socket name="use_bump_map_correction" ui_name="Bump Map Correction" value="true" type_name="boolean" />
-		<socket name="heterogeneous_volume" ui_name="Heterogeneous Volume" value="true" type_name="boolean" />
-		<socket name="volume_sampling_method" ui_name="Volume Sampling Method" value="multiple_importance" type_name="enum" />
-		<socket name="volume_interpolation_method" ui_name="Volume Interpolation Method" value="linear" type_name="enum" />
-		<socket name="volume_step_rate" ui_name="Volume Step Rate" value="1" type_name="float" />
-		<socket name="displacement_method" ui_name="Displacement Method" value="bump" type_name="enum" />
-		<socket name="pass_id" ui_name="Pass ID" value="0" type_name="int" />
-	</shader>
-	<shader name="default_background" ui_name="default_background">
-		<socket name="emission_sampling_method" ui_name="Emission Sampling Method" value="auto" type_name="enum" />
-		<socket name="use_transparent_shadow" ui_name="Use Transparent Shadow" value="true" type_name="boolean" />
-		<socket name="use_bump_map_correction" ui_name="Bump Map Correction" value="true" type_name="boolean" />
-		<socket name="heterogeneous_volume" ui_name="Heterogeneous Volume" value="true" type_name="boolean" />
-		<socket name="volume_sampling_method" ui_name="Volume Sampling Method" value="equiangular" type_name="enum" />
-		<socket name="volume_interpolation_method" ui_name="Volume Interpolation Method" value="linear" type_name="enum" />
-		<socket name="volume_step_rate" ui_name="Volume Step Rate" value="1" type_name="float" />
-		<socket name="displacement_method" ui_name="Displacement Method" value="bump" type_name="enum" />
-		<socket name="pass_id" ui_name="Pass ID" value="0" type_name="int" />
-		<background_shader name="1946493636896" ui_name="Background">
-			<socket name="color" ui_name="Color" value="0.0508761 0.0508761 0.0508761 0" type_name="color" />
-			<socket name="strength" ui_name="Strength" value="1" type_name="float" />
-		</background_shader>
-		<connect from_node="1946493636896" from_socket="background" from_socket_ui="Background" to_node="output" to_socket="surface" to_socket_ui="Surface" />
-	</shader>
-	<shader name="default_empty" ui_name="default_empty">
-		<socket name="emission_sampling_method" ui_name="Emission Sampling Method" value="auto" type_name="enum" />
-		<socket name="use_transparent_shadow" ui_name="Use Transparent Shadow" value="true" type_name="boolean" />
-		<socket name="use_bump_map_correction" ui_name="Bump Map Correction" value="true" type_name="boolean" />
-		<socket name="heterogeneous_volume" ui_name="Heterogeneous Volume" value="true" type_name="boolean" />
-		<socket name="volume_sampling_method" ui_name="Volume Sampling Method" value="multiple_importance" type_name="enum" />
-		<socket name="volume_interpolation_method" ui_name="Volume Interpolation Method" value="linear" type_name="enum" />
-		<socket name="volume_step_rate" ui_name="Volume Step Rate" value="1" type_name="float" />
-		<socket name="displacement_method" ui_name="Displacement Method" value="bump" type_name="enum" />
-		<socket name="pass_id" ui_name="Pass ID" value="0" type_name="int" />
-	</shader>
-	<shader name="1946493495552" ui_name="shader">
-		<socket name="emission_sampling_method" ui_name="Emission Sampling Method" value="auto" type_name="enum" />
-		<socket name="use_transparent_shadow" ui_name="Use Transparent Shadow" value="true" type_name="boolean" />
-		<socket name="use_bump_map_correction" ui_name="Bump Map Correction" value="true" type_name="boolean" />
-		<socket name="heterogeneous_volume" ui_name="Heterogeneous Volume" value="true" type_name="boolean" />
-		<socket name="volume_sampling_method" ui_name="Volume Sampling Method" value="multiple_importance" type_name="enum" />
-		<socket name="volume_interpolation_method" ui_name="Volume Interpolation Method" value="linear" type_name="enum" />
-		<socket name="volume_step_rate" ui_name="Volume Step Rate" value="1" type_name="float" />
-		<socket name="displacement_method" ui_name="Displacement Method" value="bump" type_name="enum" />
-		<socket name="pass_id" ui_name="Pass ID" value="0" type_name="int" />
-		<emission name="1946493636256" ui_name="emission">
-			<socket name="color" ui_name="Color" value="1 1 1 0" type_name="color" />
-			<socket name="strength" ui_name="Strength" value="1" type_name="float" />
-		</emission>
-		<connect from_node="1946493636256" from_socket="emission" from_socket_ui="Emission" to_node="output" to_socket="surface" to_socket_ui="Surface" />
-	</shader>
-	<shader name="1946493495296" ui_name="Material">
-		<socket name="emission_sampling_method" ui_name="Emission Sampling Method" value="auto" type_name="enum" />
-		<socket name="use_transparent_shadow" ui_name="Use Transparent Shadow" value="false" type_name="boolean" />
-		<socket name="use_bump_map_correction" ui_name="Bump Map Correction" value="true" type_name="boolean" />
-		<socket name="heterogeneous_volume" ui_name="Heterogeneous Volume" value="true" type_name="boolean" />
-		<socket name="volume_sampling_method" ui_name="Volume Sampling Method" value="multiple_importance" type_name="enum" />
-		<socket name="volume_interpolation_method" ui_name="Volume Interpolation Method" value="linear" type_name="enum" />
-		<socket name="volume_step_rate" ui_name="Volume Step Rate" value="1" type_name="float" />
-		<socket name="displacement_method" ui_name="Displacement Method" value="bump" type_name="enum" />
-		<socket name="pass_id" ui_name="Pass ID" value="0" type_name="int" />
-		<principled_bsdf name="1946493418176" ui_name="Principled BSDF">
-			<socket name="distribution" ui_name="Distribution" value="multi_ggx" type_name="enum" />
-			<socket name="subsurface_method" ui_name="Subsurface Method" value="random_walk" type_name="enum" />
-			<socket name="base_color" ui_name="Base Color" value="0.8 0.8 0.8 0" type_name="color" />
-			<socket name="metallic" ui_name="Metallic" value="0" type_name="float" />
-			<socket name="roughness" ui_name="Roughness" value="0.5" type_name="float" />
-			<socket name="ior" ui_name="IOR" value="1.45" type_name="float" />
-			<socket name="alpha" ui_name="Alpha" value="1" type_name="float" />
-			<socket name="normal" ui_name="Normal" value="0 0 0 0" type_name="normal" />
-			<socket name="subsurface_weight" ui_name="Subsurface Weight" value="0" type_name="float" />
-			<socket name="subsurface_scale" ui_name="Subsurface Scale" value="0.05" type_name="float" />
-			<socket name="subsurface_radius" ui_name="Subsurface Radius" value="1 0.2 0.1 0" type_name="vector" />
-			<socket name="subsurface_ior" ui_name="Subsurface IOR" value="1.4" type_name="float" />
-			<socket name="subsurface_anisotropy" ui_name="Subsurface Anisotropy" value="0" type_name="float" />
-			<socket name="specular_ior_level" ui_name="Specular IOR Level" value="0.5" type_name="float" />
-			<socket name="specular_tint" ui_name="Specular Tint" value="1 1 1 0" type_name="color" />
-			<socket name="anisotropic" ui_name="Anisotropic" value="0" type_name="float" />
-			<socket name="anisotropic_rotation" ui_name="Anisotropic Rotation" value="0" type_name="float" />
-			<socket name="tangent" ui_name="Tangent" value="0 0 0 0" type_name="normal" />
-			<socket name="transmission_weight" ui_name="Transmission Weight" value="0" type_name="float" />
-			<socket name="sheen_weight" ui_name="Sheen Weight" value="0" type_name="float" />
-			<socket name="sheen_roughness" ui_name="Sheen Roughness" value="0.5" type_name="float" />
-			<socket name="sheen_tint" ui_name="Sheen Tint" value="1 1 1 0" type_name="color" />
-			<socket name="coat_weight" ui_name="Coat Weight" value="0" type_name="float" />
-			<socket name="coat_roughness" ui_name="Coat Roughness" value="0.03" type_name="float" />
-			<socket name="coat_ior" ui_name="Coat IOR" value="1.5" type_name="float" />
-			<socket name="coat_tint" ui_name="Coat Tint" value="1 1 1 0" type_name="color" />
-			<socket name="coat_normal" ui_name="Coat Normal" value="0 0 0 0" type_name="normal" />
-			<socket name="emission_color" ui_name="Emission Color" value="1 1 1 0" type_name="color" />
-			<socket name="emission_strength" ui_name="Emission Strength" value="0" type_name="float" />
-			<socket name="thin_film_thickness" ui_name="Thin Film Thickness" value="0" type_name="float" />
-			<socket name="thin_film_ior" ui_name="Thin Film IOR" value="1.33" type_name="float" />
-		</principled_bsdf>
-		<geometry name="1946493434896" ui_name="geometry" />
-		<connect from_node="1946493418176" from_socket="BSDF" from_socket_ui="BSDF" to_node="output" to_socket="surface" to_socket_ui="Surface" />
-		<connect from_node="1946493434896" from_socket="normal" from_socket_ui="Normal" to_node="1946493418176" to_socket="normal" to_socket_ui="Normal" />
-		<connect from_node="1946493434896" from_socket="normal" from_socket_ui="Normal" to_node="1946493418176" to_socket="coat_normal" to_socket_ui="Coat Normal" />
-		<connect from_node="1946493434896" from_socket="tangent" from_socket_ui="Tangent" to_node="1946493418176" to_socket="tangent" to_socket_ui="Tangent" />
-	</shader>
-	<light name="1946493495040" ui_name="Light">
-		<socket name="light_type" ui_name="Type" value="point" type_name="enum" />
+	<integrator name="integrator" ui_name="integrator">
+		<socket name="max_bounce" ui_name="Max Bounce" value="12" type_name="int" />
+		<socket name="max_diffuse_bounce" ui_name="Max Diffuse Bounce" value="4" type_name="int" />
+		<socket name="max_glossy_bounce" ui_name="Max Glossy Bounce" value="4" type_name="int" />
+		<socket name="max_transmission_bounce" ui_name="Max Transmission Bounce" value="12" type_name="int" />
+		<socket name="max_volume_bounce" ui_name="Max Volume Bounce" value="0" type_name="int" />
+		<socket name="transparent_max_bounce" ui_name="Transparent Max Bounce" value="8" type_name="int" />
+		<socket name="ao_distance" ui_name="AO Distance" value="10" type_name="float" />
+		<socket name="filter_glossy" ui_name="Filter Glossy" value="1" type_name="float" />
+		<socket name="aa_samples" ui_name="AA Samples" value="1" type_name="int" />
+		<socket name="sample_subset_length" ui_name="Sample Subset Length" value="2048" type_name="int" />
+		<socket name="use_adaptive_sampling" ui_name="Use Adaptive Sampling" value="false" type_name="boolean" />
+		<socket name="light_sampling_threshold" ui_name="Light Sampling Threshold" value="0.01" type_name="float" />
+		<socket name="sampling_pattern" ui_name="Sampling Pattern" value="blue_noise_pure" type_name="enum" />
+	</integrator>
+	<mesh name="2174300853328" ui_name="Cube" geometry_type="0">
+		<socket name="used_shaders" ui_name="Shaders" value="2173859327344" type_name="array_node" />
+		<socket name="triangles" ui_name="Triangles" value="2376" type_name="array_int" />
+		<socket name="verts" ui_name="Vertices" value="2528" type_name="array_point" />
+		<socket name="shader" ui_name="Shader" value="2664" type_name="array_int" />
+		<socket name="smooth" ui_name="Smooth" value="2720" type_name="array_boolean" />
+		<attribute name="N" std="ATTR_STD_VERTEX_NORMAL" type="normal" element="ATTR_ELEMENT_VERTEX" flags="0" buffer="2740" />
+		<attribute name="generated" std="ATTR_STD_GENERATED" type="point" element="ATTR_ELEMENT_VERTEX" flags="0" buffer="2876" />
+	</mesh>
+	<light name="2173890807280" ui_name="Light" geometry_type="4">
+		<socket name="used_shaders" ui_name="Shaders" value="2173859330688" type_name="array_node" />
 		<socket name="strength" ui_name="Strength" value="1000 1000 1000 0" type_name="color" />
 		<socket name="size" ui_name="Size" value="0.1" type_name="float" />
-		<socket name="angle" ui_name="Angle" value="0" type_name="float" />
-		<socket name="sizeu" ui_name="Size U" value="1" type_name="float" />
-		<socket name="sizev" ui_name="Size V" value="1" type_name="float" />
-		<socket name="ellipse" ui_name="Ellipse" value="false" type_name="boolean" />
-		<socket name="spread" ui_name="Spread" value="3.14159" type_name="float" />
-		<socket name="map_resolution" ui_name="Map Resolution" value="0" type_name="int" />
-		<socket name="average_radiance" ui_name="Average Radiance" value="0" type_name="float" />
 		<socket name="is_sphere" ui_name="Is Sphere" value="false" type_name="boolean" />
-		<socket name="spot_angle" ui_name="Spot Angle" value="0.785398" type_name="float" />
-		<socket name="spot_smooth" ui_name="Spot Smooth" value="0" type_name="float" />
-		<socket name="tfm" ui_name="Transform" value="-0.290865 -0.771101 0.566393 4.07625 0.955171 -0.199883 0.218391 1.00545 -0.0551891 0.604525 0.794672 5.90386" type_name="transform" />
-		<socket name="cast_shadow" ui_name="Cast Shadow" value="true" type_name="boolean" />
 		<socket name="use_mis" ui_name="Use Mis" value="true" type_name="boolean" />
-		<socket name="use_camera" ui_name="Use Camera" value="false" type_name="boolean" />
-		<socket name="use_diffuse" ui_name="Use Diffuse" value="true" type_name="boolean" />
-		<socket name="use_glossy" ui_name="Use Glossy" value="true" type_name="boolean" />
-		<socket name="use_transmission" ui_name="Use Transmission" value="true" type_name="boolean" />
-		<socket name="use_scatter" ui_name="Use Scatter" value="true" type_name="boolean" />
-		<socket name="use_caustics" ui_name="Shadow Caustics" value="false" type_name="boolean" />
-		<socket name="max_bounces" ui_name="Max Bounces" value="1024" type_name="int" />
-		<socket name="random_id" ui_name="Random ID" value="387061666" type_name="uint" />
-		<socket name="is_shadow_catcher" ui_name="Shadow Catcher" value="true" type_name="boolean" />
-		<socket name="is_portal" ui_name="Is Portal" value="false" type_name="boolean" />
-		<socket name="is_enabled" ui_name="Is Enabled" value="true" type_name="boolean" />
-		<socket name="shader" ui_name="Shader" value="1946493495552" type_name="node" />
-		<socket name="light_set_membership" ui_name="Light Set Membership" value="18446744073709551615" type_name="uint64" />
-		<socket name="shadow_set_membership" ui_name="Shadow Set Membership" value="18446744073709551615" type_name="uint64" />
-		<socket name="normalize" ui_name="Normalize" value="true" type_name="boolean" />
 	</light>
-	<light name="1946493494784" ui_name="light">
+	<light name="2173890793456" ui_name="light" geometry_type="4">
+		<socket name="used_shaders" ui_name="Shaders" value="default_background" type_name="array_node" />
 		<socket name="light_type" ui_name="Type" value="background" type_name="enum" />
-		<socket name="strength" ui_name="Strength" value="1 1 1 0" type_name="color" />
-		<socket name="size" ui_name="Size" value="0" type_name="float" />
-		<socket name="angle" ui_name="Angle" value="0" type_name="float" />
-		<socket name="sizeu" ui_name="Size U" value="1" type_name="float" />
-		<socket name="sizev" ui_name="Size V" value="1" type_name="float" />
-		<socket name="ellipse" ui_name="Ellipse" value="false" type_name="boolean" />
-		<socket name="spread" ui_name="Spread" value="3.14159" type_name="float" />
-		<socket name="map_resolution" ui_name="Map Resolution" value="0" type_name="int" />
-		<socket name="average_radiance" ui_name="Average Radiance" value="0" type_name="float" />
-		<socket name="is_sphere" ui_name="Is Sphere" value="true" type_name="boolean" />
-		<socket name="spot_angle" ui_name="Spot Angle" value="0.785398" type_name="float" />
-		<socket name="spot_smooth" ui_name="Spot Smooth" value="0" type_name="float" />
-		<socket name="tfm" ui_name="Transform" value="1 0 0 0 0 1 0 0 0 0 1 0" type_name="transform" />
-		<socket name="cast_shadow" ui_name="Cast Shadow" value="true" type_name="boolean" />
 		<socket name="use_mis" ui_name="Use Mis" value="true" type_name="boolean" />
-		<socket name="use_camera" ui_name="Use Camera" value="true" type_name="boolean" />
-		<socket name="use_diffuse" ui_name="Use Diffuse" value="true" type_name="boolean" />
-		<socket name="use_glossy" ui_name="Use Glossy" value="true" type_name="boolean" />
-		<socket name="use_transmission" ui_name="Use Transmission" value="true" type_name="boolean" />
-		<socket name="use_scatter" ui_name="Use Scatter" value="true" type_name="boolean" />
-		<socket name="use_caustics" ui_name="Shadow Caustics" value="false" type_name="boolean" />
-		<socket name="max_bounces" ui_name="Max Bounces" value="1024" type_name="int" />
-		<socket name="random_id" ui_name="Random ID" value="0" type_name="uint" />
-		<socket name="is_shadow_catcher" ui_name="Shadow Catcher" value="true" type_name="boolean" />
-		<socket name="is_portal" ui_name="Is Portal" value="false" type_name="boolean" />
 		<socket name="is_enabled" ui_name="Is Enabled" value="false" type_name="boolean" />
-		<socket name="shader" ui_name="Shader" value="default_background" type_name="node" />
-		<socket name="light_set_membership" ui_name="Light Set Membership" value="18446744073709551615" type_name="uint64" />
-		<socket name="shadow_set_membership" ui_name="Shadow Set Membership" value="18446744073709551615" type_name="uint64" />
-		<socket name="normalize" ui_name="Normalize" value="true" type_name="boolean" />
 	</light>
-	<mesh name="1946493264896" ui_name="Cube" geometry_type="0">
-		<socket name="motion_steps" ui_name="Motion Steps" value="0" type_name="uint" />
-		<socket name="use_motion_blur" ui_name="Use Motion Blur" value="false" type_name="boolean" />
-		<socket name="used_shaders" ui_name="Shaders" value="1946493495296" type_name="array_node" />
-		<socket name="triangles" ui_name="Triangles" value="1188" type_name="array_int" />
-		<socket name="verts" ui_name="Vertices" value="1340" type_name="array_point" />
-		<socket name="shader" ui_name="Shader" value="1476" type_name="array_int" />
-		<socket name="smooth" ui_name="Smooth" value="1532" type_name="array_boolean" />
-		<socket name="triangle_patch" ui_name="Triangle Patch" value="1552" type_name="array_int" />
-		<socket name="vert_patch_uv" ui_name="Patch UVs" value="1560" type_name="array_point2" />
-		<socket name="subdivision_type" ui_name="Subdivision Type" value="none" type_name="enum" />
-		<socket name="subd_vert_creases" ui_name="Subdivision Vertex Crease" value="1568" type_name="array_int" />
-		<socket name="subd_vert_creases_weight" ui_name="Subdivision Vertex Crease Weights" value="1576" type_name="array_float" />
-		<socket name="subd_creases_edge" ui_name="Subdivision Crease Edges" value="1584" type_name="array_int" />
-		<socket name="subd_creases_weight" ui_name="Subdivision Crease Weights" value="1592" type_name="array_float" />
-		<socket name="subd_face_corners" ui_name="Subdivision Face Corners" value="1600" type_name="array_int" />
-		<socket name="subd_start_corner" ui_name="Subdivision Face Start Corner" value="1608" type_name="array_int" />
-		<socket name="subd_num_corners" ui_name="Subdivision Face Corner Count" value="1616" type_name="array_int" />
-		<socket name="subd_shader" ui_name="Subdivision Face Shader" value="1624" type_name="array_int" />
-		<socket name="subd_smooth" ui_name="Subdivision Face Smooth" value="1632" type_name="array_boolean" />
-		<socket name="subd_ptex_offset" ui_name="Subdivision Face PTex Offset" value="1640" type_name="array_int" />
-		<socket name="num_ngons" ui_name="NGons Number" value="0" type_name="int" />
-		<socket name="subd_dicing_rate" ui_name="Subdivision Dicing Rate" value="1" type_name="float" />
-		<socket name="subd_max_level" ui_name="Max Subdivision Level" value="1" type_name="int" />
-		<socket name="subd_objecttoworld" ui_name="Subdivision Object Transform" value="1 0 0 0 0 1 0 0 0 0 1 0" type_name="transform" />
-		<attribute name="N" std="1" basetype="11" aggregate="3" vecsemantics="4" reserved="0" arraylen="0" element="8" flags="0" buffer="1648" />
-		<attribute name="generated" std="7" basetype="11" aggregate="3" vecsemantics="2" reserved="0" arraylen="0" element="8" flags="2" buffer="1784" />
-		<attribute name="Ng" std="2" basetype="11" aggregate="3" vecsemantics="4" reserved="0" arraylen="0" element="4" flags="0" buffer="1920" />
-	</mesh>
-	<object name="1946493341696" ui_name="Cube">
-		<socket name="geometry" ui_name="Geometry" value="1946493264896" type_name="node" />
+	<object name="2173890797776" ui_name="Cube">
+		<socket name="geometry" ui_name="Geometry" value="2174300853328" type_name="node" />
 		<socket name="visibility" ui_name="Visibility" value="1693" type_name="uint" />
 		<socket name="color" ui_name="Color" value="1 1 1 0" type_name="color" />
 		<socket name="alpha" ui_name="Alpha" value="1" type_name="float" />
 		<socket name="random_id" ui_name="Random ID" value="1344934367" type_name="uint" />
-		<socket name="pass_id" ui_name="Pass ID" value="0" type_name="int" />
-		<socket name="use_holdout" ui_name="Use Holdout" value="false" type_name="boolean" />
-		<socket name="hide_on_missing_motion" ui_name="Hide on Missing Motion" value="false" type_name="boolean" />
-		<socket name="dupli_generated" ui_name="Dupli Generated" value="0 0 0 0" type_name="point" />
-		<socket name="dupli_uv" ui_name="Dupli UV" value="0 0" type_name="point2" />
-		<socket name="motion" ui_name="Motion" value="2120" type_name="array_transform" />
-		<socket name="shadow_terminator_shading_offset" ui_name="Shadow Terminator Shading Offset" value="0" type_name="float" />
-		<socket name="shadow_terminator_geometry_offset" ui_name="Shadow Terminator Geometry Offset" value="0.1" type_name="float" />
 		<socket name="asset_name" ui_name="Asset Name" value="Cube" type_name="string" />
-		<socket name="is_shadow_catcher" ui_name="Shadow Catcher" value="false" type_name="boolean" />
-		<socket name="is_caustics_caster" ui_name="Cast Shadow Caustics" value="false" type_name="boolean" />
-		<socket name="is_caustics_receiver" ui_name="Receive Shadow Caustics" value="false" type_name="boolean" />
-		<socket name="particle_index" ui_name="Particle Index" value="0" type_name="int" />
-		<socket name="ao_distance" ui_name="AO Distance" value="0" type_name="float" />
-		<socket name="receiver_light_set" ui_name="Light Set Index" value="0" type_name="uint" />
-		<socket name="light_set_membership" ui_name="Light Set Membership" value="18446744073709551615" type_name="uint64" />
-		<socket name="blocker_shadow_set" ui_name="Shadow Set Index" value="0" type_name="uint" />
-		<socket name="shadow_set_membership" ui_name="Shadow Set Membership" value="18446744073709551615" type_name="uint64" />
+	</object>
+	<object name="2173890794320" ui_name="Light">
+		<socket name="geometry" ui_name="Geometry" value="2173890807280" type_name="node" />
+		<socket name="tfm" ui_name="Transform" value="-0.290865 -0.771101 0.566393 4.07625 0.955171 -0.199883 0.218391 1.00545 -0.0551891 0.604525 0.794672 5.90386" type_name="transform" />
+		<socket name="visibility" ui_name="Visibility" value="1692" type_name="uint" />
+		<socket name="random_id" ui_name="Random ID" value="387061666" type_name="uint" />
+		<socket name="asset_name" ui_name="Asset Name" value="Light" type_name="string" />
+		<socket name="is_shadow_catcher" ui_name="Shadow Catcher" value="true" type_name="boolean" />
+	</object>
+	<object name="2173890791728" ui_name="object">
+		<socket name="geometry" ui_name="Geometry" value="2173890793456" type_name="node" />
+		<socket name="is_shadow_catcher" ui_name="Shadow Catcher" value="true" type_name="boolean" />
 	</object>
 </cycles>
