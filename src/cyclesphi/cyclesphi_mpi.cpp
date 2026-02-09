@@ -98,7 +98,7 @@ public:
 		return false;
 	}
 
-	void send_data_data(char* data, size_t size, bool ack = false) override
+	void send_data_data(char *data, size_t size, char ack = 0) override
 	{
 		if (world_size > 1 && frame >=0 && frame < world_size) {
 			if (world_rank > 0 && world_rank == frame)
@@ -111,7 +111,7 @@ public:
 			TcpConnection::send_data_data(data, size, ack);
 	}
 
-	void recv_data_data(char* data, size_t size, bool ack = false) override
+	void recv_data_data(char *data, size_t size, char ack = 0) override
 	{
 		if (world_rank == 0)
 			TcpConnection::recv_data_data(data, size, ack);
@@ -122,7 +122,7 @@ public:
 	void send_gpujpeg(char* dmem, char* pixels, int width, int height, int format) override
 	{
 #ifdef WITH_CLIENT_GPUJPEG
-		int frame_size = 0;
+		size_t frame_size = 0;
 		TcpConnection::gpujpeg_encode(width, height, format, (uint8_t*)dmem, (uint8_t*)pixels, frame_size);
 
 		//if (world_rank == 0) {

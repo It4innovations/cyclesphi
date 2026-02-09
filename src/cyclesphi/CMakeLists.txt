@@ -20,6 +20,10 @@ if(WITH_CLIENT_GPUJPEG)
   find_package(GPUJPEG REQUIRED)
 endif()
 
+if(WITH_CLIENT_MPI_SOCKET)
+	find_package(MPI REQUIRED)
+endif()
+
 find_package(braas_hpc_renderengine REQUIRED)
 
 #message("LIB: ${braas_hpc_renderengine_LIBRARIES}")
