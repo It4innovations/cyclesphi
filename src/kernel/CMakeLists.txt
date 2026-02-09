@@ -488,7 +488,7 @@ function(cuda_add_common_flags cuda_version arch in_flags out_flags)
   endif()
 
   if(WITH_NANOVDB)
-    set(flags ${flags} -D WITH_NANOVDB)
+    set(flags ${flags} -D WITH_NANOVDB -I ${NANOVDB_INCLUDE_DIR})
   endif()
 
   if("${cuda_version}" GREATER_EQUAL 123 AND "${arch}" STREQUAL "sm_120")

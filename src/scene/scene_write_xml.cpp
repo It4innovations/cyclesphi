@@ -46,9 +46,15 @@
 #	include <openvdb/io/Stream.h>
 #endif
 
+#include "graph/node_xml_util.h"
+
 #define ADD_ATTR(name) \
 			xml_attribute attr_##name = node_attribute.append_attribute(#name); \
 			attr_##name = attr.name;
+
+#define ADD_ATTR_ENUM(name) \
+			xml_attribute attr_##name = node_attribute.append_attribute(#name); \
+			attr_##name = enum_to_str(attr.name);
 
 #define ADD_ATTR_STR(name) \
 			xml_attribute attr_##name = node_attribute.append_attribute(#name); \
@@ -57,6 +63,14 @@
 #define ADD_ATTR_DTYPE(type, name) \
 			xml_attribute attr_##name = node_attribute.append_attribute(#name); \
 			attr_##name = type.name;
+
+#define ADD_ATTR_DTYPE_DESC(type, name) \
+			xml_attribute attr_##name = node_attribute.append_attribute(#name); \
+			attr_##name = typedesc_to_cstr(type);
+
+#define ADD_ATTR_TYPE_DESC(name) \
+			xml_attribute attr_##name = node_attribute.append_attribute(#name); \
+			attr_##name = typedesc_to_cstr(attr.name);
 
 CCL_NAMESPACE_BEGIN
 

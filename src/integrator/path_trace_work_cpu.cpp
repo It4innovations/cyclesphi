@@ -210,7 +210,12 @@ void PathTraceWorkCPU::copy_to_display(PathTraceDisplay *display,
   const PassAccessorCPU pass_accessor(pass_access_info, kfilm.exposure, num_samples);
 
   PassAccessor::Destination destination = get_display_destination_template(display, pass_mode);
-  destination.pixels_half_rgba = rgba_half;
+  
+  if (display->buffer_linear2srgb()) {
+    destination.pixels_uchar_srgba = (uchar4*)rgba_half;
+  }else{
+    destination.pixels_half_rgba = rgba_half;
+  }
 
   tbb::task_arena local_arena = local_tbb_arena_create(device_);
   local_arena.execute([&]() {
