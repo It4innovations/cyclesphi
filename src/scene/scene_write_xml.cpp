@@ -12,7 +12,7 @@
 
 #include "scene/node_write_xml.h"
 
-#include "scene/alembic.h"
+//#include "scene/alembic.h"
 #include "scene/background.h"
 #include "scene/camera.h"
 #include "scene/film.h"
@@ -494,11 +494,7 @@ void scene_write_xml_shader_graph(XMLWriteState& state, Shader* shader, xml_node
 				//size_t width, height, depth;
 				ADD_ATTR(width);
 				ADD_ATTR(height);
-				ADD_ATTR(depth);
-				//size_t byte_size;
-				//ADD_ATTR(byte_size);
-				//ImageDataType type;
-				//int itype = attr.type;
+				//ADD_ATTR(depth);
 				ADD_ATTR(type);
 
 				///* Optional color space, defaults to raw. */
@@ -1334,7 +1330,7 @@ void scene_write_xml_scene(XMLWriteState& state, xml_node scene_node)
 
 	//unique_ptr_vector<Procedural> procedurals;
 	for (Procedural* p : state.scene->procedurals) {
-		xml_write_node(state, p, scene_node);
+		//xml_write_node(state, p, scene_node); //TODO
 	}
 
 	//unique_ptr_vector<Object> objects;

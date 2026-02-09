@@ -33,20 +33,20 @@ class VDBImageLoader : public ImageLoader {
   VDBImageLoader(const string &grid_name, const float clipping = 0.001f);
   ~VDBImageLoader() override;
 
-  bool load_metadata(const ImageDeviceFeatures &features, ImageMetaData &metadata) final;
+  virtual bool load_metadata(const ImageDeviceFeatures &features, ImageMetaData &metadata) override;
 
-  bool load_pixels(const ImageMetaData &metadata,
+  virtual bool load_pixels(const ImageMetaData &metadata,
                    void *pixels,
                    const size_t pixels_size,
-                   const bool associate_alpha) final;
+                   const bool associate_alpha) override;
 
-  string name() const override;
+  virtual string name() const override;
 
-  bool equals(const ImageLoader &other) const override;
+  virtual bool equals(const ImageLoader &other) const override;
 
-  void cleanup() override;
+  virtual void cleanup() override;
 
-  bool is_vdb_loader() const override;
+  virtual bool is_vdb_loader() const override;
 
   virtual bool is_simple_mesh() const;
 
@@ -58,10 +58,10 @@ class VDBImageLoader : public ImageLoader {
   openvdb::GridBase::ConstPtr get_grid();
 #endif
 
-#if defined(WITH_OPENVDB) && defined(WITH_NANOVDB)
-  static nanovdb::GridHandle<> convert(openvdb::GridBase::ConstPtr g, int precision = 32);
-  static void get_texture_info(nanovdb::NanoGrid<float>* ng, size_t ng_size, TextureInfo &info);
-#endif
+//#if defined(WITH_OPENVDB) && defined(WITH_NANOVDB)
+//  static nanovdb::GridHandle<> convert(openvdb::GridBase::ConstPtr g, int precision = 32);
+//  static void get_texture_info(nanovdb::NanoGrid<float>* ng, size_t ng_size, TextureInfo &info);
+//#endif
 
  protected:
   virtual void load_grid() {}

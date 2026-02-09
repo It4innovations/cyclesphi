@@ -70,11 +70,7 @@ enum {
   QUAD_Z_MAX = 5,
 };
 
-<<<<<<< HEAD
-#if 1 //def WITH_OPENVDB
-=======
-#if defined(WITH_OPENVDB) && defined(WITH_NANOVDB)
->>>>>>> main
+#if 1 // #if defined(WITH_OPENVDB) && defined(WITH_NANOVDB)
 const int quads_indices[6][4] = {
     /* QUAD_X_MIN */
     {4, 0, 3, 7},
@@ -736,25 +732,16 @@ void GeometryManager::create_volume_mesh(const Scene *scene, Volume *volume, Pro
 
     ImageHandle &handle = attr.data_voxel();
 
-<<<<<<< HEAD
+    if (handle.empty()) {
+      continue;
+    }
+
     /* Try building from OpenVDB grid directly. */
     VDBImageLoader *vdb_loader = handle.vdb_loader();
 
     if (vdb_loader && vdb_loader->is_simple_mesh()) {
-        create_volume_mesh_cube(scene, volume, vdb_loader);
+      create_volume_mesh_cube(scene, volume, vdb_loader);
       continue;
-    }
-
-    openvdb::GridBase::ConstPtr grid;
-    if (vdb_loader) {
-      grid = vdb_loader->get_grid();
-
-      /* If building from an OpenVDB grid, we need to manually clip the values. */
-      do_clipping = true;
-=======
-    if (handle.empty()) {
-      continue;
->>>>>>> main
     }
 
     /* Create NanoVDB grid handle from texture memory. */

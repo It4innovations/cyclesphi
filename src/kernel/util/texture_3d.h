@@ -11,7 +11,8 @@
 
 #if !defined(__KERNEL_METAL__) && !defined(__KERNEL_ONEAPI__)
 #  ifdef WITH_NANOVDB
-#    include "kernel/util/nanovdb.h"
+//#    include "kernel/util/nanovdb.h"
+#  include <nanovdb/NanoVDB.h>
 #  endif
 #endif
 
@@ -151,18 +152,113 @@ OutT kernel_tex_image_interp_nanovdb(const ccl_global TextureInfo &info,
 {
   ccl_global nanovdb::NanoGrid<T> *const grid = (ccl_global nanovdb::NanoGrid<T> *)info.data;
 
-  if (interp == INTERPOLATION_CLOSEST) {
-    nanovdb::ReadAccessor<T> acc(grid->tree().root());
-    return OutT(acc.getValue(make_int3(floor(P))));
-  }
+  // if (interp == INTERPOLATION_CLOSEST) {
+  //   nanovdb::ReadAccessor<T> acc(grid->tree().root());
+  //   return OutT(acc.getValue(make_int3(floor(P))));
+  // }
 
-  nanovdb::CachedReadAccessor<T> acc(grid->tree().root());
-  if (interp == INTERPOLATION_LINEAR) {
-    return kernel_tex_image_interp_trilinear_nanovdb<OutT>(acc, P);
-  }
+  // nanovdb::CachedReadAccessor<T> acc(grid->tree().root());
+  // if (interp == INTERPOLATION_LINEAR) {
+  //   return kernel_tex_image_interp_trilinear_nanovdb<OutT>(acc, P);
+  // }
 
-  return kernel_tex_image_interp_tricubic_nanovdb<OutT>(acc, P);
+  // return kernel_tex_image_interp_tricubic_nanovdb<OutT>(acc, P);
+
+  // INTERPOLATION_CLOSEST
+  nanovdb::ReadAccessor<T> acc(grid->tree().root());
+  const nanovdb::Coord coord((int32_t)floorf(P.x), (int32_t)floorf(P.y), (int32_t)floorf(P.z));
+  return OutT(acc.getValue(coord));
 }
+
+
+#  if defined(__KERNEL_METAL__)
+template<typename OutT, typename T>
+__attribute__((noinline)) OutT kernel_tex_image_interp_nanovdb_multires(const ccl_global TextureInfo &info,
+                                                               const float x,
+                                                               const float y,
+                                                               const float z,
+                                                               const uint interpolation)
+#  else
+template<typename OutT, typename T>
+ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_multires(const ccl_global TextureInfo &info,
+                                                         const float x,
+                                                         const float y,
+                                                         const float z,
+                                                         const uint interpolation)
+#  endif
+{
+    using namespace nanovdb;
+
+    // Format description of bin file:
+    // size_t : number of levels (aligned to 32 bytes)
+    // size_t : offset to grid1
+    // grid0 data (aligned to 32 bytes)
+    // size_t : offset to grid2
+    // grid1 data (aligned to 32 bytes)
+    // ...
+
+    size_t offset = 0;
+    // Read number of levels
+    size_t levels = *((size_t*)((char*)info.data + offset));
+    // Align to 32 bytes after num_levels
+    offset = 32;
+
+    for (size_t i = 0; i < levels; ++i) {
+        // Get pointer to current grid data        
+        if (i < levels - 1) {
+            // Read next grid offset
+            size_t next_offset = *((size_t*)((char*)info.data + offset));
+            // Grid data starts after the offset field
+            ccl_global NanoGrid<T>* const grid = (ccl_global NanoGrid<T>*)((char*)info.data + (offset + sizeof(size_t)));
+
+            nanovdb::Vec3d coord_index = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
+
+            ReadAccessor<T> acc(grid->tree().root());
+            const nanovdb::Coord coord((int32_t)floorf(coord_index[0]), (int32_t)floorf(coord_index[1]), (int32_t)floorf(coord_index[2]));
+            OutT f = acc.getValue(coord);
+
+            bool is_nonzero = false;
+            if constexpr (sizeof(OutT) == sizeof(float)) {
+                is_nonzero = (f != 0.0f);
+            }
+            else {
+                // For vector types, check if any component is non-zero
+                is_nonzero = (f.x != 0.0f || f.y != 0.0f || f.z != 0.0f);
+            }
+
+            if (is_nonzero)
+                return f;
+
+            // Jump to next offset position
+            offset = next_offset - sizeof(size_t);
+        }
+        else {
+            // Last grid has no offset field
+            ccl_global NanoGrid<T>* const grid = (ccl_global NanoGrid<T>*)((char*)info.data + offset);
+
+            nanovdb::Vec3d coord_index = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
+
+            ReadAccessor<T> acc(grid->tree().root());
+            const nanovdb::Coord coord((int32_t)floorf(coord_index[0]), (int32_t)floorf(coord_index[1]), (int32_t)floorf(coord_index[2]));
+            OutT f = acc.getValue(coord);
+
+            bool is_nonzero = false;
+            if constexpr (sizeof(OutT) == sizeof(float)) {
+                is_nonzero = (f != 0.0f);
+            }
+            else {
+                // For vector types, check if any component is non-zero
+                is_nonzero = (f.x != 0.0f || f.y != 0.0f || f.z != 0.0f);
+            }
+
+            if (is_nonzero)
+                return f;
+        }
+    }    
+
+    return OutT(0.0f);    
+}
+
 #endif /* WITH_NANOVDB */
 
 ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
@@ -209,6 +305,10 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
     const float f = kernel_tex_image_interp_nanovdb<float, nanovdb::Fp16>(info, P, interpolation);
     return make_float4(f, f, f, 1.0f);
   }
+  if (data_type == IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT) {
+    const float f = kernel_tex_image_interp_nanovdb_multires<float, float>(info, P.x, P.y, P.z, (const uint)interpolation);
+    return make_float4(f, f, f, 1.0f);
+  }  
   if (data_type == IMAGE_DATA_TYPE_NANOVDB_EMPTY) {
     return zero_float4();
   }

@@ -348,26 +348,8 @@ float Object::compute_volume_step_size() const
         float voxel_step_size = volume->get_step_size();
 
         if (voxel_step_size == 0.0f) {
-<<<<<<< HEAD
-          /* Auto detect step size. */
-          float3 size = one_float3();
-#ifdef WITH_NANOVDB
-          /* Dimensions were not applied to image transform with NanoVDB (see image_vdb.cpp) */
-          if (metadata.type != IMAGE_DATA_TYPE_NANOVDB_FLOAT &&
-              metadata.type != IMAGE_DATA_TYPE_NANOVDB_FLOAT3 &&
-              metadata.type != IMAGE_DATA_TYPE_NANOVDB_FPN &&
-              metadata.type != IMAGE_DATA_TYPE_NANOVDB_FP16 &&
-              metadata.type != IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT)
-#endif
-          {
-            size /= make_float3(metadata.width, metadata.height, metadata.depth);
-          }
-
-          /* Step size is transformed from voxel to world space. */
-=======
           /* Auto detect step size.
            * Step size is transformed from voxel to world space. */
->>>>>>> main
           Transform voxel_tfm = tfm;
           if (metadata.use_transform_3d) {
             voxel_tfm = tfm * transform_inverse(metadata.transform_3d);

@@ -1020,7 +1020,7 @@ void PathTraceWorkGPU::copy_to_display_naive(PathTraceDisplay *display,
           queue_->zero_to_device(display_rgba_byte_);
       }
 
-      PassAccessor::Destination destination(film_->get_display_pass());
+      PassAccessor::Destination destination(film_->get_display_pass(), pass_mode);
       destination.d_pixels_uchar_srgba = display_rgba_byte_.device_pointer;
 
       get_render_tile_film_pixels(destination, pass_mode, num_samples);

@@ -11,7 +11,7 @@
 
 #include "graph/node_xml_bin.h"
 
-#include "scene/alembic.h"
+//#include "scene/alembic.h"
 #include "scene/background.h"
 #include "scene/camera.h"
 #include "scene/film.h"
@@ -41,8 +41,8 @@
 
 #ifdef WITH_OPENVDB
 #	include <openvdb/io/Stream.h>
-//#	include <nanovdb/io/IO.h>
-#	include <nanovdb/util/IO.h>
+#	include <nanovdb/io/IO.h>
+//#	include <nanovdb/util/IO.h>
 #endif
 
 #include "scene/image_oiio.h"
@@ -420,12 +420,8 @@ static void xml_read_shader_graph(XMLReadState& state, Shader* shader, const xml
 					attr.width = width;
 					READ_ATTR_ULL(height, size_t);
 					attr.height = height;
-					READ_ATTR_ULL(depth, size_t);
-					attr.depth = depth;
-					//size_t byte_size;
-					//READ_ATTR_ULL(byte_size, size_t);
-					//attr.byte_size = byte_size;
-					//ImageDataType type;
+					//READ_ATTR_ULL(depth, size_t);
+					//attr.depth = depth;
 					READ_ATTR_I(type, int);
 					attr.type = (ImageDataType)type;
 
@@ -477,12 +473,8 @@ static void xml_read_shader_graph(XMLReadState& state, Shader* shader, const xml
 					attr.width = width;
 					READ_ATTR_ULL(height, size_t);
 					attr.height = height;
-					READ_ATTR_ULL(depth, size_t);
-					attr.depth = depth;
-					//size_t byte_size;
-					//READ_ATTR_ULL(byte_size, size_t);
-					//attr.byte_size = byte_size;
-					//ImageDataType type;
+					//READ_ATTR_ULL(depth, size_t);
+					//attr.depth = depth;
 					READ_ATTR_ENUM(type, ImageDataType);
 					//attr.type = (ImageDataType)type;
 

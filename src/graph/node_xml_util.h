@@ -30,6 +30,7 @@ inline const char* enum_to_str(ImageDataType t)
   case IMAGE_DATA_TYPE_NANOVDB_FLOAT3: return "IMAGE_DATA_TYPE_NANOVDB_FLOAT3";
   case IMAGE_DATA_TYPE_NANOVDB_FPN:    return "IMAGE_DATA_TYPE_NANOVDB_FPN";
   case IMAGE_DATA_TYPE_NANOVDB_FP16:   return "IMAGE_DATA_TYPE_NANOVDB_FP16";
+  case IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT:   return "IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT";
   default: {
     printf("enum_to_str: Unknown ImageDataType enum: %d\n", (int)t);
     return "UNKNOWN_IMAGE_DATA_TYPE";
@@ -79,6 +80,9 @@ inline bool str_to_enum(const char* str, ImageDataType& out)
   else if (std::strcmp(str, "IMAGE_DATA_TYPE_NANOVDB_FP16") == 0) {
     out = IMAGE_DATA_TYPE_NANOVDB_FP16;
   }
+  else if (std::strcmp(str, "IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT") == 0) {
+    out = IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT;
+  }  
   else {
     printf("str_to_enum: Unknown ImageDataType string: %s\n", str);
     return false;
