@@ -165,12 +165,12 @@ void Session::run_main_render_loop()
     RenderWork render_work = run_update_for_next_iteration();
 
     if (!render_work) {
-      if (VLOG_INFO_IS_ON) {
+      if (LOG_IS_ON(LOG_LEVEL_INFO)) {
         double total_time;
         double render_time;
         progress.get_time(total_time, render_time);
-        VLOG_INFO << "Rendering in main loop is done in " << render_time << " seconds.";
-        VLOG_INFO << path_trace_->full_report();
+        LOG_INFO << "Rendering in main loop is done in " << render_time << " seconds.";
+        LOG_INFO << path_trace_->full_report();
       }
 
       if (params.background) {
@@ -563,6 +563,8 @@ void Session::reset(const SessionParams &session_params, const BufferParams &buf
     delayed_reset_.do_reset = true;
     delayed_reset_.session_params = session_params;
     delayed_reset_.buffer_params = buffer_params;
+
+    scene->scene_updated_while_loading_kernels = true;
 
     path_trace_->cancel();
   }

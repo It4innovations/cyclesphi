@@ -4,7 +4,7 @@
 
 #pragma once
 
-CCL_NAMESPACE_BEGIN
+#include "kernel/globals.h"
 
 #if !defined __KERNEL_METAL__
 #  ifdef WITH_NANOVDB
@@ -12,6 +12,8 @@ CCL_NAMESPACE_BEGIN
 #  include <nanovdb/NanoVDB.h>
 #  endif
 #endif
+
+CCL_NAMESPACE_BEGIN
 
 ccl_device_inline float frac(const float x, ccl_private int *ix)
 {

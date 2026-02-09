@@ -115,7 +115,7 @@ template<typename TexT, typename OutT = float4> struct TextureInterpolator {
   /* Read 2D Texture Data
    * Does not check if data request is in bounds. */
   static ccl_always_inline OutT
-  read(const TexT *data, const int x, int y, const int width, const int height)
+  read(const TexT *data, const int x, int y, const int width, const int /*height*/)
   {
     return read(data[y * width + x]);
   }
@@ -130,6 +130,7 @@ template<typename TexT, typename OutT = float4> struct TextureInterpolator {
     }
     return read(data[y * width + x]);
   }
+
 
   /* Read 3D Texture Data
    * Does not check if data request is in bounds. */
@@ -1179,6 +1180,7 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
 }
 
 #ifndef __KERNEL_ONEAPI__
+
 } /* Namespace. */
 #endif
 CCL_NAMESPACE_END

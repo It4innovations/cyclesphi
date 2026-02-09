@@ -82,7 +82,8 @@ bool OptiXDeviceQueue::enqueue(DeviceKernel kernel,
   }
   if (kernel == DEVICE_KERNEL_SHADER_EVAL_DISPLACE ||
       kernel == DEVICE_KERNEL_SHADER_EVAL_BACKGROUND ||
-      kernel == DEVICE_KERNEL_SHADER_EVAL_CURVE_SHADOW_TRANSPARENCY)
+      kernel == DEVICE_KERNEL_SHADER_EVAL_CURVE_SHADOW_TRANSPARENCY ||
+      kernel == DEVICE_KERNEL_SHADER_EVAL_VOLUME_DENSITY)
   {
     set_launch_param(offsetof(KernelParamsOptiX, offset), sizeof(int32_t), 2);
   }
@@ -122,6 +123,11 @@ bool OptiXDeviceQueue::enqueue(DeviceKernel kernel,
     case DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME:
       pipeline = optix_device->pipelines[PIP_SHADE];
       sbt_params.raygenRecord = sbt_data_ptr + PG_RGEN_SHADE_VOLUME * sizeof(SbtRecord);
+      break;
+    case DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME_RAY_MARCHING:
+      pipeline = optix_device->pipelines[PIP_SHADE];
+      sbt_params.raygenRecord = sbt_data_ptr +
+                                PG_RGEN_SHADE_VOLUME_RAY_MARCHING * sizeof(SbtRecord);
       break;
     case DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW:
       pipeline = optix_device->pipelines[PIP_SHADE];
@@ -167,6 +173,10 @@ bool OptiXDeviceQueue::enqueue(DeviceKernel kernel,
       sbt_params.raygenRecord = sbt_data_ptr +
                                 PG_RGEN_EVAL_CURVE_SHADOW_TRANSPARENCY * sizeof(SbtRecord);
       break;
+    case DEVICE_KERNEL_SHADER_EVAL_VOLUME_DENSITY:
+      pipeline = optix_device->pipelines[PIP_SHADE];
+      sbt_params.raygenRecord = sbt_data_ptr + PG_RGEN_EVAL_VOLUME_DENSITY * sizeof(SbtRecord);
+      break;
 
     case DEVICE_KERNEL_INTEGRATOR_INIT_FROM_CAMERA:
       pipeline = optix_device->pipelines[PIP_SHADE];
@@ -174,8 +184,8 @@ bool OptiXDeviceQueue::enqueue(DeviceKernel kernel,
       break;
 
     default:
-      LOG(ERROR) << "Invalid kernel " << device_kernel_as_string(kernel)
-                 << " is attempted to be enqueued.";
+      LOG_ERROR << "Invalid kernel " << device_kernel_as_string(kernel)
+                << " is attempted to be enqueued.";
       return false;
   }
 

@@ -17,6 +17,7 @@
 
 #include "kernel/util/differential.h"
 #include "kernel/util/ies.h"
+#include "kernel/util/texture_3d.h"
 
 #include "util/hash.h"
 #include "util/transform.h"
@@ -128,6 +129,8 @@ ccl_device_constant DeviceString u_path_glossy_depth = 15717768399057252940ull;
 ccl_device_constant DeviceString u_path_transparent_depth = 7821650266475578543ull;
 /* "path:transmission_depth" */
 ccl_device_constant DeviceString u_path_transmission_depth = 15113408892323917624ull;
+/* "path:portal_depth" */
+ccl_device_constant DeviceString u_path_portal_depth = 13191651286699118408ull;
 /* "cam:sensor_size" */
 ccl_device_constant DeviceString u_sensor_size = 7525693591727141378ull;
 /* "cam:image_resolution" */
@@ -422,67 +425,7 @@ ccl_device_extern bool osl_get_inverse_matrix(ccl_private ShaderGlobals *sg,
 
 /* Attributes */
 
-typedef long long TypeDesc;
-
-template<typename T>
-ccl_device_inline bool set_attribute(const T v,
-                                     const T dx,
-                                     const T dy,
-                                     const TypeDesc type,
-                                     bool derivatives,
-                                     ccl_private void *val);
-
-ccl_device_inline void set_data_float(
-    const float v, const float dx, const float dy, bool derivatives, ccl_private void *val)
-{
-  ccl_private float *fval = static_cast<ccl_private float *>(val);
-  fval[0] = v;
-  if (derivatives) {
-    fval[1] = dx;
-    fval[2] = dy;
-  }
-}
-
-ccl_device_inline void set_data_float3(
-    const float3 v, const float3 dx, const float3 dy, bool derivatives, ccl_private void *val)
-{
-  ccl_private float *fval = static_cast<ccl_private float *>(val);
-  fval[0] = v.x;
-  fval[1] = v.y;
-  fval[2] = v.z;
-  if (derivatives) {
-    fval[3] = dx.x;
-    fval[4] = dx.y;
-    fval[5] = dx.z;
-    fval[6] = dy.x;
-    fval[7] = dy.y;
-    fval[8] = dy.z;
-  }
-}
-
-ccl_device_inline void set_data_float4(
-    const float4 v, const float4 dx, const float4 dy, bool derivatives, ccl_private void *val)
-{
-  ccl_private float *fval = static_cast<ccl_private float *>(val);
-  fval[0] = v.x;
-  fval[1] = v.y;
-  fval[2] = v.z;
-  fval[3] = v.w;
-  if (derivatives) {
-    fval[4] = dx.x;
-    fval[5] = dx.y;
-    fval[6] = dx.z;
-    fval[7] = dx.w;
-    fval[8] = dy.x;
-    fval[9] = dy.y;
-    fval[10] = dy.z;
-    fval[11] = dy.w;
-  }
-}
-
-ccl_device_template_spec bool set_attribute(const float v,
-                                            const float dx,
-                                            const float dy,
+ccl_device_template_spec bool set_attribute(const dual1 v,
                                             const TypeDesc type,
                                             bool derivatives,
                                             ccl_private void *val)
@@ -494,29 +437,23 @@ ccl_device_template_spec bool set_attribute(const float v,
   if (type_basetype == 11 /* TypeDesc::FLOAT */) {
     if ((type_aggregate == 3 /* TypeDesc::VEC3 */) || (type_aggregate == 1 && type_arraylen == 3))
     {
-      set_data_float3(make_float3(v), make_float3(dx), make_float3(dy), derivatives, val);
+      set_data_float3(make_float3(v), derivatives, val);
       return true;
     }
     if ((type_aggregate == 4 /* TypeDesc::VEC4 */) || (type_aggregate == 1 && type_arraylen == 4))
     {
-      set_data_float4(make_float4(v, v, v, 1.0f),
-                      make_float4(dx, dx, dx, 0.0f),
-                      make_float4(dy, dy, dy, 0.0f),
-                      derivatives,
-                      val);
+      set_data_float4(make_float4(make_float3(v)), derivatives, val);
       return true;
     }
     if ((type_aggregate == 1 /* TypeDesc::SCALAR */)) {
-      set_data_float(v, dx, dy, derivatives, val);
+      set_data_float(v, derivatives, val);
       return true;
     }
   }
 
   return false;
 }
-ccl_device_template_spec bool set_attribute(const float2 v,
-                                            const float2 dx,
-                                            const float2 dy,
+ccl_device_template_spec bool set_attribute(const dual2 v,
                                             const TypeDesc type,
                                             bool derivatives,
                                             ccl_private void *val)
@@ -528,28 +465,22 @@ ccl_device_template_spec bool set_attribute(const float2 v,
   if (type_basetype == 11 /* TypeDesc::FLOAT */) {
     if ((type_aggregate == 3 /* TypeDesc::VEC3 */) || (type_aggregate == 1 && type_arraylen == 3))
     {
-      set_data_float3(make_float3(v), make_float3(dx), make_float3(dy), derivatives, val);
+      set_data_float3(make_float3(v), derivatives, val);
       return true;
     }
     if ((type_aggregate == 4 /* TypeDesc::VEC4 */) || (type_aggregate == 1 && type_arraylen == 4))
     {
-      set_data_float4(make_float4(v.x, v.y, 0.0f, 1.0f),
-                      make_float4(dx.x, dx.y, 0.0f, 0.0f),
-                      make_float4(dy.x, dy.y, 0.0f, 0.0f),
-                      derivatives,
-                      val);
+      set_data_float4(make_float4(make_float3(v)), derivatives, val);
     }
     if ((type_aggregate == 1 /* TypeDesc::SCALAR */)) {
-      set_data_float(average(v), average(dx), average(dy), derivatives, val);
+      set_data_float(average(v), derivatives, val);
       return true;
     }
   }
 
   return false;
 }
-ccl_device_template_spec bool set_attribute(const float3 v,
-                                            const float3 dx,
-                                            const float3 dy,
+ccl_device_template_spec bool set_attribute(const dual3 v,
                                             const TypeDesc type,
                                             bool derivatives,
                                             ccl_private void *val)
@@ -561,26 +492,23 @@ ccl_device_template_spec bool set_attribute(const float3 v,
   if (type_basetype == 11 /* TypeDesc::FLOAT */) {
     if ((type_aggregate == 3 /* TypeDesc::VEC3 */) || (type_aggregate == 1 && type_arraylen == 3))
     {
-      set_data_float3(v, dx, dy, derivatives, val);
+      set_data_float3(v, derivatives, val);
       return true;
     }
     if ((type_aggregate == 4 /* TypeDesc::VEC4 */) || (type_aggregate == 1 && type_arraylen == 4))
     {
-      set_data_float4(
-          make_float4(v, 1.0f), make_float4(dx, 0.0f), make_float4(dy, 0.0f), derivatives, val);
+      set_data_float4(make_float4(v), derivatives, val);
       return true;
     }
     if ((type_aggregate == 1 /* TypeDesc::SCALAR */)) {
-      set_data_float(average(v), average(dx), average(dy), derivatives, val);
+      set_data_float(average(v), derivatives, val);
       return true;
     }
   }
 
   return false;
 }
-ccl_device_template_spec bool set_attribute(const float4 v,
-                                            const float4 dx,
-                                            const float4 dy,
+ccl_device_template_spec bool set_attribute(const dual4 v,
                                             const TypeDesc type,
                                             bool derivatives,
                                             ccl_private void *val)
@@ -592,20 +520,16 @@ ccl_device_template_spec bool set_attribute(const float4 v,
   if (type_basetype == 11 /* TypeDesc::FLOAT */) {
     if ((type_aggregate == 3 /* TypeDesc::VEC3 */) || (type_aggregate == 1 && type_arraylen == 3))
     {
-      set_data_float3(make_float3(v), make_float3(dx), make_float3(dy), derivatives, val);
+      set_data_float3(make_float3(v), derivatives, val);
       return true;
     }
     if ((type_aggregate == 4 /* TypeDesc::VEC4 */) || (type_aggregate == 1 && type_arraylen == 4))
     {
-      set_data_float4(v, dx, dy, derivatives, val);
+      set_data_float4(v, derivatives, val);
       return true;
     }
     if ((type_aggregate == 1 /* TypeDesc::SCALAR */)) {
-      set_data_float(average(make_float3(v)),
-                     average(make_float3(dx)),
-                     average(make_float3(dy)),
-                     derivatives,
-                     val);
+      set_data_float(average(make_float3(v)), derivatives, val);
       return true;
     }
   }
@@ -619,7 +543,7 @@ ccl_device_inline bool set_attribute(const T f,
                                      bool derivatives,
                                      ccl_private void *val)
 {
-  return set_attribute(f, make_zero<T>(), make_zero<T>(), type, derivatives, val);
+  return set_attribute(dual<T>(f), type, derivatives, val);
 }
 
 ccl_device_inline bool set_attribute_matrix(const ccl_private Transform &tfm,
@@ -718,33 +642,33 @@ ccl_device_inline bool get_background_attribute(KernelGlobals kg,
     const int f = READ_PATH_STATE(transparent_bounce);
     return set_attribute(f, type, derivatives, val);
   }
+  if (name == DeviceStrings::u_path_portal_depth) {
+    /* Portal Ray Depth */
+    const int f = READ_PATH_STATE(portal_bounce);
+    return set_attribute(f, type, derivatives, val);
+  }
 #undef READ_PATH_STATE
 
   else if (name == DeviceStrings::u_ndc) {
     /* NDC coordinates with special exception for orthographic projection. */
-    float3 ndc[3];
+    dual3 ndc;
 
     if ((sg->raytype & PATH_RAY_CAMERA) && sd->object == OBJECT_NONE &&
         kernel_data.cam.type == CAMERA_ORTHOGRAPHIC)
     {
-      ndc[0] = camera_world_to_ndc(kg, sd, sd->ray_P);
-
-      if (derivatives) {
-        ndc[1] = zero_float3();
-        ndc[2] = zero_float3();
-      }
+      ndc.val = camera_world_to_ndc(kg, sd, sd->ray_P);
     }
     else {
-      ndc[0] = camera_world_to_ndc(kg, sd, sd->P);
+      ndc.val = camera_world_to_ndc(kg, sd, sd->P);
 
       if (derivatives) {
         const differential3 dP = differential_from_compact(sd->Ng, sd->dP);
-        ndc[1] = camera_world_to_ndc(kg, sd, sd->P + dP.dx) - ndc[0];
-        ndc[2] = camera_world_to_ndc(kg, sd, sd->P + dP.dy) - ndc[0];
+        ndc.dx = camera_world_to_ndc(kg, sd, sd->P + dP.dx) - ndc.val;
+        ndc.dy = camera_world_to_ndc(kg, sd, sd->P + dP.dy) - ndc.val;
       }
     }
 
-    return set_attribute(ndc[0], ndc[1], ndc[2], type, derivatives, val);
+    return set_attribute(ndc, type, derivatives, val);
   }
 
   return false;
@@ -758,20 +682,17 @@ ccl_device_inline bool get_object_attribute_impl(KernelGlobals kg,
                                                  bool derivatives,
                                                  ccl_private void *val)
 {
-  T v;
-  T dx = make_zero<T>();
-  T dy = make_zero<T>();
+  dual<T> data;
 #ifdef __VOLUME__
-  if (primitive_is_volume_attribute(sd, desc)) {
-    v = primitive_volume_attribute<T>(kg, sd, desc);
+  if (primitive_is_volume_attribute(sd)) {
+    data.val = primitive_volume_attribute<T>(kg, sd, desc, true);
   }
   else
 #endif
   {
-    v = primitive_surface_attribute<T>(
-        kg, sd, desc, derivatives ? &dx : nullptr, derivatives ? &dy : nullptr);
+    data = primitive_surface_attribute<T>(kg, sd, desc, derivatives, derivatives);
   }
-  return set_attribute(v, dx, dy, type, derivatives, val);
+  return set_attribute(data, type, derivatives, val);
 }
 
 ccl_device_inline bool get_object_attribute(KernelGlobals kg,
@@ -927,7 +848,7 @@ ccl_device_inline bool get_object_standard_attribute(KernelGlobals kg,
     return set_attribute(f, type, derivatives, val);
   }
   else if (name == DeviceStrings::u_curve_tangent_normal) {
-    float3 f = curve_tangent_normal(kg, sd);
+    float3 f = curve_tangent_normal(sd);
     return set_attribute(f, type, derivatives, val);
   }
   else if (name == DeviceStrings::u_curve_random) {
@@ -958,6 +879,11 @@ ccl_device_inline bool get_object_standard_attribute(KernelGlobals kg,
 
   else if (name == DeviceStrings::u_normal_map_normal) {
     if (sd->type & PRIMITIVE_TRIANGLE) {
+      const AttributeDescriptor desc = find_attribute(
+          kg, sd->object, sd->prim, ATTR_STD_NORMAL_UNDISPLACED);
+      if (desc.offset != ATTR_STD_NOT_FOUND) {
+        return get_object_attribute(kg, sd, desc, type, derivatives, val);
+      }
       float3 f = triangle_smooth_normal_unnormalized(kg, sd, sd->Ng, sd->prim, sd->u, sd->v);
       return set_attribute(f, type, derivatives, val);
     }
@@ -966,11 +892,11 @@ ccl_device_inline bool get_object_standard_attribute(KernelGlobals kg,
     }
   }
   if (name == DeviceStrings::u_bump_map_normal) {
-    float3 f[3];
+    dual3 f;
     if (!attribute_bump_map_normal(kg, sd, f)) {
       return false;
     }
-    return set_attribute(f[0], f[1], f[2], type, derivatives, val);
+    return set_attribute(f, type, derivatives, val);
   }
 
   return get_background_attribute(kg, sg, sd, name, type, derivatives, val);
@@ -1146,7 +1072,8 @@ ccl_device_extern bool rs_texture3d(ccl_private ShaderGlobals *sg,
 
   switch (type) {
     case OSL_TEXTURE_HANDLE_TYPE_SVM: {
-      const float4 rgba = kernel_tex_image_interp_3d(nullptr, slot, *P, INTERPOLATION_NONE);
+      const float4 rgba = kernel_tex_image_interp_3d(
+          nullptr, sg->sd, slot, *P, INTERPOLATION_NONE, false);
       if (nchannels > 0) {
         result[0] = rgba.x;
       }
@@ -1280,3 +1207,121 @@ ccl_device_extern bool rs_trace_get(ccl_private ShaderGlobals *sg,
 {
   return false;
 }
+
+/* These osl_ functions are supposed to be implemented by OSL itself, but they are not yet.
+ * See: https://github.com/AcademySoftwareFoundation/OpenShadingLanguage/pull/1951
+ * So we have to keep them around for now.
+ *
+ * The 1.14.4 based beta used for Blender 4.5 does not need them though, so we check the
+ * version for that. */
+#if (OSL_LIBRARY_VERSION_CODE >= 11405) || (OSL_LIBRARY_VERSION_CODE < 11403)
+ccl_device_extern void osl_texture_set_firstchannel(ccl_private OSLTextureOptions *opt,
+                                                    const int firstchannel)
+{
+}
+
+ccl_device_extern int osl_texture_decode_wrapmode(DeviceString name_)
+{
+  return 0;
+}
+
+ccl_device_extern void osl_texture_set_swrap_code(ccl_private OSLTextureOptions *opt,
+                                                  const int mode)
+{
+}
+
+ccl_device_extern void osl_texture_set_twrap_code(ccl_private OSLTextureOptions *opt,
+                                                  const int mode)
+{
+}
+
+ccl_device_extern void osl_texture_set_rwrap_code(ccl_private OSLTextureOptions *opt,
+                                                  const int mode)
+{
+}
+
+ccl_device_extern void osl_texture_set_stwrap_code(ccl_private OSLTextureOptions *opt,
+                                                   const int mode)
+{
+}
+
+ccl_device_extern void osl_texture_set_sblur(ccl_private OSLTextureOptions *opt, const float blur)
+{
+}
+
+ccl_device_extern void osl_texture_set_tblur(ccl_private OSLTextureOptions *opt, const float blur)
+{
+}
+
+ccl_device_extern void osl_texture_set_rblur(ccl_private OSLTextureOptions *opt, const float blur)
+{
+}
+
+ccl_device_extern void osl_texture_set_stblur(ccl_private OSLTextureOptions *opt, const float blur)
+{
+}
+
+ccl_device_extern void osl_texture_set_swidth(ccl_private OSLTextureOptions *opt,
+                                              const float width)
+{
+}
+
+ccl_device_extern void osl_texture_set_twidth(ccl_private OSLTextureOptions *opt,
+                                              const float width)
+{
+}
+
+ccl_device_extern void osl_texture_set_rwidth(ccl_private OSLTextureOptions *opt,
+                                              const float width)
+{
+}
+
+ccl_device_extern void osl_texture_set_stwidth(ccl_private OSLTextureOptions *opt,
+                                               const float width)
+{
+}
+
+ccl_device_extern void osl_texture_set_fill(ccl_private OSLTextureOptions *opt, const float fill)
+{
+}
+
+ccl_device_extern void osl_texture_set_time(ccl_private OSLTextureOptions *opt, const float time)
+{
+}
+
+ccl_device_extern void osl_texture_set_interp_code(ccl_private OSLTextureOptions *opt,
+                                                   const int mode)
+{
+}
+
+ccl_device_extern void osl_texture_set_subimage(ccl_private OSLTextureOptions *opt,
+                                                const int subimage)
+{
+}
+
+ccl_device_extern void osl_texture_set_subimagename(ccl_private OSLTextureOptions *opt,
+                                                    DeviceString subimagename_)
+{
+}
+
+ccl_device_extern void osl_texture_set_missingcolor_arena(ccl_private OSLTextureOptions *opt,
+                                                          ccl_private float3 *color)
+{
+}
+
+ccl_device_extern void osl_texture_set_missingcolor_alpha(ccl_private OSLTextureOptions *opt,
+                                                          const int nchannels,
+                                                          const float alpha)
+{
+}
+
+ccl_device_extern void osl_init_trace_options(ccl_private void *oec, ccl_private void *opt) {}
+
+ccl_device_extern void osl_trace_set_mindist(ccl_private void *opt, float x) {}
+
+ccl_device_extern void osl_trace_set_maxdist(ccl_private void *opt, float x) {}
+
+ccl_device_extern void osl_trace_set_shade(ccl_private void *opt, int x) {}
+
+ccl_device_extern void osl_trace_set_traceset(ccl_private void *opt, const DeviceString x) {}
+#endif

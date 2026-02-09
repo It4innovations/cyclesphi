@@ -223,7 +223,7 @@ void Denoiser::set_params(const DenoiseParams &params)
     params_ = params;
   }
   else {
-    LOG(ERROR) << "Attempt to change denoiser type.";
+    LOG_ERROR << "Attempt to change denoiser type.";
   }
 }
 
@@ -258,7 +258,7 @@ bool Denoiser::load_kernels(Progress *progress)
     return false;
   }
 
-  VLOG_WORK << "Will denoise on " << denoiser_device_->info.description << " ("
+  LOG_DEBUG << "Will denoise on " << denoiser_device_->info.description << " ("
             << denoiser_device_->info.id << ")";
 
   denoise_kernels_are_loaded_ = true;

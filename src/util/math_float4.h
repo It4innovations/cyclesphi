@@ -463,10 +463,10 @@ ccl_device_inline float4 fabs(const float4 a)
 #  endif
 }
 
-/* The floating-point remainder of the division operation a / b calculated by this function is
- * exactly the value a - iquot * b, where iquot is a / b with its fractional part truncated.
+/* The floating-point remainder of the division operation `a / b` calculated by this function is
+ * exactly the value `a - iquot * b`, where `iquot` is `a / b with` its fractional part truncated.
  *
- * The returned value has the same sign as a and is less than b in magnitude. */
+ * The returned value has the same sign as `a` and is less than `b` in magnitude. */
 ccl_device_inline float4 fmod(const float4 a, const float b)
 {
 #  if defined(__KERNEL_NEON__)
@@ -654,5 +654,13 @@ ccl_device_inline float4 __int4_as_float4(const int4 i)
 #  endif
 }
 #endif /* !defined(__KERNEL_METAL__) && !defined(__KERNEL_ONEAPI__) */
+
+ccl_device_inline void copy_v4_v4(ccl_private float *r, const float4 val)
+{
+  r[0] = val.x;
+  r[1] = val.y;
+  r[2] = val.z;
+  r[3] = val.w;
+}
 
 CCL_NAMESPACE_END

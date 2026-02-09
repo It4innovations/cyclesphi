@@ -51,7 +51,8 @@ using numhit_t = uint32_t;
     (RTCFeatureFlags)(RTC_FEATURE_FLAG_TRIANGLE | RTC_FEATURE_FLAG_INSTANCE | \
                       RTC_FEATURE_FLAG_FILTER_FUNCTION_IN_ARGUMENTS | RTC_FEATURE_FLAG_POINT | \
                       RTC_FEATURE_FLAG_MOTION_BLUR | RTC_FEATURE_FLAG_ROUND_CATMULL_ROM_CURVE | \
-                      RTC_FEATURE_FLAG_FLAT_CATMULL_ROM_CURVE)
+                      RTC_FEATURE_FLAG_FLAT_CATMULL_ROM_CURVE | \
+                      RTC_FEATURE_FLAG_ROUND_LINEAR_CURVE)
 #endif
 
 #define EMBREE_IS_HAIR(x) (x & 1)
@@ -71,8 +72,8 @@ struct CCLShadowContext : public RTCRayQueryContext {
   float throughput;
   float max_t;
   bool opaque_hit;
-  numhit_t max_hits;
-  numhit_t num_hits;
+  numhit_t max_transparent_hits;
+  numhit_t num_transparent_hits;
   numhit_t num_recorded_hits;
 };
 
@@ -281,7 +282,7 @@ ccl_device_forceinline void kernel_embree_filter_occluded_shadow_all_func_impl(
   }
 #endif
 
-  /* If no transparent shadows or max number of hits exceeded, all light is blocked. */
+  /* If no transparent shadows, all light is blocked. */
   const int flags = intersection_get_shader_flags(kg, current_isect.prim, current_isect.type);
   if ((flags & SD_HAS_TRANSPARENT_SHADOW) == 0) {
     ctx->opaque_hit = true;
@@ -289,14 +290,16 @@ ccl_device_forceinline void kernel_embree_filter_occluded_shadow_all_func_impl(
   }
 
   if (intersection_skip_shadow_already_recoded(
-          kg, ctx->isect_s, current_isect.object, current_isect.prim, ctx->num_hits))
+          ctx->isect_s, current_isect.object, current_isect.prim, ctx->num_recorded_hits))
   {
     *args->valid = 0;
     return;
   }
 
-  ++ctx->num_hits;
-  if (ctx->num_hits > ctx->max_hits) {
+  /* Only count transparent bounces, volume bounds bounces are counted during shading. */
+  ctx->num_transparent_hits += !(flags & SD_HAS_ONLY_VOLUME);
+  if (ctx->num_transparent_hits > ctx->max_transparent_hits) {
+    /* Max number of hits exceeded. */
     ctx->opaque_hit = true;
     return;
   }
@@ -328,7 +331,7 @@ ccl_device_forceinline void kernel_embree_filter_occluded_shadow_all_func_impl(
   /* This tells Embree to continue tracing. */
   *args->valid = 0;
 
-  const numhit_t max_record_hits = min(ctx->max_hits, numhit_t(INTEGRATOR_SHADOW_ISECT_SIZE));
+  const numhit_t max_record_hits = numhit_t(INTEGRATOR_SHADOW_ISECT_SIZE);
   /* If the maximum number of hits was reached, replace the furthest intersection
    * with a closer one so we get the N closest intersections. */
   if (isect_index >= max_record_hits) {
@@ -693,7 +696,7 @@ ccl_device_intersect bool kernel_embree_intersect_shadow_all(KernelGlobals kg,
                                                              IntegratorShadowState state,
                                                              const ccl_private Ray *ray,
                                                              const uint visibility,
-                                                             const uint max_hits,
+                                                             const uint max_transparent_hits,
                                                              ccl_private uint *num_recorded_hits,
                                                              ccl_private float *throughput)
 {
@@ -708,11 +711,11 @@ ccl_device_intersect bool kernel_embree_intersect_shadow_all(KernelGlobals kg,
 #  else
   ctx.kg = kg;
 #  endif
-  ctx.num_hits = ctx.num_recorded_hits = numhit_t(0);
+  ctx.num_transparent_hits = ctx.num_recorded_hits = numhit_t(0);
   ctx.throughput = 1.0f;
   ctx.opaque_hit = false;
   ctx.isect_s = state;
-  ctx.max_hits = numhit_t(max_hits);
+  ctx.max_transparent_hits = numhit_t(max_transparent_hits);
   ctx.max_t = ray->tmax;
   ctx.ray = ray;
   RTCRay rtc_ray;

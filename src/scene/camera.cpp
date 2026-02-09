@@ -22,6 +22,11 @@
 
 #include "kernel/camera/camera.h"
 
+/* Custom cameras don't work with adaptive subdivision currently, and it's a bit tricky
+ * to fix for the OptiX case as there is no OSL shader compiled for the CPU. This is a temporary
+ * workaround to fall back to a perspective camera for that case. */
+#define FIX_CUSTOM_CAMERA_CRASH
+
 CCL_NAMESPACE_BEGIN
 
 static float shutter_curve_eval(float x, array<float> &shutter_curve)
@@ -263,6 +268,14 @@ void Camera::update(Scene *scene)
   rastertocamera = screentocamera * rastertoscreen;
   full_rastertocamera = screentocamera * full_rastertoscreen;
 
+#ifdef FIX_CUSTOM_CAMERA_CRASH
+  if (camera_type == CAMERA_CUSTOM) {
+    const ProjectionTransform full_cameratoscreen = projection_perspective(fov, nearclip, farclip);
+    const ProjectionTransform full_screentocamera = projection_inverse(full_cameratoscreen);
+    full_rastertocamera = full_screentocamera * full_rastertoscreen;
+  }
+#endif
+
   cameratoworld = matrix;
   screentoworld = cameratoworld * screentocamera;
   rastertoworld = cameratoworld * rastertocamera;
@@ -294,6 +307,14 @@ void Camera::update(Scene *scene)
               transform_perspective(&full_rastertocamera, make_float3(0, 0, 0));
   }
   else {
+#ifdef FIX_CUSTOM_CAMERA_CRASH
+    if (camera_type == CAMERA_CUSTOM) {
+      full_dx = transform_perspective(&full_rastertocamera, make_float3(1, 0, 0)) -
+                transform_perspective(&full_rastertocamera, make_float3(0, 0, 0));
+      full_dy = transform_perspective(&full_rastertocamera, make_float3(0, 1, 0)) -
+                transform_perspective(&full_rastertocamera, make_float3(0, 0, 0));
+    }
+#endif
     dx = zero_float3();
     dy = zero_float3();
   }
@@ -303,7 +324,11 @@ void Camera::update(Scene *scene)
   full_dx = transform_direction(&cameratoworld, full_dx);
   full_dy = transform_direction(&cameratoworld, full_dy);
 
+#ifdef FIX_CUSTOM_CAMERA_CRASH
+  if (camera_type == CAMERA_PERSPECTIVE || camera_type == CAMERA_CUSTOM) {
+#else
   if (camera_type == CAMERA_PERSPECTIVE) {
+#endif
     float3 v = transform_perspective(&full_rastertocamera,
                                      make_float3(full_width, full_height, 0.0f));
     frustum_right_normal = normalize(make_float3(v.z, 0.0f, -v.x));
@@ -524,28 +549,34 @@ void Camera::device_update_volume(Device * /*device*/, DeviceScene *dscene, Scen
 
   KernelIntegrator *kintegrator = &dscene->data.integrator;
   if (kintegrator->use_volumes) {
-    BoundBox viewplane_boundbox = viewplane_bounds_get();
+    if (camera_type == CAMERA_CUSTOM) {
+      kernel_camera.is_inside_volume = 1;
+      LOG_INFO << "Considering custom camera to be inside volume.";
+    }
+    else {
+      BoundBox viewplane_boundbox = viewplane_bounds_get();
 
-    /* Parallel object update, with grain size to avoid too much threading overhead
-     * for individual objects. */
-    static const int OBJECTS_PER_TASK = 32;
-    parallel_for(blocked_range<size_t>(0, scene->objects.size(), OBJECTS_PER_TASK),
-                 [&](const blocked_range<size_t> &r) {
-                   for (size_t i = r.begin(); i != r.end(); i++) {
-                     Object *object = scene->objects[i];
-                     if (object->get_geometry()->has_volume &&
-                         viewplane_boundbox.intersects(object->bounds)) {
-                       /* TODO(sergey): Consider adding more grained check. */
-                       VLOG_INFO << "Detected camera inside volume.";
-                       kernel_camera.is_inside_volume = 1;
-                       parallel_for_cancel();
-                       break;
+      /* Parallel object update, with grain size to avoid too much threading overhead
+       * for individual objects. */
+      static const int OBJECTS_PER_TASK = 32;
+      parallel_for(blocked_range<size_t>(0, scene->objects.size(), OBJECTS_PER_TASK),
+                   [&](const blocked_range<size_t> &r) {
+                     for (size_t i = r.begin(); i != r.end(); i++) {
+                       Object *object = scene->objects[i];
+                       if (object->get_geometry()->has_volume &&
+                           viewplane_boundbox.intersects(object->bounds)) {
+                         /* TODO(sergey): Consider adding more grained check. */
+                         LOG_INFO << "Detected camera inside volume.";
+                         kernel_camera.is_inside_volume = 1;
+                         parallel_for_cancel();
+                         break;
+                       }
                      }
-                   }
-                 });
+                   });
 
-    if (!kernel_camera.is_inside_volume) {
-      VLOG_INFO << "Camera is outside of the volume.";
+      if (!kernel_camera.is_inside_volume) {
+        LOG_INFO << "Camera is outside of the volume.";
+      }
     }
   }
 
@@ -696,7 +727,11 @@ float Camera::world_to_raster_size(const float3 P)
       }
     }
   }
+#ifdef FIX_CUSTOM_CAMERA_CRASH
+  else if (camera_type == CAMERA_PERSPECTIVE || camera_type == CAMERA_CUSTOM) {
+#else
   else if (camera_type == CAMERA_PERSPECTIVE) {
+#endif
     /* Calculate as if point is directly ahead of the camera. */
     const float3 raster = make_float3(0.5f * full_width, 0.5f * full_height, 0.0f);
     const float3 Pcamera = transform_perspective(&full_rastertocamera, raster);
@@ -864,6 +899,9 @@ void Camera::set_osl_camera(Scene *scene,
                             const std::string &bytecode)
 {
 #ifdef WITH_OSL
+  /* Ensure shading system exists before we try to load a shader. */
+  scene->osl_manager->shading_system_init(scene->shader_manager->get_scene_linear_space());
+
   /* Load the shader. */
   const char *hash;
 
@@ -872,8 +910,9 @@ void Camera::set_osl_camera(Scene *scene,
   }
   else {
     hash = scene->osl_manager->shader_test_loaded(bytecode_hash);
-    if (!hash)
+    if (!hash) {
       hash = scene->osl_manager->shader_load_bytecode(bytecode_hash, bytecode);
+    }
   }
 
   bool changed = false;
@@ -903,22 +942,25 @@ void Camera::set_osl_camera(Scene *scene,
       int vec_size = (int)param->type.aggregate;
       if (param->type.basetype == TypeDesc::INT) {
         vector<int> data;
-        if (!params.get_int(param->name, data) || data.size() != vec_size)
+        if (!params.get_int(param->name, data) || data.size() != vec_size) {
           continue;
+        }
         raw_data.resize(sizeof(int) * vec_size);
         memcpy(raw_data.data(), data.data(), sizeof(int) * vec_size);
       }
       else if (param->type.basetype == TypeDesc::FLOAT) {
         vector<float> data;
-        if (!params.get_float(param->name, data) || data.size() != vec_size)
+        if (!params.get_float(param->name, data) || data.size() != vec_size) {
           continue;
+        }
         raw_data.resize(sizeof(float) * vec_size);
         memcpy(raw_data.data(), data.data(), sizeof(float) * vec_size);
       }
       else if (param->type.basetype == TypeDesc::STRING) {
         string data;
-        if (!params.get_string(param->name, data))
+        if (!params.get_string(param->name, data)) {
           continue;
+        }
         raw_data.resize(data.length() + 1);
         memcpy(raw_data.data(), data.c_str(), data.length() + 1);
       }
@@ -941,8 +983,9 @@ void Camera::set_osl_camera(Scene *scene,
 
     /* Remove unused parameters. */
     for (auto it = script_params.begin(); it != script_params.end();) {
-      if (used_params.count(it->first))
+      if (used_params.count(it->first)) {
         it++;
+      }
       else {
         it = script_params.erase(it);
         changed = true;
