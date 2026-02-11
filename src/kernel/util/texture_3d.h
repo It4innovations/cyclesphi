@@ -214,7 +214,7 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_multires(const ccl_glob
             nanovdb::Vec3d coord_index = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
 
             ReadAccessor<T> acc(grid->tree().root());
-            const nanovdb::Coord coord((int32_t)floorf(coord_index[0]), (int32_t)floorf(coord_index[1]), (int32_t)floorf(coord_index[2]));
+            const nanovdb::Coord coord((int32_t)floorf((float)coord_index[0]), (int32_t)floorf((float)coord_index[1]), (int32_t)floorf((float)coord_index[2]));
             OutT f = acc.getValue(coord);
 
             bool is_nonzero = false;
@@ -226,8 +226,15 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_multires(const ccl_glob
                 is_nonzero = (f.x != 0.0f || f.y != 0.0f || f.z != 0.0f);
             }
 
-            if (is_nonzero)
-                return f;
+            if (is_nonzero) {
+#ifdef MULTIRES_COUNTER
+#ifdef __CUDA_ARCH__
+                unsigned long long int *counter = const_cast<unsigned long long int*>(info_multires_level_counter + i);
+                atomicAdd(counter, 1ULL);
+#endif    
+#endif
+                return f;                
+            }
 
             // Jump to next offset position
             offset = next_offset - sizeof(size_t);
@@ -239,7 +246,7 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_multires(const ccl_glob
             nanovdb::Vec3d coord_index = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
 
             ReadAccessor<T> acc(grid->tree().root());
-            const nanovdb::Coord coord((int32_t)floorf(coord_index[0]), (int32_t)floorf(coord_index[1]), (int32_t)floorf(coord_index[2]));
+            const nanovdb::Coord coord((int32_t)floorf((float)coord_index[0]), (int32_t)floorf((float)coord_index[1]), (int32_t)floorf((float)coord_index[2]));
             OutT f = acc.getValue(coord);
 
             bool is_nonzero = false;
@@ -251,10 +258,24 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_multires(const ccl_glob
                 is_nonzero = (f.x != 0.0f || f.y != 0.0f || f.z != 0.0f);
             }
 
-            if (is_nonzero)
+            if (is_nonzero) {
+#ifdef MULTIRES_COUNTER
+#ifdef __CUDA_ARCH__
+                unsigned long long int *counter = const_cast<unsigned long long int*>(info_multires_level_counter + i);
+                atomicAdd(counter, 1ULL);
+#endif    
+#endif            
                 return f;
+            }
         }
-    }    
+    }
+
+#ifdef MULTIRES_COUNTER
+#ifdef __CUDA_ARCH__
+    unsigned long long int *counter = const_cast<unsigned long long int*>(info_multires_level_counter + 15);
+    atomicAdd(counter, 1ULL);
+#endif    
+#endif
 
     return OutT(0.0f);    
 }
@@ -306,7 +327,7 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
     return make_float4(f, f, f, 1.0f);
   }
   if (data_type == IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT) {
-    const float f = kernel_tex_image_interp_nanovdb_multires<float, float>(info, P.x, P.y, P.z, (const uint)interpolation);
+    const float f = kernel_tex_image_interp_nanovdb_multires<float, float>(info, P.x, P.y, P.z, (uint)interpolation);
     return make_float4(f, f, f, 1.0f);
   }  
   if (data_type == IMAGE_DATA_TYPE_NANOVDB_EMPTY) {

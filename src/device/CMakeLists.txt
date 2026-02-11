@@ -242,6 +242,10 @@ if(WITH_GPU_CPUIMAGE)
   add_definitions(-DWITH_GPU_CPUIMAGE)
 endif()
 
+if(WITH_MULTIRES_COUNTER)
+  add_definitions(-DMULTIRES_COUNTER)
+endif()
+
 include_directories(${INC})
 include_directories(SYSTEM ${INC_SYS})
 

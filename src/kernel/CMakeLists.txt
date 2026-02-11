@@ -481,6 +481,11 @@ function(cuda_add_common_flags cuda_version arch in_flags out_flags)
       -D WITH_GPU_CPUIMAGE)
   endif()
 
+  if(WITH_MULTIRES_COUNTER)
+    set(flags ${flags}
+      -D MULTIRES_COUNTER)
+  endif()
+
   if(WITH_CYCLES_DEBUG)
     set(flags ${flags}
       -D WITH_CYCLES_DEBUG
@@ -735,6 +740,11 @@ if(WITH_CYCLES_HIP_BINARIES AND WITH_CYCLES_DEVICE_HIP)
         -D WITH_GPU_CPUIMAGE)
     endif()
 
+    if(WITH_MULTIRES_COUNTER)
+      set(hip_flags ${hip_flags}
+        -D MULTIRES_COUNTER)
+    endif()
+
     if(WITH_CYCLES_DEBUG)
       set(hip_flags ${hip_flags} -D WITH_CYCLES_DEBUG)
     endif()
@@ -782,6 +792,10 @@ if(WITH_CYCLES_HIP_BINARIES AND WITH_CYCLES_DEVICE_HIPRT)
 
   if(WITH_GPU_CPUIMAGE)
     set(hiprt_compile_flags ${hiprt_compile_flags} -D WITH_GPU_CPUIMAGE)
+  endif()
+
+  if(WITH_MULTIRES_COUNTER)
+    set(hiprt_compile_flags ${hiprt_compile_flags} -D MULTIRES_COUNTER)
   endif()
 
   if(WITH_CYCLES_DEBUG)
@@ -995,6 +1009,10 @@ if(WITH_CYCLES_DEVICE_ONEAPI)
 
   if(WITH_GPU_CPUIMAGE)
     list(APPEND sycl_compiler_flags -DWITH_GPU_CPUIMAGE)
+  endif()
+
+  if(WITH_MULTIRES_COUNTER)
+    list(APPEND sycl_compiler_flags -DMULTIRES_COUNTER)
   endif()
 
   if(WITH_CYCLES_ONEAPI_HOST_TASK_EXECUTION)

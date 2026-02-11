@@ -136,6 +136,7 @@ option(WITH_CYCLES_STANDALONE_GUI    "Build Cycles standalone with GUI" OFF)
 # CyclesPhi Features
 option(WITH_CYCLESPHI "Enable CyclesPhi" ON)
 option(WITH_CLIENT_GPUJPEG "Enable GPUJPEG" OFF)
+option(WITH_MULTIRES_COUNTER "Enable multires counter" OFF)
 
 # NVIDIA CUDA & OptiX
 if(NOT APPLE AND NOT (WIN32 AND CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64"))

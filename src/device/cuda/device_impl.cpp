@@ -141,6 +141,34 @@ CUDADevice::CUDADevice(const DeviceInfo &info, Stats &stats, Profiler &profiler,
 
 CUDADevice::~CUDADevice()
 {
+#ifdef MULTIRES_COUNTER
+  unsigned long long int info_multires_level_counter[16] = {0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};
+
+  CUDAContextScope scope(this);
+  CUdeviceptr mem;
+  size_t bytes;
+  cuda_assert(cuModuleGetGlobal(&mem, &bytes, cuModule, "info_multires_level_counter"));
+  cuda_assert(cuMemcpyDtoH(info_multires_level_counter, mem, sizeof(unsigned long long int) * 16));
+
+  printf("Multires level counters: %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu\n",
+          info_multires_level_counter[0],
+          info_multires_level_counter[1],
+          info_multires_level_counter[2],
+          info_multires_level_counter[3],
+          info_multires_level_counter[4],
+          info_multires_level_counter[5],
+          info_multires_level_counter[6],
+          info_multires_level_counter[7],
+          info_multires_level_counter[8],
+          info_multires_level_counter[9],
+          info_multires_level_counter[10],
+          info_multires_level_counter[11],
+          info_multires_level_counter[12],
+          info_multires_level_counter[13],
+          info_multires_level_counter[14],
+          info_multires_level_counter[15]);
+#endif
+
   texture_info.free();
   if (cuModule) {
     cuda_assert(cuModuleUnload(cuModule));
@@ -459,6 +487,16 @@ bool CUDADevice::load_kernels(const uint kernel_features)
   if (result == CUDA_SUCCESS) {
     kernels.load(this);
     reserve_local_memory(kernel_features);
+    
+#ifdef MULTIRES_COUNTER
+    // Initialize the multires level counter array to zero
+    CUdeviceptr mem;
+    size_t bytes;
+    if (cuModuleGetGlobal(&mem, &bytes, cuModule, "info_multires_level_counter") == CUDA_SUCCESS) {
+      unsigned long long int zero_array[16] = {0};
+      cuMemcpyHtoD(mem, zero_array, sizeof(unsigned long long int) * 16);
+    }
+#endif
   }
 
   return (result == CUDA_SUCCESS);

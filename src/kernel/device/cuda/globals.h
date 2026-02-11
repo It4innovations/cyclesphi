@@ -37,6 +37,12 @@ struct KernelParamsCUDA {
 __constant__ KernelParamsCUDA kernel_params;
 #endif
 
+#ifdef MULTIRES_COUNTER
+#ifdef __KERNEL_GPU__
+  __device__ unsigned long long int info_multires_level_counter[16];
+#endif  
+#endif
+
 /* Abstraction macros */
 #define kernel_data kernel_params.data
 #define kernel_data_fetch(name, index) kernel_params.name[(index)]
