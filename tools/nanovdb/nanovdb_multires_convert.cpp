@@ -23,14 +23,28 @@
 int main(int argc, char* argv[])
 {
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <input.vdb> <output.bin>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <input.vdb> <output.bin> [asc|desc]" << std::endl;
         std::cerr << "  Reads OpenVDB file and converts all grids to NanoVDB format" << std::endl;
-        std::cerr << "  and saves them to a binary file (one grid per level in ascending order)" << std::endl;
+        std::cerr << "  and saves them to a binary file (one grid per level)" << std::endl;
+        std::cerr << "  Optional sort order: 'asc' (default) or 'desc' by resolution" << std::endl;
         return EXIT_FAILURE;
     }
 
     std::string inputFile = argv[1];
     std::string outputFile = argv[2];
+    
+    // Parse sort order (default is ascending)
+    bool sortAscending = true;
+    if (argc >= 4) {
+        std::string sortOrder = argv[3];
+        std::transform(sortOrder.begin(), sortOrder.end(), sortOrder.begin(), ::tolower);
+        if (sortOrder == "desc") {
+            sortAscending = false;
+        } else if (sortOrder != "asc") {
+            std::cerr << "Warning: Unknown sort order '" << argv[3] << "', using 'asc' by default" << std::endl;
+        }
+    }
+    std::cout << "Sort order: " << (sortAscending ? "ascending" : "descending") << " by resolution" << std::endl;
 
     try {
         // Initialize OpenVDB
@@ -52,12 +66,47 @@ int main(int argc, char* argv[])
 
         std::cout << "Found " << grids->size() << " grid(s) in the file" << std::endl;
 
+        // Create a vector of grids with their resolutions for sorting
+        struct GridInfo {
+            openvdb::GridBase::Ptr grid;
+            size_t resolution;
+        };
+        
+        std::vector<GridInfo> gridInfos;
+        for (auto& grid : *grids) {
+            // Calculate resolution as the maximum dimension of the active bounding box
+            openvdb::CoordBBox bbox = grid->evalActiveVoxelBoundingBox();
+            openvdb::Coord dim = bbox.dim();
+            size_t resolution = std::max({dim.x(), dim.y(), dim.z()});
+            
+            std::cout << "Grid: " << grid->getName() 
+                      << " (type: " << grid->type() 
+                      << ", resolution: " << resolution << ")" << std::endl;
+            
+            gridInfos.push_back({grid, resolution});
+        }
+        
+        // Sort grids by resolution
+        std::sort(gridInfos.begin(), gridInfos.end(), 
+            [sortAscending](const GridInfo& a, const GridInfo& b) {
+                return sortAscending ? (a.resolution < b.resolution) : (a.resolution > b.resolution);
+            });
+        
+        std::cout << "\nSorted grid order:" << std::endl;
+        for (size_t i = 0; i < gridInfos.size(); ++i) {
+            std::cout << "  Level " << i << ": " << gridInfos[i].grid->getName() 
+                      << " (resolution: " << gridInfos[i].resolution << ")" << std::endl;
+        }
+        std::cout << std::endl;
+
         // Convert each OpenVDB grid to NanoVDB
         std::vector<nanovdb::GridHandle<nanovdb::HostBuffer>> nanoHandles;
         
-        for (auto& grid : *grids) {
+        for (auto& gridInfo : gridInfos) {
+            auto& grid = gridInfo.grid;
             std::cout << "Converting grid: " << grid->getName() 
-                      << " (type: " << grid->type() << ")" << std::endl;
+                      << " (type: " << grid->type() 
+                      << ", resolution: " << gridInfo.resolution << ")" << std::endl;
             
             // Convert OpenVDB grid to NanoVDB
             auto nanoHandle = nanovdb::tools::openToNanoVDB(grid);

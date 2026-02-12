@@ -170,6 +170,75 @@ OutT kernel_tex_image_interp_nanovdb(const ccl_global TextureInfo &info,
   return OutT(acc.getValue(coord));
 }
 
+#ifdef __CUDA_ARCH__
+
+template<typename OutT, typename T>
+__device__ __forceinline__ OutT kernel_tex_image_interp_nanovdb_multires(
+    const ccl_global TextureInfo& __restrict__ info,
+    const float x, const float y, const float z,
+    const uint /*interpolation*/)
+{
+    using namespace nanovdb;
+
+    const char* __restrict__ base = reinterpret_cast<const char*>(info.data);
+
+    const size_t levels = *reinterpret_cast<const size_t*>(base + 0);
+
+    size_t off = 32;
+
+    const float wx = x, wy = y, wz = z;
+
+    for (size_t i = 0; i < levels; ++i) {
+        // Layout per level:
+        // if not last: [size_t next_off][grid bytes...]
+        // last:        [grid bytes...]
+        size_t next_off = 0;
+        const char* grid_ptr = nullptr;
+
+        if (i + 1 < levels) {
+            next_off = *reinterpret_cast<const size_t*>(base + off);
+            grid_ptr = base + off + sizeof(size_t);
+        } else {
+            grid_ptr = base + off;
+        }
+
+        const ccl_global NanoGrid<T>* __restrict__ grid =
+            reinterpret_cast<const ccl_global NanoGrid<T>*>(grid_ptr);
+
+        const nanovdb::Vec3d ijk_d = grid->worldToIndex(nanovdb::Vec3d(wx, wy, wz));
+
+        // fast floor->int
+        const int ix = __float2int_rd((float)ijk_d[0]);
+        const int iy = __float2int_rd((float)ijk_d[1]);
+        const int iz = __float2int_rd((float)ijk_d[2]);
+
+        const nanovdb::Coord c(ix, iy, iz);
+
+        ReadAccessor<T> acc(grid->tree().root());
+        const OutT f = acc.getValue(c);
+
+        bool nonzero;
+        if constexpr (std::is_same_v<OutT, float>) {
+            nonzero = (f != 0.0f);
+        } else {
+            // assume OutT has .x .y .z
+            nonzero = ((f.x != 0.0f) | (f.y != 0.0f) | (f.z != 0.0f));
+        }
+
+        if (nonzero) {
+            return f;
+        }
+
+        // advance
+        if (i + 1 < levels) {
+            off = next_off - sizeof(size_t);
+        }
+    }
+
+    return OutT(0.0f);
+}
+
+#else
 
 #  if defined(__KERNEL_METAL__)
 template<typename OutT, typename T>
@@ -279,6 +348,8 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_multires(const ccl_glob
 
     return OutT(0.0f);    
 }
+
+#endif /* __CUDA_ARCH__ */
 
 #endif /* WITH_NANOVDB */
 

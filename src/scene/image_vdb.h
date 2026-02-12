@@ -151,6 +151,7 @@ public:
 
 protected:
     size_t levels;
+    size_t largest_grid_id;
 	
     vector<size_t> grid_offsets;
     vector<char> grids;

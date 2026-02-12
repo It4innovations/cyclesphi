@@ -548,6 +548,17 @@ int main(const int argc, const char **argv)
 #endif
     session_init();
     options.session->wait();
+
+#if 0
+    auto start = std::chrono::steady_clock::now();
+    options.session->reset(options.session_params, session_buffer_params());
+    options.session->start();
+    options.session->wait();
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration<float>(end - start).count();
+    printf("Render time: %.6f seconds\n", duration);
+#endif
+
     session_exit();
 #ifdef WITH_CYCLES_STANDALONE_GUI
   }
