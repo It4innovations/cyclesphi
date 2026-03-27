@@ -122,9 +122,13 @@ protected:
 };
 
 class NanoVDBMultiResImageLoader : public VDBImageLoader {
-
 public:
-    NanoVDBMultiResImageLoader(vector<char> &g);
+    enum NanoVDBMultiResImageLoaderType {
+        eMultiResFloat,
+        eMultiResDerivates
+    };
+public:
+    NanoVDBMultiResImageLoader(vector<char> &g, NanoVDBMultiResImageLoaderType t);
     ~NanoVDBMultiResImageLoader();
 
     virtual bool load_metadata(const ImageDeviceFeatures& features,
@@ -155,6 +159,7 @@ protected:
 	
     vector<size_t> grid_offsets;
     vector<char> grids;
+    NanoVDBMultiResImageLoaderType type;
 
     nanovdb::NanoGrid<float>* get_nanogrid(int level) const {
         return (nanovdb::NanoGrid<float>*) (grids.data() + grid_offsets[level]);

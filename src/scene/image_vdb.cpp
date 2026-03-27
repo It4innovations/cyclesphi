@@ -500,8 +500,8 @@ float3 NanoVDBImageLoader::index_to_world(float3 in)
 // size_t : offset to grid2
 // grid1 data (aligned to 32 bytes)
 // ...
-NanoVDBMultiResImageLoader::NanoVDBMultiResImageLoader(vector<char>& g)
-    : VDBImageLoader("")
+NanoVDBMultiResImageLoader::NanoVDBMultiResImageLoader(vector<char>& g, NanoVDBMultiResImageLoaderType t)
+    : VDBImageLoader(""), type(t)
 {    
     grids = std::move(g);
 
@@ -559,7 +559,7 @@ bool NanoVDBMultiResImageLoader::load_metadata(const ImageDeviceFeatures& featur
     //if (bbox.empty()) {
     //    return false;
     //}
-#if 0    
+#if 1
   
     for (int i = 0; i < levels; ++i) {
 		nanovdb::CoordBBox cbbox = get_nanogrid(i)->indexBBox();
@@ -588,7 +588,12 @@ bool NanoVDBMultiResImageLoader::load_metadata(const ImageDeviceFeatures& featur
 
     metadata.byte_size = grids.size();
     if (metadata.channels == 1) {
-        metadata.type = IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT;
+        if (type == eMultiResDerivates) {
+            metadata.type = IMAGE_DATA_TYPE_NANOVDB_DERIVATES;
+        }
+        else {
+            metadata.type = IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT;
+        }        
     }
     else {
         //TODO

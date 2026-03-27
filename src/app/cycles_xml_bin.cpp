@@ -787,7 +787,36 @@ static void xml_read_geom(XMLReadState& state, const xml_node xml_node_geom)
 
 					file.close();			
 
-					unique_ptr<ImageLoader> loader = make_unique<NanoVDBMultiResImageLoader>(raw_data);
+					unique_ptr<ImageLoader> loader = make_unique<NanoVDBMultiResImageLoader>(raw_data, NanoVDBMultiResImageLoader::NanoVDBMultiResImageLoaderType::eMultiResFloat);
+					const ImageParams params;
+					attr->data_voxel() = state.scene->image_manager->add_image(std::move(loader), params, false);
+				}
+				else if (volume_type == "nanovdb_derivates") {
+					vector<char> raw_data;
+					std::string filename = attr_buffer.value();
+
+					// Open file in binary mode and move pointer to end to get file size
+					std::ifstream file(filename, std::ios::binary | std::ios::ate);
+
+					if (!file) {
+						std::cerr << "Error: Could not open file " << filename << std::endl;
+						continue;
+					}
+
+					// Get file size
+					std::streamsize size = file.tellg();
+					file.seekg(0, std::ios::beg);
+
+					// Allocate buffer and read file into it
+					raw_data.resize(size);
+					if (!file.read(raw_data.data(), size)) {
+						std::cerr << "Error reading file!" << std::endl;
+						continue;
+					}
+
+					file.close();			
+
+					unique_ptr<ImageLoader> loader = make_unique<NanoVDBMultiResImageLoader>(raw_data, NanoVDBMultiResImageLoader::NanoVDBMultiResImageLoaderType::eMultiResDerivates);
 					const ImageParams params;
 					attr->data_voxel() = state.scene->image_manager->add_image(std::move(loader), params, false);
 				}				
