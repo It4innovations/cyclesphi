@@ -9,7 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Platform-specific compiler flags
 if(MSVC)
     # Windows - Visual Studio
-    add_compile_options(/W3)
+    add_compile_options(/W3 /bigobj)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 else()
     # Linux and macOS - GCC/Clang
@@ -56,6 +56,8 @@ link_directories(${OPENVDB_LIBRARY_DIR})
 # NanoVDB is typically header-only and included with OpenVDB
 set(NANOVDB_INCLUDE_DIR "" CACHE PATH "Path to NanoVDB include directory (if not with OpenVDB)")
 
+#####################################################################################
+##################nanovdb_multires_convert executable configuration##################
 # Create executable
 add_executable(nanovdb_multires_convert nanovdb_multires_convert.cpp)
 
@@ -97,6 +99,54 @@ install(TARGETS nanovdb_multires_convert
 
 # Print configuration info
 message(STATUS "Building nanovdb_multires_convert")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+
+#####################################################################################
+##################nanovdb_derivates_convert executable configuration##################
+# Create executable
+add_executable(nanovdb_derivates_convert nanovdb_derivates_convert.cpp)
+
+# Include directories
+target_include_directories(nanovdb_derivates_convert PRIVATE
+    ${OPENVDB_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIRS}
+)
+
+# Add NanoVDB include directory if specified separately
+if(NANOVDB_INCLUDE_DIR)
+    target_include_directories(nanovdb_derivates_convert PRIVATE ${NANOVDB_INCLUDE_DIR})
+endif()
+
+# Link libraries
+target_link_libraries(nanovdb_derivates_convert PRIVATE
+    ${OPENVDB_LIBRARY}
+    ${TBB_LIBRARY}
+)
+
+# Platform-specific linking
+if(UNIX AND NOT APPLE)
+    # Linux specific
+    target_link_libraries(nanovdb_derivates_convert PRIVATE pthread dl)
+elseif(APPLE)
+    # macOS specific
+    target_link_libraries(nanovdb_derivates_convert PRIVATE pthread)
+endif()
+
+# Set output directory
+set_target_properties(nanovdb_derivates_convert PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Installation
+install(TARGETS nanovdb_derivates_convert
+    RUNTIME DESTINATION bin
+)
+
+# Print configuration info
+message(STATUS "Building nanovdb_derivates_convert")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")

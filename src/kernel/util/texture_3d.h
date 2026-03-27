@@ -170,7 +170,98 @@ OutT kernel_tex_image_interp_nanovdb(const ccl_global TextureInfo &info,
   return OutT(acc.getValue(coord));
 }
 
+// ============================================================================
+// NanoVDB Derivative Bundle Format - On-Device Structures
+// ============================================================================
+// Binary layout:
+//   1. FileHeader (64 bytes, aligned to 32)
+//   2. LevelHeader[levelCount]
+//   3. GridHeader[gridCount]
+//   4. NanoVDB grid payloads (each 32-byte aligned)
+// ============================================================================
+
+struct DerivFileHeader {
+    uint32_t magic;              // Magic number: 0x4E56444D
+    uint32_t version;            // File format version
+    uint32_t payloadAlignment;   // Alignment requirement for grid payloads
+    uint32_t levelCount;         // Number of levels
+    uint32_t gridCount;          // Total number of grids
+    uint32_t reserved1;
+    uint64_t levelTableOffset;   // Byte offset to LevelHeader array
+    uint64_t gridTableOffset;    // Byte offset to GridHeader array
+    uint64_t payloadBlockOffset; // Byte offset to first grid payload
+    uint64_t totalFileSize;      // Total file size in bytes
+    uint64_t reserved2;
+};
+
+struct DerivLevelHeader {
+    uint32_t levelIndex;         // Level index (0-based)
+    uint32_t derivativeCount;    // Number of derivatives in this level
+    uint32_t firstGridIndex;     // Index of first grid in GridHeader array
+    uint32_t reserved;
+};
+
+struct DerivGridHeader {
+    uint32_t levelIndex;                // Which level this grid belongs to
+    uint32_t derivativeIndex;           // Derivative index within level (0-based)
+    uint32_t derivativeCountInLevel;    // Total derivatives in this level
+    uint32_t reserved1;
+    uint64_t payloadOffset;             // Byte offset to grid payload
+    uint64_t payloadSize;               // Size of grid payload in bytes
+    int32_t  bboxMin[3];                // Bounding box min
+    int32_t  bboxMax[3];                // Bounding box max
+    uint32_t dims[3];                   // Grid dimensions
+    uint32_t reserved2;
+    char     name[56];                  // Grid name for debugging
+};
+
 #ifdef __CUDA_ARCH__
+
+// ============================================================================
+// Device Helpers for NanoVDB Derivative Bundle
+// ============================================================================
+
+// Taylor polynomial basis functions
+// Maps derivative index to basis monomial
+__device__ __forceinline__ double derivBasisValue(int derivIdx, double px, double py, double pz)
+{
+    switch (derivIdx) {
+        case 0:  return 1.0;
+        case 1:  return px;
+        case 2:  return py;
+        case 3:  return pz;
+        case 4:  return px * px * 0.5;
+        case 5:  return py * py * 0.5;
+        case 6:  return pz * pz * 0.5;
+        case 7:  return px * py;
+        case 8:  return px * pz;
+        case 9:  return py * pz;
+        case 10: return px * px * px * (1.0 / 6.0);
+        case 11: return py * py * py * (1.0 / 6.0);
+        case 12: return pz * pz * pz * (1.0 / 6.0);
+        case 13: return px * px * py * 0.5;
+        case 14: return px * px * pz * 0.5;
+        case 15: return py * py * px * 0.5;
+        case 16: return py * py * pz * 0.5;
+        case 17: return pz * pz * px * 0.5;
+        case 18: return pz * pz * py * 0.5;
+        case 19: return px * py * pz;
+        default: return 0.0;
+    }
+}
+
+// Get pointer to NanoVDB grid from GridHeader
+template<typename T>
+__device__ __forceinline__ const nanovdb::NanoGrid<T>* getDerivGridPtr(
+    const uint8_t* base, 
+    const DerivGridHeader& gh)
+{
+    return reinterpret_cast<const nanovdb::NanoGrid<T>*>(base + gh.payloadOffset);
+}
+
+// ============================================================================
+// CUDA: Multi-Res (Old Format - Kept for Compatibility)
+// ============================================================================
 
 template<typename OutT, typename T>
 __device__ __forceinline__ OutT kernel_tex_image_interp_nanovdb_multires(
@@ -238,6 +329,17 @@ __device__ __forceinline__ OutT kernel_tex_image_interp_nanovdb_multires(
     return OutT(0.0f);
 }
 
+// ============================================================================
+// CUDA: Taylor Polynomial Derivative Reconstruction (New Format)
+// ============================================================================
+// Performance notes:
+// - Read FileHeader once (64 bytes)
+// - Read relevant LevelHeader (16 bytes)
+// - Stream GridHeaders for the level (128 bytes each)
+// - Each grid payload read uses NanoVDB ReadAccessor
+// - Accumulate Taylor series coefficients * basis values
+// ============================================================================
+
 template<typename OutT, typename T>
 __device__ __forceinline__ OutT kernel_tex_image_interp_nanovdb_derivates(
     const ccl_global TextureInfo& __restrict__ info,
@@ -246,65 +348,138 @@ __device__ __forceinline__ OutT kernel_tex_image_interp_nanovdb_derivates(
 {
     using namespace nanovdb;
 
-    const char* __restrict__ base = reinterpret_cast<const char*>(info.data);
+    const uint8_t* __restrict__ base = reinterpret_cast<const uint8_t*>(info.data);
 
-    const size_t levels = *reinterpret_cast<const size_t*>(base + 0);
+    // Read FileHeader
+    const DerivFileHeader* fh = reinterpret_cast<const DerivFileHeader*>(base);
+    
+    // Validate magic number (optional, can be removed for performance)
+    // if (fh->magic != 0x4E56444D) return OutT(0.0f);
 
-    size_t off = 32;
+    const uint32_t levelCount = fh->levelCount;
+    if (levelCount == 0) return OutT(0.0f);
+
+    const DerivLevelHeader* levelTable = 
+        reinterpret_cast<const DerivLevelHeader*>(base + fh->levelTableOffset);
+    const DerivGridHeader* gridTable = 
+        reinterpret_cast<const DerivGridHeader*>(base + fh->gridTableOffset);
 
     const float wx = x, wy = y, wz = z;
 
-    for (size_t i = 0; i < levels; ++i) {
-        // Layout per level:
-        // if not last: [size_t next_off][grid bytes...]
-        // last:        [grid bytes...]
-        size_t next_off = 0;
-        const char* grid_ptr = nullptr;
+    // Iterate through levels (coarsest to finest logic, or customize as needed)
+    // Here we check each level for non-zero derivatives and reconstruct
+    for (uint32_t levelIdx = 0; levelIdx < levelCount; ++levelIdx) {
+        const DerivLevelHeader& lh = levelTable[levelIdx];
+        
+        const uint32_t derivCount = lh.derivativeCount;
+        const uint32_t firstGrid = lh.firstGridIndex;
 
-        if (i + 1 < levels) {
-            next_off = *reinterpret_cast<const size_t*>(base + off);
-            grid_ptr = base + off + sizeof(size_t);
-        } else {
-            grid_ptr = base + off;
-        }
+        // Bounds check
+        if (firstGrid + derivCount > fh->gridCount) continue;
 
-        const ccl_global NanoGrid<T>* __restrict__ grid =
-            reinterpret_cast<const ccl_global NanoGrid<T>*>(grid_ptr);
-
-        const nanovdb::Vec3d ijk_d = grid->worldToIndex(nanovdb::Vec3d(wx, wy, wz));
-
-        // fast floor->int
+        // Sample first grid to get reference point for local coordinates
+        // All grids in a level share the same index space
+        const DerivGridHeader& gh0 = gridTable[firstGrid];
+        const nanovdb::NanoGrid<T>* grid0 = getDerivGridPtr<T>(base, gh0);
+        
+        // Convert world to index space
+        const nanovdb::Vec3d ijk_d = grid0->worldToIndex(nanovdb::Vec3d(wx, wy, wz));
+        
+        // Integer voxel coordinate
         const int ix = __float2int_rd((float)ijk_d[0]);
         const int iy = __float2int_rd((float)ijk_d[1]);
         const int iz = __float2int_rd((float)ijk_d[2]);
+        const nanovdb::Coord coord(ix, iy, iz);
 
-        const nanovdb::Coord c(ix, iy, iz);
+        // Local offset from voxel center for Taylor expansion
+        const double px = (double)ijk_d[0] - (double)ix;
+        const double py = (double)ijk_d[1] - (double)iy;
+        const double pz = (double)ijk_d[2] - (double)iz;
 
-        ReadAccessor<T> acc(grid->tree().root());
-        const OutT f = acc.getValue(c);
+        // Accumulate Taylor polynomial reconstruction
+        double result = 0.0;
+        bool hasNonZero = false;
 
-        bool nonzero;
-        if constexpr (std::is_same_v<OutT, float>) {
-            nonzero = (f != 0.0f);
-        } else {
-            // assume OutT has .x .y .z
-            nonzero = ((f.x != 0.0f) | (f.y != 0.0f) | (f.z != 0.0f));
+        for (uint32_t d = 0; d < derivCount; ++d) {
+            const DerivGridHeader& gh = gridTable[firstGrid + d];
+            const nanovdb::NanoGrid<T>* grid = getDerivGridPtr<T>(base, gh);
+
+            // Read coefficient from grid
+            ReadAccessor<T> acc(grid->tree().root());
+            const T coeff = acc.getValue(coord);
+
+            // Check if coefficient is non-zero
+            bool nonzero = false;
+            if constexpr (sizeof(T) == sizeof(float)) {
+                nonzero = (coeff != 0.0f);
+            } else {
+                // For vector types (if needed)
+                nonzero = (coeff != T(0.0f));
+            }
+
+            if (nonzero) {
+                hasNonZero = true;
+                // Multiply coefficient by basis function and accumulate
+                const double basis = derivBasisValue(gh.derivativeIndex, px, py, pz);
+                result += (double)coeff * basis;
+            }
         }
 
-        if (nonzero) {
-            return f;
-        }
-
-        // advance
-        if (i + 1 < levels) {
-            off = next_off - sizeof(size_t);
+        // If this level has non-zero data, return the reconstruction
+        if (hasNonZero) {
+#ifdef MULTIRES_COUNTER
+            unsigned long long int *counter = const_cast<unsigned long long int*>(info_multires_level_counter + levelIdx);
+            atomicAdd(counter, 1ULL);
+#endif
+            return OutT(result);
         }
     }
+
+    // No non-zero data found in any level
+#ifdef MULTIRES_COUNTER
+    unsigned long long int *counter = const_cast<unsigned long long int*>(info_multires_level_counter + 15);
+    atomicAdd(counter, 1ULL);
+#endif
 
     return OutT(0.0f);
 }
 
 #else
+
+// ============================================================================
+// CPU/Metal: Helper for basis evaluation
+// ============================================================================
+
+ccl_device_inline double derivBasisValue_host(int derivIdx, double px, double py, double pz)
+{
+    switch (derivIdx) {
+        case 0:  return 1.0;
+        case 1:  return px;
+        case 2:  return py;
+        case 3:  return pz;
+        case 4:  return px * px * 0.5;
+        case 5:  return py * py * 0.5;
+        case 6:  return pz * pz * 0.5;
+        case 7:  return px * py;
+        case 8:  return px * pz;
+        case 9:  return py * pz;
+        case 10: return px * px * px * (1.0 / 6.0);
+        case 11: return py * py * py * (1.0 / 6.0);
+        case 12: return pz * pz * pz * (1.0 / 6.0);
+        case 13: return px * px * py * 0.5;
+        case 14: return px * px * pz * 0.5;
+        case 15: return py * py * px * 0.5;
+        case 16: return py * py * pz * 0.5;
+        case 17: return pz * pz * px * 0.5;
+        case 18: return pz * pz * py * 0.5;
+        case 19: return px * py * pz;
+        default: return 0.0;
+    }
+}
+
+// ============================================================================
+// CPU/Metal: Multi-Res (Old Format - Kept for Compatibility)
+// ============================================================================
 
 #  if defined(__KERNEL_METAL__)
 template<typename OutT, typename T>
@@ -415,6 +590,10 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_multires(const ccl_glob
     return OutT(0.0f);    
 }
 
+// ============================================================================
+// CPU/Metal: Taylor Polynomial Derivative Reconstruction (New Format)
+// ============================================================================
+
 #  if defined(__KERNEL_METAL__)
 template<typename OutT, typename T>
 __attribute__((noinline)) OutT kernel_tex_image_interp_nanovdb_derivates(const ccl_global TextureInfo &info,
@@ -433,87 +612,92 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates(const ccl_glo
 {
     using namespace nanovdb;
 
-    // Format description of bin file:
-    // size_t : number of levels (aligned to 32 bytes)
-    // size_t : offset to grid1
-    // grid0 data (aligned to 32 bytes)
-    // size_t : offset to grid2
-    // grid1 data (aligned to 32 bytes)
-    // ...
+    const uint8_t* base = reinterpret_cast<const uint8_t*>(info.data);
 
-    size_t offset = 0;
-    // Read number of levels
-    size_t levels = *((size_t*)((char*)info.data + offset));
-    // Align to 32 bytes after num_levels
-    offset = 32;
+    // Read FileHeader
+    const DerivFileHeader* fh = reinterpret_cast<const DerivFileHeader*>(base);
+    
+    const uint32_t levelCount = fh->levelCount;
+    if (levelCount == 0) return OutT(0.0f);
 
-    for (size_t i = 0; i < levels; ++i) {
-        // Get pointer to current grid data        
-        if (i < levels - 1) {
-            // Read next grid offset
-            size_t next_offset = *((size_t*)((char*)info.data + offset));
-            // Grid data starts after the offset field
-            ccl_global NanoGrid<T>* const grid = (ccl_global NanoGrid<T>*)((char*)info.data + (offset + sizeof(size_t)));
+    const DerivLevelHeader* levelTable = 
+        reinterpret_cast<const DerivLevelHeader*>(base + fh->levelTableOffset);
+    const DerivGridHeader* gridTable = 
+        reinterpret_cast<const DerivGridHeader*>(base + fh->gridTableOffset);
 
-            nanovdb::Vec3d coord_index = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
+    const float wx = x, wy = y, wz = z;
 
+    // Iterate through levels
+    for (uint32_t levelIdx = 0; levelIdx < levelCount; ++levelIdx) {
+        const DerivLevelHeader& lh = levelTable[levelIdx];
+        
+        const uint32_t derivCount = lh.derivativeCount;
+        const uint32_t firstGrid = lh.firstGridIndex;
+
+        // Bounds check
+        if (firstGrid + derivCount > fh->gridCount) continue;
+
+        // Sample first grid to get reference point
+        const DerivGridHeader& gh0 = gridTable[firstGrid];
+        const ccl_global nanovdb::NanoGrid<T>* grid0 = 
+            reinterpret_cast<const ccl_global nanovdb::NanoGrid<T>*>(base + gh0.payloadOffset);
+        
+        // Convert world to index space
+        const nanovdb::Vec3d ijk_d = grid0->worldToIndex(nanovdb::Vec3d(wx, wy, wz));
+        
+        // Integer voxel coordinate
+        const int32_t ix = (int32_t)floorf((float)ijk_d[0]);
+        const int32_t iy = (int32_t)floorf((float)ijk_d[1]);
+        const int32_t iz = (int32_t)floorf((float)ijk_d[2]);
+        const nanovdb::Coord coord(ix, iy, iz);
+
+        // Local offset from voxel center for Taylor expansion
+        const double px = (double)ijk_d[0] - (double)ix;
+        const double py = (double)ijk_d[1] - (double)iy;
+        const double pz = (double)ijk_d[2] - (double)iz;
+
+        // Accumulate Taylor polynomial reconstruction
+        double result = 0.0;
+        bool hasNonZero = false;
+
+        for (uint32_t d = 0; d < derivCount; ++d) {
+            const DerivGridHeader& gh = gridTable[firstGrid + d];
+            const ccl_global nanovdb::NanoGrid<T>* grid = 
+                reinterpret_cast<const ccl_global nanovdb::NanoGrid<T>*>(base + gh.payloadOffset);
+
+            // Read coefficient from grid
             ReadAccessor<T> acc(grid->tree().root());
-            const nanovdb::Coord coord((int32_t)floorf((float)coord_index[0]), (int32_t)floorf((float)coord_index[1]), (int32_t)floorf((float)coord_index[2]));
-            OutT f = acc.getValue(coord);
+            const T coeff = acc.getValue(coord);
 
-            bool is_nonzero = false;
-            if constexpr (sizeof(OutT) == sizeof(float)) {
-                is_nonzero = (f != 0.0f);
-            }
-            else {
-                // For vector types, check if any component is non-zero
-                is_nonzero = (f.x != 0.0f || f.y != 0.0f || f.z != 0.0f);
+            // Check if coefficient is non-zero
+            bool nonzero = false;
+            if constexpr (sizeof(T) == sizeof(float)) {
+                nonzero = (coeff != 0.0f);
+            } else {
+                nonzero = (coeff != T(0.0f));
             }
 
-            if (is_nonzero) {
+            if (nonzero) {
+                hasNonZero = true;
+                // Multiply coefficient by basis function and accumulate
+                const double basis = derivBasisValue_host(gh.derivativeIndex, px, py, pz);
+                result += (double)coeff * basis;
+            }
+        }
+
+        // If this level has non-zero data, return the reconstruction
+        if (hasNonZero) {
 #ifdef MULTIRES_COUNTER
 #ifdef __CUDA_ARCH__
-                unsigned long long int *counter = const_cast<unsigned long long int*>(info_multires_level_counter + i);
-                atomicAdd(counter, 1ULL);
+            unsigned long long int *counter = const_cast<unsigned long long int*>(info_multires_level_counter + levelIdx);
+            atomicAdd(counter, 1ULL);
 #endif    
 #endif
-                return f;                
-            }
-
-            // Jump to next offset position
-            offset = next_offset - sizeof(size_t);
-        }
-        else {
-            // Last grid has no offset field
-            ccl_global NanoGrid<T>* const grid = (ccl_global NanoGrid<T>*)((char*)info.data + offset);
-
-            nanovdb::Vec3d coord_index = grid->worldToIndex(nanovdb::Vec3d(x, y, z));
-
-            ReadAccessor<T> acc(grid->tree().root());
-            const nanovdb::Coord coord((int32_t)floorf((float)coord_index[0]), (int32_t)floorf((float)coord_index[1]), (int32_t)floorf((float)coord_index[2]));
-            OutT f = acc.getValue(coord);
-
-            bool is_nonzero = false;
-            if constexpr (sizeof(OutT) == sizeof(float)) {
-                is_nonzero = (f != 0.0f);
-            }
-            else {
-                // For vector types, check if any component is non-zero
-                is_nonzero = (f.x != 0.0f || f.y != 0.0f || f.z != 0.0f);
-            }
-
-            if (is_nonzero) {
-#ifdef MULTIRES_COUNTER
-#ifdef __CUDA_ARCH__
-                unsigned long long int *counter = const_cast<unsigned long long int*>(info_multires_level_counter + i);
-                atomicAdd(counter, 1ULL);
-#endif    
-#endif            
-                return f;
-            }
+            return OutT(result);
         }
     }
 
+    // No non-zero data found in any level
 #ifdef MULTIRES_COUNTER
 #ifdef __CUDA_ARCH__
     unsigned long long int *counter = const_cast<unsigned long long int*>(info_multires_level_counter + 15);
@@ -521,7 +705,7 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates(const ccl_glo
 #endif    
 #endif
 
-    return OutT(0.0f);    
+    return OutT(0.0f);
 }
 
 #endif /* __CUDA_ARCH__ */
