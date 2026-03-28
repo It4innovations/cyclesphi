@@ -816,7 +816,8 @@ static void xml_read_geom(XMLReadState& state, const xml_node xml_node_geom)
 
 					file.close();			
 
-					unique_ptr<ImageLoader> loader = make_unique<NanoVDBMultiResImageLoader>(raw_data, NanoVDBMultiResImageLoader::NanoVDBMultiResImageLoaderType::eMultiResDerivates);
+					// TODO: using multires read
+					unique_ptr<ImageLoader> loader = make_unique<NanoVDBDerivatesImageLoader>(raw_data);
 					const ImageParams params;
 					attr->data_voxel() = state.scene->image_manager->add_image(std::move(loader), params, false);
 				}				

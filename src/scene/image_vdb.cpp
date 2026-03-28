@@ -588,12 +588,7 @@ bool NanoVDBMultiResImageLoader::load_metadata(const ImageDeviceFeatures& featur
 
     metadata.byte_size = grids.size();
     if (metadata.channels == 1) {
-        if (type == eMultiResDerivates) {
-            metadata.type = IMAGE_DATA_TYPE_NANOVDB_DERIVATES;
-        }
-        else {
-            metadata.type = IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT;
-        }        
+        metadata.type = IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT;
     }
     else {
         //TODO
@@ -693,6 +688,233 @@ float3 NanoVDBMultiResImageLoader::index_to_world(float3 in)
 {
     nanovdb::Vec3d p = get_nanogrid(largest_grid_id)->indexToWorld(nanovdb::Vec3d(in[0], in[1], in[2]));
     return make_float3((float)p[0], (float)p[1], (float)p[2]);
+}
+
+///////////////////// NanoVDBDerivatesImageLoader
+// New derivative bundle format:
+// FileHeader (64 bytes)
+// LevelHeader[levelCount]
+// GridHeader[gridCount]
+// NanoVDB grid payloads (each 32-byte aligned)
+NanoVDBDerivatesImageLoader::NanoVDBDerivatesImageLoader(vector<char>& g)
+    : VDBImageLoader(""), finest_level_id(0)
+{
+    bundle_data = std::move(g);
+
+    // Read and validate file header
+    if (bundle_data.size() < sizeof(DerivFileHeader)) {
+        printf("NanoVDBDerivatesImageLoader: Invalid bundle size\n");
+        return;
+    }
+
+    const DerivFileHeader* fh = get_file_header();
+    
+    // Validate magic number
+    if (fh->magic != 0x4E56444D) {
+        printf("NanoVDBDerivatesImageLoader: Invalid magic number: 0x%08X\n", fh->magic);
+        return;
+    }
+
+    // Cache file header
+    file_header = *fh;
+
+    printf("NanoVDBDerivatesImageLoader: Loaded derivative bundle\n");
+    printf("  Version: %u\n", file_header.version);
+    printf("  Levels: %u\n", file_header.levelCount);
+    printf("  Grids: %u\n", file_header.gridCount);
+    printf("  Total size: %llu bytes\n", file_header.totalFileSize);
+
+    // Find finest level (typically level 0, but we check resolution)
+    const DerivLevelHeader* level_table = get_level_table();
+    const DerivGridHeader* grid_table = get_grid_table();
+    
+    finest_level_id = 0;
+    uint32_t max_resolution = 0;
+
+    for (uint32_t i = 0; i < file_header.levelCount; ++i) {
+        const DerivLevelHeader& lh = level_table[i];
+        
+        if (lh.firstGridIndex < file_header.gridCount) {
+            const DerivGridHeader& gh = grid_table[lh.firstGridIndex];
+            uint32_t resolution = std::max({gh.dims[0], gh.dims[1], gh.dims[2]});
+            
+            printf("  Level %u: %u derivatives, resolution %u\n", 
+                   (unsigned)lh.levelIndex, (unsigned)lh.derivativeCount, (unsigned)resolution);
+            
+            if (resolution > max_resolution) {
+                max_resolution = resolution;
+                finest_level_id = i;
+            }
+        }
+    }
+
+    printf("  Finest level: %u (resolution %u)\n", (unsigned)finest_level_id, max_resolution);
+}
+
+NanoVDBDerivatesImageLoader::~NanoVDBDerivatesImageLoader()
+{
+}
+
+bool NanoVDBDerivatesImageLoader::load_metadata(const ImageDeviceFeatures& features, ImageMetaData& metadata)
+{
+    if (file_header.magic != 0x4E56444D || file_header.gridCount == 0) {
+        return false;
+    }
+
+    // All derivative grids are float type
+    metadata.channels = 1;
+    metadata.type = IMAGE_DATA_TYPE_NANOVDB_DERIVATES;
+    metadata.byte_size = bundle_data.size();
+
+    // Get bounding box from finest level
+    const DerivLevelHeader* level_table = get_level_table();
+    const DerivGridHeader* grid_table = get_grid_table();
+    
+    const DerivLevelHeader& finest_level = level_table[finest_level_id];
+    
+    if (finest_level.firstGridIndex >= file_header.gridCount) {
+        return false;
+    }
+
+    // Use first grid of finest level for metadata
+    const DerivGridHeader& first_grid = grid_table[finest_level.firstGridIndex];
+    nanovdb::NanoGrid<float>* grid = get_grid(finest_level.firstGridIndex);
+
+    if (!grid) {
+        return false;
+    }
+
+    // Set dimensions from world bounding box
+    auto bbox = grid->worldBBox();
+    auto dim = bbox.dim();
+    metadata.width = dim[0];
+    metadata.height = dim[1];
+
+    // Set transform from object space to voxel index
+    const double* matD = grid->map().mMatD;
+    const double* vecD = grid->map().mVecD;
+
+    Transform index_to_object;
+    for (int i = 0; i < 3; ++i) {
+        index_to_object[i].x = static_cast<float>(matD[i * 3 + 0]);
+        index_to_object[i].y = static_cast<float>(matD[i * 3 + 1]);
+        index_to_object[i].z = static_cast<float>(matD[i * 3 + 2]);
+        index_to_object[i].w = static_cast<float>(vecD[i]);
+    }
+
+    metadata.transform_3d = transform_inverse(index_to_object);
+    metadata.use_transform_3d = false;
+
+    return true;
+}
+
+bool NanoVDBDerivatesImageLoader::load_pixels(const ImageMetaData&, void* pixels, const size_t, const bool)
+{
+    if (bundle_data.size() > 0) {
+        memcpy(pixels, bundle_data.data(), bundle_data.size());
+    }
+
+    return true;
+}
+
+string NanoVDBDerivatesImageLoader::name() const
+{
+    if (file_header.gridCount > 0) {
+        // Return a descriptive name based on the bundle
+        return string_printf("DerivativeBundle_%uL_%uG", 
+                           file_header.levelCount, 
+                           file_header.gridCount);
+    }
+    return "DerivativeBundle";
+}
+
+bool NanoVDBDerivatesImageLoader::equals(const ImageLoader& other) const
+{
+    const NanoVDBDerivatesImageLoader& other_loader = 
+        (const NanoVDBDerivatesImageLoader&)other;
+    
+    if (bundle_data.size() != other_loader.bundle_data.size()) {
+        return false;
+    }
+    
+    return !memcmp(bundle_data.data(), 
+                   other_loader.bundle_data.data(), 
+                   bundle_data.size());
+}
+
+void NanoVDBDerivatesImageLoader::cleanup()
+{
+}
+
+bool NanoVDBDerivatesImageLoader::is_vdb_loader() const
+{
+    return true;
+}
+
+bool NanoVDBDerivatesImageLoader::is_simple_mesh() const
+{
+    return true;
+}
+
+void NanoVDBDerivatesImageLoader::get_bbox(int3 &min_bbox, int3 &max_bbox)
+{
+    if (file_header.gridCount == 0) {
+        min_bbox = max_bbox = make_int3(0, 0, 0);
+        return;
+    }
+
+    // Compute unified bounding box across all levels
+    const DerivLevelHeader* level_table = get_level_table();
+    const DerivGridHeader* grid_table = get_grid_table();
+    
+    nanovdb::CoordBBox unified_bbox;
+    bool first = true;
+
+    for (uint32_t level_idx = 0; level_idx < file_header.levelCount; ++level_idx) {
+        const DerivLevelHeader& lh = level_table[level_idx];
+        
+        if (lh.firstGridIndex < file_header.gridCount) {
+            // Use first grid of each level for bbox
+            nanovdb::NanoGrid<float>* grid = get_grid(lh.firstGridIndex);
+            if (grid) {
+                nanovdb::CoordBBox level_bbox = grid->indexBBox();
+                
+                if (first) {
+                    unified_bbox = level_bbox;
+                    first = false;
+                } else {
+                    unified_bbox.expand(level_bbox);
+                }
+            }
+        }
+    }
+
+    auto grid_bbox_min = unified_bbox.min();
+    auto grid_bbox_max = unified_bbox.max();
+
+    min_bbox = make_int3(grid_bbox_min.x(), grid_bbox_min.y(), grid_bbox_min.z());
+    max_bbox = make_int3(grid_bbox_max.x(), grid_bbox_max.y(), grid_bbox_max.z());
+}
+
+float3 NanoVDBDerivatesImageLoader::index_to_world(float3 in)
+{
+    if (file_header.gridCount == 0) {
+        return make_float3(0, 0, 0);
+    }
+
+    // Use finest level grid for coordinate transformation
+    const DerivLevelHeader* level_table = get_level_table();
+    const DerivLevelHeader& finest_level = level_table[finest_level_id];
+    
+    if (finest_level.firstGridIndex < file_header.gridCount) {
+        nanovdb::NanoGrid<float>* grid = get_grid(finest_level.firstGridIndex);
+        if (grid) {
+            nanovdb::Vec3d p = grid->indexToWorld(nanovdb::Vec3d(in[0], in[1], in[2]));
+            return make_float3((float)p[0], (float)p[1], (float)p[2]);
+        }
+    }
+
+    return make_float3(0, 0, 0);
 }
 
 #endif

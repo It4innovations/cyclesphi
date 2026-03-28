@@ -140,46 +140,69 @@ struct GridMetadata {
 
 // Parse grid name like "L-05-04-D-20-19"
 // Format: L-{totalLevels}-{levelIndex}-D-{derivCountInLevel}-{derivIndex}
-GridMetadata parseGridName(const std::string& name) {
-    GridMetadata meta = {0, 0, 0, 0, false};
-    
-    // Expected format: L-XX-XX-D-XX-XX
-    if (name.size() < 15) return meta; // Minimum length check
-    
-    // Find positions of delimiters
-    if (name[0] != 'L' || name[1] != '-') return meta;
-    
-    size_t pos1 = name.find('-', 2);
-    if (pos1 == std::string::npos) return meta;
-    
-    size_t pos2 = name.find('-', pos1 + 1);
-    if (pos2 == std::string::npos) return meta;
-    
-    size_t posD = name.find("-D-", pos2);
-    if (posD == std::string::npos) return meta;
-    
-    size_t pos3 = name.find('-', posD + 3);
-    if (pos3 == std::string::npos) return meta;
-    
-    size_t pos4 = name.find('-', pos3 + 1);
-    if (pos4 == std::string::npos) return meta;
-    
-    try {
-        std::string totalLevelsStr = name.substr(2, pos1 - 2);
-        std::string levelIndexStr = name.substr(pos1 + 1, pos2 - pos1 - 1);
-        std::string derivCountStr = name.substr(posD + 3, pos3 - posD - 3);
-        std::string derivIndexStr = name.substr(pos4 + 1);
-        
-        meta.totalLevels = std::stoul(totalLevelsStr);
-        meta.levelIndex = std::stoul(levelIndexStr);
-        meta.derivativeCountInLevel = std::stoul(derivCountStr);
-        meta.derivativeIndex = std::stoul(derivIndexStr);
-        meta.valid = true;
-    } catch (...) {
-        meta.valid = false;
-    }
-    
+GridMetadata parseGridName(const std::string &name)
+{
+  GridMetadata meta = {0, 0, 0, 0, false};
+
+  // Expected format: L-XX-XX-D-XX-XX
+  // Example: L-05-00-D-01-00
+  if (name.size() < 15) {
     return meta;
+  }
+
+  if (name[0] != 'L' || name[1] != '-') {
+    return meta;
+  }
+
+  // Find delimiters
+  const size_t pos1 = name.find('-', 2);  // after totalLevels
+  if (pos1 == std::string::npos) {
+    return meta;
+  }
+
+  const size_t pos2 = name.find('-', pos1 + 1);  // after levelIndex
+  if (pos2 == std::string::npos) {
+    return meta;
+  }
+
+  const size_t posD = name.find("-D-", pos2);  // marker before derivatives
+  if (posD == std::string::npos) {
+    return meta;
+  }
+
+  const size_t pos3 = name.find('-', posD + 3);  // between derivCount and derivIndex
+  if (pos3 == std::string::npos) {
+    return meta;
+  }
+
+  // Ensure there is no unexpected extra '-'
+  if (name.find('-', pos3 + 1) != std::string::npos) {
+    return meta;
+  }
+
+  try {
+    const std::string totalLevelsStr = name.substr(2, pos1 - 2);
+    const std::string levelIndexStr = name.substr(pos1 + 1, pos2 - pos1 - 1);
+    const std::string derivCountStr = name.substr(posD + 3, pos3 - (posD + 3));
+    const std::string derivIndexStr = name.substr(pos3 + 1);
+
+    if (totalLevelsStr.empty() || levelIndexStr.empty() || derivCountStr.empty() ||
+        derivIndexStr.empty())
+    {
+      return meta;
+    }
+
+    meta.totalLevels = std::stoul(totalLevelsStr);
+    meta.levelIndex = std::stoul(levelIndexStr);
+    meta.derivativeCountInLevel = std::stoul(derivCountStr);
+    meta.derivativeIndex = std::stoul(derivIndexStr);
+    meta.valid = true;
+  }
+  catch (...) {
+    meta = {0, 0, 0, 0, false};
+  }
+
+  return meta;
 }
 
 // ============================================================================

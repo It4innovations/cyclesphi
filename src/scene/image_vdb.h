@@ -124,8 +124,7 @@ protected:
 class NanoVDBMultiResImageLoader : public VDBImageLoader {
 public:
     enum NanoVDBMultiResImageLoaderType {
-        eMultiResFloat,
-        eMultiResDerivates
+        eMultiResFloat
     };
 public:
     NanoVDBMultiResImageLoader(vector<char> &g, NanoVDBMultiResImageLoaderType t);
@@ -163,6 +162,93 @@ protected:
 
     nanovdb::NanoGrid<float>* get_nanogrid(int level) const {
         return (nanovdb::NanoGrid<float>*) (grids.data() + grid_offsets[level]);
+    }
+};
+
+class NanoVDBDerivatesImageLoader : public VDBImageLoader {
+public:
+    NanoVDBDerivatesImageLoader(vector<char> &g);
+    ~NanoVDBDerivatesImageLoader();
+
+    virtual bool load_metadata(const ImageDeviceFeatures& features,
+        ImageMetaData& metadata) override;
+
+    virtual bool load_pixels(const ImageMetaData& metadata,
+        void* pixels,
+        const size_t pixels_size,
+        const bool associate_alpha) override;
+
+    virtual string name() const override;
+
+    virtual bool equals(const ImageLoader& other) const override;
+
+    virtual void cleanup() override;
+
+    virtual bool is_vdb_loader() const override;
+
+    virtual bool is_simple_mesh() const override;
+
+    virtual void get_bbox(int3 &min_bbox, int3 &max_bbox) override;
+
+    virtual float3 index_to_world(float3 in) override;
+
+protected:
+    // On-disk structures matching the export format
+    struct DerivFileHeader {
+        uint32_t magic;
+        uint32_t version;
+        uint32_t payloadAlignment;
+        uint32_t levelCount;
+        uint32_t gridCount;
+        uint32_t reserved1;
+        uint64_t levelTableOffset;
+        uint64_t gridTableOffset;
+        uint64_t payloadBlockOffset;
+        uint64_t totalFileSize;
+        uint64_t reserved2;
+    };
+
+    struct DerivLevelHeader {
+        uint32_t levelIndex;
+        uint32_t derivativeCount;
+        uint32_t firstGridIndex;
+        uint32_t reserved;
+    };
+
+    struct DerivGridHeader {
+        uint32_t levelIndex;
+        uint32_t derivativeIndex;
+        uint32_t derivativeCountInLevel;
+        uint32_t reserved1;
+        uint64_t payloadOffset;
+        uint64_t payloadSize;
+        int32_t  bboxMin[3];
+        int32_t  bboxMax[3];
+        uint32_t dims[3];
+        uint32_t reserved2;
+        char     name[56];
+    };
+
+    vector<char> bundle_data;
+    DerivFileHeader file_header;
+    size_t finest_level_id;
+
+    const DerivFileHeader* get_file_header() const {
+        return reinterpret_cast<const DerivFileHeader*>(bundle_data.data());
+    }
+
+    const DerivLevelHeader* get_level_table() const {
+        return reinterpret_cast<const DerivLevelHeader*>(bundle_data.data() + file_header.levelTableOffset);
+    }
+
+    const DerivGridHeader* get_grid_table() const {
+        return reinterpret_cast<const DerivGridHeader*>(bundle_data.data() + file_header.gridTableOffset);
+    }
+
+    nanovdb::NanoGrid<float>* get_grid(uint32_t grid_index) const {
+        const DerivGridHeader* grid_headers = get_grid_table();
+        return reinterpret_cast<nanovdb::NanoGrid<float>*>(
+            const_cast<char*>(bundle_data.data()) + grid_headers[grid_index].payloadOffset);
     }
 };
 
