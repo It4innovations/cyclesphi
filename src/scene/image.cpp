@@ -60,6 +60,10 @@ const char *name_from_type(ImageDataType type)
       return "nanovdb_derivates";
     case IMAGE_DATA_TYPE_NANOVDB_EMPTY:
       return "nanovdb_empty";
+    case IMAGE_DATA_TYPE_RAW3D_FLOAT:
+      return "raw3d_float";
+    case IMAGE_DATA_TYPE_RAW3D_FLOAT3:
+      return "raw3d_float3";
     case IMAGE_DATA_NUM_TYPES:
       assert(!"System enumerator type, should never be used");
       return "";

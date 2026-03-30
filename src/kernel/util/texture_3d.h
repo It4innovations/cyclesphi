@@ -767,6 +767,18 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
   if (data_type == IMAGE_DATA_TYPE_NANOVDB_EMPTY) {
     return zero_float4();
   }
+  if (data_type == IMAGE_DATA_TYPE_RAW3D_FLOAT) {
+    float* data = (float *)info.data;
+    size_t index = (size_t)floorf(P.x) + (size_t)floorf(P.y) * info.width + (size_t)floorf(P.z) * info.width * info.height;
+    const float f = data[index];
+    return make_float4(f, f, f, 1.0f);
+  }
+  if (data_type == IMAGE_DATA_TYPE_RAW3D_FLOAT3) {
+    float3* data = (float3 *)info.data;
+    size_t index = (size_t)floorf(P.x) + (size_t)floorf(P.y) * info.width + (size_t)floorf(P.z) * info.width * info.height;
+    const float3 f = data[index];
+    return make_float4(f, 1.0f);
+  }  
 #else
   (void)kg;
   (void)sd;

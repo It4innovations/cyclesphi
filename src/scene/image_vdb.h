@@ -257,10 +257,7 @@ protected:
 class RAWImageLoader : public VDBImageLoader {
 public:
     enum RAWImageLoaderType {
-        eRawFloat,
-        eRawByte,
-        eRawHalf,
-        eRawUShort
+        eRawFloat
     };
 
 public:

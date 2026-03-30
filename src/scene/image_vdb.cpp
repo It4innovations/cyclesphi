@@ -938,41 +938,17 @@ bool RAWImageLoader::load_metadata(const ImageDeviceFeatures& features, ImageMet
 
     metadata.byte_size = grid.size();
 
-    if (metadata.channels == 4) {
+    if (metadata.channels == 3) {
         switch (raw_type) {
         case RAWImageLoader::eRawFloat:
-            metadata.type = IMAGE_DATA_TYPE_FLOAT4;
-            break;
-
-        case RAWImageLoader::eRawByte:
-            metadata.type = IMAGE_DATA_TYPE_BYTE4;
-            break;
-
-        case RAWImageLoader::eRawHalf:
-            metadata.type = IMAGE_DATA_TYPE_HALF4;
-            break;
-
-        case RAWImageLoader::eRawUShort:
-            metadata.type = IMAGE_DATA_TYPE_USHORT4;
+            metadata.type = IMAGE_DATA_TYPE_RAW3D_FLOAT3;
             break;
         }
     }
     else if (metadata.channels == 1) {
         switch (raw_type) {
             case RAWImageLoader::eRawFloat:
-                metadata.type = IMAGE_DATA_TYPE_FLOAT;
-                break;
-
-            case RAWImageLoader::eRawByte:
-                metadata.type = IMAGE_DATA_TYPE_BYTE;
-                break;
-
-            case RAWImageLoader::eRawHalf:
-                metadata.type = IMAGE_DATA_TYPE_HALF;
-                break;
-
-            case RAWImageLoader::eRawUShort:
-                metadata.type = IMAGE_DATA_TYPE_USHORT;
+                metadata.type = IMAGE_DATA_TYPE_RAW3D_FLOAT;
                 break;
         }
     }    
