@@ -114,9 +114,8 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 		return false;
 	}
 
-	if (attr_name && ustring(attr_name.value()) != socket.name ||
-		attr_name_ui && ustring(attr_name_ui.value()) != socket.ui_name
-		) {
+	if ((attr_name && ustring(attr_name.value()) != socket.name) ||
+		(attr_name_ui && ustring(attr_name_ui.value()) != socket.ui_name)) {
 		return false;
 	}
 
