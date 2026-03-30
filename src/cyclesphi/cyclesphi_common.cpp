@@ -247,6 +247,7 @@ void session_init(FromCL& fromCL, Options& options, int session_id)
 	options.session_params.use_resolution_divider = false;
 	options.session_params.samples = 1;
 
+	//TODO
 	//options.session_params.threads = 1;
 
 	options.output_pass = "combined";
