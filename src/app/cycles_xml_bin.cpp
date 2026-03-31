@@ -887,12 +887,13 @@ static void xml_read_geom(XMLReadState& state, const xml_node xml_node_geom)
 					int channels = std::stoi(attr_raw_channels.value());
 
 					RAWImageLoader::RAWImageLoaderType type = RAWImageLoader::RAWImageLoaderType::eRawFloat;
-					if (sraw_type == "byte")
-						type = RAWImageLoader::RAWImageLoaderType::eRawByte;
-					else if (sraw_type == "half")
-						type = RAWImageLoader::RAWImageLoaderType::eRawHalf;
-					else if (sraw_type == "ushort")
-						type = RAWImageLoader::RAWImageLoaderType::eRawUShort;
+					// TODO: support more types
+					//if (sraw_type == "byte")
+					//	type = RAWImageLoader::RAWImageLoaderType::eRawByte;
+					//else if (sraw_type == "half")
+					//	type = RAWImageLoader::RAWImageLoaderType::eRawHalf;
+					//else if (sraw_type == "ushort")
+					//	type = RAWImageLoader::RAWImageLoaderType::eRawUShort;
 
 					if (xml_is_digit(filename)) {
 						read_vector_from_binary_file(state, raw_data, filename.c_str());

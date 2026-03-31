@@ -670,6 +670,14 @@ void Session::wait()
   }
 }
 
+bool Session::update_scene_simple()
+{
+  scene->only_update = true;
+  bool res = update_scene(false);
+  scene->only_update = false;
+  return res;
+}
+
 bool Session::update_scene(const bool reset_samples)
 {
   /* Update number of samples in the integrator.

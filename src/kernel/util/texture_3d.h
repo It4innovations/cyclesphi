@@ -769,13 +769,21 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
   }
   if (data_type == IMAGE_DATA_TYPE_RAW3D_FLOAT) {
     float* data = (float *)info.data;
-    size_t index = (size_t)floorf(P.x) + (size_t)floorf(P.y) * info.width + (size_t)floorf(P.z) * info.width * info.height;
+    float w = info.transform_3d.x.x;
+    float h = info.transform_3d.y.y;
+    float d = info.transform_3d.z.z;
+
+    size_t index = (size_t)floorf(P.x) + (size_t)floorf(P.y) * w + (size_t)floorf(P.z) * w * h;
     const float f = data[index];
     return make_float4(f, f, f, 1.0f);
   }
   if (data_type == IMAGE_DATA_TYPE_RAW3D_FLOAT3) {
     float3* data = (float3 *)info.data;
-    size_t index = (size_t)floorf(P.x) + (size_t)floorf(P.y) * info.width + (size_t)floorf(P.z) * info.width * info.height;
+    float w = info.transform_3d.x.x;
+    float h = info.transform_3d.y.y;
+    float d = info.transform_3d.z.z;
+
+    size_t index = (size_t)floorf(P.x) + (size_t)floorf(P.y) * w + (size_t)floorf(P.z) * w * h;
     const float3 f = data[index];
     return make_float4(f, 1.0f);
   }  

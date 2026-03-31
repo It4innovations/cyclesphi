@@ -164,7 +164,9 @@ class Session {
    * via the write callback. */
   void process_full_buffer_from_disk(string_view filename);
 
- protected:
+  bool update_scene_simple();
+
+ private:
   struct DelayedReset {
     thread_mutex mutex;
     bool do_reset;

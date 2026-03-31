@@ -233,9 +233,11 @@ void Scene::device_update(Device *device_, Progress &progress)
     const uint kernel_features = dscene.data.kernel_features;
     scene_updated_while_loading_kernels = false;
     if (!kernels_loaded || loaded_kernel_features != kernel_features) {
-      mutex.unlock();
+      if (!only_update)
+        mutex.unlock();
       kernels_reloaded |= load_kernels(progress);
-      mutex.lock();
+      if (!only_update)
+        mutex.lock();
     }
 
     if (progress.get_cancel() || device->have_error()) {
