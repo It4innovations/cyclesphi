@@ -749,6 +749,21 @@ NanoVDBDerivatesImageLoader::NanoVDBDerivatesImageLoader(vector<char>& g)
     }
 
     printf("  Finest level: %u (resolution %u)\n", (unsigned)finest_level_id, max_resolution);
+
+    // Print transform information for each grid
+    printf("  Grid transforms:\n");
+    for (uint32_t grid_idx = 0; grid_idx < file_header.gridCount; ++grid_idx) {
+        nanovdb::NanoGrid<float>* grid = get_grid(grid_idx);
+        if (grid) {
+            const double* matD = grid->map().mMatD;
+            const double* vecD = grid->map().mVecD;
+            
+            printf("    Grid %u: matD=[%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f], vecD=[%.6f, %.6f, %.6f]\n",
+                   grid_idx,
+                   matD[0], matD[1], matD[2], matD[3], matD[4], matD[5], matD[6], matD[7], matD[8],
+                   vecD[0], vecD[1], vecD[2]);
+        }
+    }
 }
 
 NanoVDBDerivatesImageLoader::~NanoVDBDerivatesImageLoader()
