@@ -34,7 +34,15 @@ struct Transform;
  *
  * The values of this enumeration are also used as flags to detect changes in AttributeSet. */
 
-enum AttrKernelDataType { FLOAT = 0, FLOAT2 = 1, FLOAT3 = 2, FLOAT4 = 3, UCHAR4 = 4, NUM = 5 };
+enum AttrKernelDataType {
+  FLOAT = 0,
+  FLOAT2 = 1,
+  FLOAT3 = 2,
+  FLOAT4 = 3,
+  UCHAR4 = 4,
+  NORMAL = 5,
+  NUM = 6
+};
 
 /* Attribute
  *
@@ -64,7 +72,7 @@ class Attribute {
   ~Attribute();
 
   void set(ustring name, const TypeDesc type, AttributeElement element);
-  void resize(Geometry *geom, AttributePrimitive prim, bool reserve_only);
+  void resize(Geometry *geom, AttributePrimitive prim);
   void resize(const size_t num_elements);
 
   size_t data_sizeof() const;
@@ -99,6 +107,11 @@ class Attribute {
   {
     assert(data_sizeof() == sizeof(uchar4));
     return (uchar4 *)data();
+  }
+  packed_normal *data_normal()
+  {
+    assert(data_sizeof() == sizeof(packed_normal));
+    return (packed_normal *)data();
   }
   Transform *data_transform()
   {
@@ -150,13 +163,6 @@ class Attribute {
 
   void zero_data(void *dst);
 
-  void add(const float &f);
-  void add(const float2 &f);
-  void add(const float3 &f);
-  void add(const uchar4 &f);
-  void add(const Transform &f);
-  void add(const char *data);
-
   void set_data_from(Attribute &&other);
 
   static bool same_storage(const TypeDesc a, const TypeDesc b);
@@ -201,7 +207,7 @@ class AttributeSet {
 
   void remove(list<Attribute>::iterator it);
 
-  void resize(bool reserve_only = false);
+  void resize();
   void clear(bool preserve_voxel_data = false);
 
   /* Update the attributes in this AttributeSet with the ones from the new set,

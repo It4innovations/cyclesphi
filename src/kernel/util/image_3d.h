@@ -7,7 +7,7 @@
 #include "kernel/globals.h"
 #include "kernel/sample/lcg.h"
 
-#include "util/texture.h"
+#include "util/types_image.h"
 
 #if !defined(__KERNEL_METAL__) && !defined(__KERNEL_ONEAPI__)
 #  ifdef WITH_NANOVDB
@@ -27,7 +27,7 @@ namespace {
 #ifdef WITH_NANOVDB
 
 /* Cubic interpolation weights. */
-ccl_device_inline void fill_cubic_weights(float3 w[4], float3 t)
+ccl_device_forceinline void fill_cubic_weights(float3 w[4], float3 t)
 {
   w[0] = (((-1.0f / 6.0f) * t + 0.5f) * t - 0.5f) * t + (1.0f / 6.0f);
   w[1] = ((0.5f * t - 1.0f) * t) * t + (2.0f / 3.0f);
@@ -89,7 +89,7 @@ ccl_device_inline float3 interp_stochastic(const float3 P,
 /** \} */
 
 template<typename OutT, typename Acc>
-ccl_device OutT kernel_tex_image_interp_trilinear_nanovdb(ccl_private Acc &acc, const float3 P)
+ccl_device OutT kernel_image_interp_trilinear_nanovdb(ccl_private Acc &acc, const float3 P)
 {
   const float3 floor_P = floor(P);
   const float3 t = P - floor_P;
@@ -117,8 +117,40 @@ ccl_device OutT kernel_tex_image_interp_trilinear_nanovdb(ccl_private Acc &acc, 
 }
 
 template<typename OutT, typename Acc>
-ccl_device OutT kernel_tex_image_interp_tricubic_nanovdb(ccl_private Acc &acc, const float3 P)
+ccl_device OutT kernel_image_interp_tricubic_nanovdb(ccl_private Acc &acc, const float3 P)
 {
+#  if defined(__KERNEL_HIP__)
+  /* Explicitly unroll for HIP compiler to unroll the loop. Without this the render result is wrong
+   * on a specific platform/compiler combinations. ALso don't rely on the `unroll` hint as it has
+   * a performance impact. See #152126 and discussion/benchmark in !152321. */
+
+  const float3 floor_P = floor(P);
+  const float3 t = P - floor_P;
+  const int3 index = make_int3(floor_P);
+
+  const int xc[4] = {index.x - 1, index.x, index.x + 1, index.x + 2};
+  const int yc[4] = {index.y - 1, index.y, index.y + 1, index.y + 2};
+  const int zc[4] = {index.z - 1, index.z, index.z + 1, index.z + 2};
+
+  float3 weight[4];
+  fill_cubic_weights(weight, t);
+
+#    define DATA(x, y, z) (OutT(acc.getValue(make_int3(xc[x], yc[y], zc[z]))))
+#    define COL_TERM(col, row) \
+      (weight[col].y * (weight[0].x * DATA(0, col, row) + weight[1].x * DATA(1, col, row) + \
+                        weight[2].x * DATA(2, col, row) + weight[3].x * DATA(3, col, row)))
+#    define ROW_TERM(row) \
+      (weight[row].z * (COL_TERM(0, row) + COL_TERM(1, row) + COL_TERM(2, row) + COL_TERM(3, row)))
+
+  /* Actual interpolation. */
+  return ROW_TERM(0) + ROW_TERM(1) + ROW_TERM(2) + ROW_TERM(3);
+
+#    undef COL_TERM
+#    undef ROW_TERM
+#    undef DATA
+
+#  else
+
   const float3 floor_P = floor(P);
   const float3 t = P - floor_P;
   const int3 index = make_int3(floor_P) - make_int3(1);
@@ -129,15 +161,18 @@ ccl_device OutT kernel_tex_image_interp_tricubic_nanovdb(ccl_private Acc &acc, c
   OutT result = make_zero<OutT>();
 
   for (int k = 0; k < 4; k++) {
+    OutT col_term_acc = make_zero<OutT>();
     for (int j = 0; j < 4; j++) {
-      result += w[k].z * (w[j].y * (w[0].x * (OutT(acc.getValue(index + make_int3(0, j, k)))) +
-                                    w[1].x * (OutT(acc.getValue(index + make_int3(1, j, k)))) +
-                                    w[2].x * (OutT(acc.getValue(index + make_int3(2, j, k)))) +
-                                    w[3].x * (OutT(acc.getValue(index + make_int3(3, j, k))))));
+      col_term_acc += w[j].y * (w[0].x * (OutT(acc.getValue(index + make_int3(0, j, k)))) +
+                                w[1].x * (OutT(acc.getValue(index + make_int3(1, j, k)))) +
+                                w[2].x * (OutT(acc.getValue(index + make_int3(2, j, k)))) +
+                                w[3].x * (OutT(acc.getValue(index + make_int3(3, j, k)))));
     }
+    result += w[k].z * col_term_acc;
   }
 
   return result;
+#  endif
 }
 
 template<typename OutT, typename T>
@@ -146,7 +181,7 @@ __attribute__((noinline))
 #  else
 ccl_device_noinline
 #  endif
-OutT kernel_tex_image_interp_nanovdb(const ccl_global TextureInfo &info,
+OutT kernel_image_interp_nanovdb(const ccl_global KernelImageInfo &info,
                                      float3 P,
                                      const InterpolationType interp)
 {
@@ -159,10 +194,10 @@ OutT kernel_tex_image_interp_nanovdb(const ccl_global TextureInfo &info,
 
   // nanovdb::CachedReadAccessor<T> acc(grid->tree().root());
   // if (interp == INTERPOLATION_LINEAR) {
-  //   return kernel_tex_image_interp_trilinear_nanovdb<OutT>(acc, P);
+  //   return kernel_image_interp_trilinear_nanovdb<OutT>(acc, P);
   // }
 
-  // return kernel_tex_image_interp_tricubic_nanovdb<OutT>(acc, P);
+  // return kernel_image_interp_tricubic_nanovdb<OutT>(acc, P);
 
   // INTERPOLATION_CLOSEST
   nanovdb::ReadAccessor<T> acc(grid->tree().root());
@@ -712,18 +747,19 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates(const ccl_glo
 
 #endif /* WITH_NANOVDB */
 
-ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
-                                             ccl_private ShaderData *sd,
-                                             const int id,
-                                             float3 P,
-                                             InterpolationType interp,
-                                             const bool stochastic)
+ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
+                                         ccl_private ShaderData *sd,
+                                         const int image_texture_id,
+                                         float3 P,
+                                         InterpolationType interp,
+                                         const bool stochastic)
 {
 #ifdef WITH_NANOVDB
-  const ccl_global TextureInfo &info = kernel_data_fetch(texture_info, id);
+  const ccl_global KernelImageTexture &tex = kernel_data_fetch(image_textures, image_texture_id);
+  const ccl_global KernelImageInfo &info = kernel_data_fetch(image_info, tex.image_info_id);
 
-  if (info.use_transform_3d) {
-    P = transform_point(&info.transform_3d, P);
+  if (tex.use_transform_3d) {
+    P = transform_point(&tex.transform_3d, P);
   }
 
   InterpolationType interpolation = (interp == INTERPOLATION_NONE) ?
@@ -737,23 +773,22 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
 
   const ImageDataType data_type = (ImageDataType)info.data_type;
   if (data_type == IMAGE_DATA_TYPE_NANOVDB_FLOAT) {
-    const float f = kernel_tex_image_interp_nanovdb<float, float>(info, P, interpolation);
+    const float f = kernel_image_interp_nanovdb<float, float>(info, P, interpolation);
     return make_float4(f, f, f, 1.0f);
   }
   if (data_type == IMAGE_DATA_TYPE_NANOVDB_FLOAT3) {
-    const float3 f = kernel_tex_image_interp_nanovdb<float3, packed_float3>(
-        info, P, interpolation);
+    const float3 f = kernel_image_interp_nanovdb<float3, packed_float3>(info, P, interpolation);
     return make_float4(f, 1.0f);
   }
   if (data_type == IMAGE_DATA_TYPE_NANOVDB_FLOAT4) {
-    return kernel_tex_image_interp_nanovdb<float4, float4>(info, P, interpolation);
+    return kernel_image_interp_nanovdb<float4, float4>(info, P, interpolation);
   }
   if (data_type == IMAGE_DATA_TYPE_NANOVDB_FPN) {
-    const float f = kernel_tex_image_interp_nanovdb<float, nanovdb::FpN>(info, P, interpolation);
+    const float f = kernel_image_interp_nanovdb<float, nanovdb::FpN>(info, P, interpolation);
     return make_float4(f, f, f, 1.0f);
   }
   if (data_type == IMAGE_DATA_TYPE_NANOVDB_FP16) {
-    const float f = kernel_tex_image_interp_nanovdb<float, nanovdb::Fp16>(info, P, interpolation);
+    const float f = kernel_image_interp_nanovdb<float, nanovdb::Fp16>(info, P, interpolation);
     return make_float4(f, f, f, 1.0f);
   }
   if (data_type == IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT) {
@@ -790,14 +825,13 @@ ccl_device float4 kernel_tex_image_interp_3d(KernelGlobals kg,
 #else
   (void)kg;
   (void)sd;
-  (void)id;
+  (void)image_texture_id;
   (void)P;
   (void)interp;
   (void)stochastic;
 #endif
 
-  return make_float4(
-      TEX_IMAGE_MISSING_R, TEX_IMAGE_MISSING_G, TEX_IMAGE_MISSING_B, TEX_IMAGE_MISSING_A);
+  return IMAGE_MISSING_RGBA;
 }
 
 #ifndef __KERNEL_GPU__

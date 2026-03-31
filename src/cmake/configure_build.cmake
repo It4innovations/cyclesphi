@@ -22,7 +22,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 ###########################################################################
 # Per-compiler configuration.
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -46,8 +46,8 @@ if(APPLE)
   list(APPEND CMAKE_EXE_LINKER_FLAGS "-Xlinker -no_warn_duplicate_libraries")
   list(APPEND CMAKE_SHARED_LINKER_FLAGS "-Xlinker -no_warn_duplicate_libraries")
 elseif(MSVC)
-  set(CMAKE_CXX_FLAGS "/nologo /J /Gd /EHsc /bigobj /MP /std:c++17" CACHE STRING "MSVC MD C++ flags " FORCE)
-  set(CMAKE_C_FLAGS "/nologo /J /Gd /MP /bigobj" CACHE STRING "MSVC MD C++ flags " FORCE)
+  set(CMAKE_CXX_FLAGS "/nologo /J /Gd /EHsc /bigobj /MP /std:c++17 /utf-8" CACHE STRING "MSVC MD C++ flags " FORCE)
+  set(CMAKE_C_FLAGS "/nologo /J /Gd /MP /bigobj /utf-8" CACHE STRING "MSVC MD C++ flags " FORCE)
 
   if(CMAKE_CL_64)
     set(CMAKE_CXX_FLAGS_DEBUG "/Od /RTC1 /MDd /Zi" CACHE STRING "MSVC MD flags " FORCE)
@@ -82,5 +82,12 @@ elseif(MSVC)
   # Make Visual Studio Report __cplusplus version.
   string(APPEND CMAKE_CXX_FLAGS " /Zc:__cplusplus")
 
-  add_definitions(-D_USE_MATH_DEFINES)
+  add_definitions(-D_USE_MATH_DEFINES -DWIN32_LEAN_AND_MEAN -DNOMINMAX)
+endif()
+
+# Enable SSE2NEON SIMD support if found.
+#
+if(SUPPORTS_NEON_BUILD AND SSE2NEON_FOUND)
+  include_directories(SYSTEM "${SSE2NEON_INCLUDE_DIRS}")
+  add_definitions(-DWITH_SSE2NEON)
 endif()

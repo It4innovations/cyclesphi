@@ -7,18 +7,18 @@
 #include "util/defines.h"
 #include "util/transform.h"
 
+#ifndef __KERNEL_GPU__
+#  include <climits>
+#endif
+
 CCL_NAMESPACE_BEGIN
 
-/* Color to use when textures are not found. */
-enum {
-  TEX_IMAGE_MISSING_R = 1,
-  TEX_IMAGE_MISSING_G = 0,
-  TEX_IMAGE_MISSING_B = 1,
-  TEX_IMAGE_MISSING_A = 1
-};
+/* Color to use when images are not found. */
+#define IMAGE_MISSING_RGBA make_float4(1, 0, 1, 1)
 
-/* Interpolation types for textures
- * CUDA also use texture space to store other objects. */
+#define KERNEL_IMAGE_NONE INT_MAX
+
+/* Interpolation types for images. */
 enum InterpolationType {
   INTERPOLATION_NONE = ~0,
   INTERPOLATION_LINEAR = 0,
@@ -29,6 +29,7 @@ enum InterpolationType {
   INTERPOLATION_NUM_TYPES,
 };
 
+/* Image data types supported by the kernel. */
 enum ImageDataType {
   IMAGE_DATA_TYPE_FLOAT4 = 0,
   IMAGE_DATA_TYPE_BYTE4 = 1,
@@ -70,7 +71,13 @@ enum ImageAlphaType {
   IMAGE_ALPHA_NUM_TYPES,
 };
 
-/* Extension types for textures.
+/* Image format types */
+enum ImageFormatType {
+  IMAGE_FORMAT_PLAIN,
+  IMAGE_FORMAT_EQUIANGULAR,
+};
+
+/* Extension types for image.
  *
  * Defines how the image is extrapolated past its original bounds. */
 enum ExtensionType {
@@ -86,8 +93,9 @@ enum ExtensionType {
   EXTENSION_NUM_TYPES,
 };
 
-struct TextureInfo {
-  /* Pointer, offset or texture depending on device. */
+/* Kernel data structure describing device image objects. */
+struct KernelImageInfo {
+  /* Pointer, offset or image/texture object depending on device. */
   uint64_t data = 0;
   /* Data Type */
   uint data_type = IMAGE_DATA_NUM_TYPES;
@@ -97,6 +105,28 @@ struct TextureInfo {
   /* Dimensions. */
   uint width = 0;
   uint height = 0;
+};
+
+/* KernelImageTexture index for UDIM tile. */
+struct KernelImageUDIM {
+  int tile;
+  int image_texture_id;
+};
+
+/* Kernel data structure for image textures.
+ *
+ * This describes a logical image texture for the shading system, that may be stored
+ * in one or more device image objects described by KernelImageInfo. This is to
+ * support on demand loading of tiles. */
+struct KernelImageTexture {
+  /* Index into image object map. */
+  uint image_info_id = KERNEL_IMAGE_NONE;
+  /* Image dimensions */
+  uint width = 0;
+  uint height = 0;
+  /* Interpolation and extension type. */
+  uint interpolation = INTERPOLATION_NONE;
+  uint extension = EXTENSION_REPEAT;
   /* Transform for 3D textures. */
   uint use_transform_3d = false;
   Transform transform_3d = transform_zero();

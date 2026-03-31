@@ -145,10 +145,10 @@ void Scene::free_memory(bool final)
     volume_manager->device_free(&dscene);
 
     if (final) {
-      image_manager->device_free(device);
+      image_manager->device_free(this);
     }
     else {
-      image_manager->device_free_builtin(device);
+      image_manager->device_free_builtin(this);
     }
 
     lookup_tables->device_free(device, &dscene);
@@ -450,9 +450,6 @@ bool Scene::need_global_attribute(AttributeStandard std)
   if (std == ATTR_STD_MOTION_VERTEX_POSITION) {
     return need_motion() != MOTION_NONE;
   }
-  if (std == ATTR_STD_MOTION_VERTEX_NORMAL) {
-    return need_motion() == MOTION_BLUR;
-  }
   if (std == ATTR_STD_VOLUME_VELOCITY || std == ATTR_STD_VOLUME_VELOCITY_X ||
       std == ATTR_STD_VOLUME_VELOCITY_Y || std == ATTR_STD_VOLUME_VELOCITY_Z)
   {
@@ -519,7 +516,7 @@ void Scene::device_free()
 void Scene::collect_statistics(RenderStats *stats)
 {
   geometry_manager->collect_statistics(this, stats);
-  image_manager->collect_statistics(stats);
+  image_manager->collect_statistics(stats, this);
 }
 
 void Scene::enable_update_stats()
@@ -830,14 +827,55 @@ void Scene::tag_has_volume_modified()
   has_volume_modified_ = true;
 }
 
-template<> Light *Scene::create_node<Light>()
+bool Scene::use_light_mis() const
 {
-  unique_ptr<Light> node = make_unique<Light>();
-  Light *node_ptr = node.get();
+  for (const Object *object : objects) {
+    if (!object->get_geometry()->is_light()) {
+      continue;
+    }
+
+    const Light *light = static_cast<const Light *>(object->get_geometry());
+    if (light->get_is_enabled() && light->get_use_mis() && light->is_traceable()) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+template<class T> T *Scene::create_light_node()
+{
+  unique_ptr<T> node = make_unique<T>();
+  T *node_ptr = node.get();
   node->set_owner(this);
   geometry.push_back(std::move(node));
   light_manager->tag_update(this, LightManager::LIGHT_ADDED);
   return node_ptr;
+}
+
+template<> PointLight *Scene::create_node<PointLight>()
+{
+  return create_light_node<PointLight>();
+}
+
+template<> SpotLight *Scene::create_node<SpotLight>()
+{
+  return create_light_node<SpotLight>();
+}
+
+template<> AreaLight *Scene::create_node<AreaLight>()
+{
+  return create_light_node<AreaLight>();
+}
+
+template<> SunLight *Scene::create_node<SunLight>()
+{
+  return create_light_node<SunLight>();
+}
+
+template<> BackgroundLight *Scene::create_node<BackgroundLight>()
+{
+  return create_light_node<BackgroundLight>();
 }
 
 template<> Mesh *Scene::create_node<Mesh>()

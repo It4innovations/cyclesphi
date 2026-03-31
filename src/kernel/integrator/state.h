@@ -24,8 +24,6 @@
  *
  * INTEGRATOR_STATE_ARRAY(state, x, index, y): read x[index].y
  * INTEGRATOR_STATE_ARRAY_WRITE(state, x, index, y): write x[index].y
- *
- * INTEGRATOR_STATE_NULL: use to pass empty state to other functions.
  */
 
 #include "kernel/types.h"
@@ -229,8 +227,8 @@ using IntegratorState = IntegratorStateCPU *;
 using ConstIntegratorState = const IntegratorStateCPU *;
 using IntegratorShadowState = IntegratorShadowStateCPU *;
 using ConstIntegratorShadowState = const IntegratorShadowStateCPU *;
-
-#  define INTEGRATOR_STATE_NULL nullptr
+struct IntegratorBakeState {};
+using ConstIntegratorBakeState = IntegratorBakeState;
 
 #  define INTEGRATOR_STATE(state, nested_struct, member) ((state)->nested_struct.member)
 #  define INTEGRATOR_STATE_WRITE(state, nested_struct, member) ((state)->nested_struct.member)
@@ -246,10 +244,21 @@ using ConstIntegratorShadowState = const IntegratorShadowStateCPU *;
 
 using IntegratorState = int;
 using ConstIntegratorState = int;
-using IntegratorShadowState = int;
-using ConstIntegratorShadowState = int;
 
-#  define INTEGRATOR_STATE_NULL -1
+/* Shadow state is wrapped in a struct to support function overloading and templates. */
+struct IntegratorShadowState {
+  ccl_device_inline_method IntegratorShadowState() {}
+  ccl_device_inline_method IntegratorShadowState(int state) : state(state) {}
+  ccl_device_inline_method operator int() const
+  {
+    return state;
+  }
+  int state;
+};
+using ConstIntegratorShadowState = IntegratorShadowState;
+
+struct IntegratorBakeState {};
+using ConstIntegratorBakeState = IntegratorBakeState;
 
 #  ifdef __INTEGRATOR_GPU_PACKED_STATE__
 

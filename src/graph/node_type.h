@@ -134,7 +134,10 @@ struct NodeType {
                        Type type = NONE,
                        const NodeType *base = nullptr);
   static const NodeType *find(ustring name);
+
+ private:
   static unordered_map<ustring, NodeType> &types();
+  static thread_mutex types_mutex_;
 };
 
 /* Node Definition Macros
@@ -150,7 +153,7 @@ struct NodeType {
   static thread_mutex node_type_mutex_;
 
 #define NODE_DEFINE(structname) \
-  const NodeType *structname::node_type_ = get_node_type(); \
+  const NodeType *structname::node_type_ = nullptr; \
   thread_mutex structname::node_type_mutex_; \
   unique_ptr<Node> structname::create(const NodeType *) \
   { \

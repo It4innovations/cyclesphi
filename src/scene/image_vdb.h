@@ -17,7 +17,7 @@
 #  endif
 #endif
 
-#include "scene/image.h"
+#include "scene/image_loader.h"
 
 #include "util/transform.h"
 
@@ -33,12 +33,9 @@ class VDBImageLoader : public ImageLoader {
   VDBImageLoader(const string &grid_name, const float clipping = 0.001f);
   ~VDBImageLoader() override;
 
-  virtual bool load_metadata(const ImageDeviceFeatures &features, ImageMetaData &metadata) override;
+  bool load_metadata(ImageMetaData &metadata) override;
 
-  virtual bool load_pixels(const ImageMetaData &metadata,
-                   void *pixels,
-                   const size_t pixels_size,
-                   const bool associate_alpha) override;
+  bool load_pixels(const ImageMetaData &metadata, void *pixels) override;
 
   virtual string name() const override;
 

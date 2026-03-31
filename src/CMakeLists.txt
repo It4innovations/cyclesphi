@@ -13,7 +13,9 @@ else()
   if(NOT WINDOWS_PYTHON_DEBUG)
     set(CYCLES_INSTALL_PATH "scripts/addons_core/cycles")
   else()
-    set(CYCLES_INSTALL_PATH "$ENV{appdata}/blender foundation/blender/${BLENDER_VERSION}/scripts/addons_core/cycles")
+    set(CYCLES_INSTALL_PATH
+      "$ENV{appdata}/blender foundation/blender/${BLENDER_VERSION}/scripts/addons_core/cycles"
+    )
   endif()
 endif()
 
@@ -32,6 +34,7 @@ endif()
 if(WITH_CYCLES_NATIVE_ONLY)
   set(CXX_HAS_SSE42 FALSE)
   set(CXX_HAS_AVX2 FALSE)
+  set(CXX_HAS_F16C FALSE)
   add_definitions(
     -DWITH_KERNEL_NATIVE
   )
@@ -64,22 +67,20 @@ if(WITH_CYCLES_NATIVE_ONLY)
     endif()
     string(APPEND CMAKE_CXX_FLAGS " ${MSVC_NATIVE_ARCH_FLAGS}")
   endif()
-elseif(WIN32 AND MSVC AND SUPPORT_NEON_BUILD AND SSE2NEON_FOUND)
+elseif(SUPPORTS_NEON_BUILD AND SSE2NEON_FOUND)
+  # On ARM we use SSE2NEON to compile the cycles SSE kernels into native NEON instructions
+  # Disable the CXX_HAS_* flags so we don't add any SSE or AVX compiler flags.
   set(CXX_HAS_SSE42 FALSE)
   set(CXX_HAS_AVX2 FALSE)
-elseif(SUPPORT_NEON_BUILD AND SSE2NEON_FOUND)
-  set(CXX_HAS_SSE42 FALSE)
-  set(CXX_HAS_AVX2 FALSE)
+  set(CXX_HAS_F16C FALSE)
 elseif(WIN32 AND MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CXX_HAS_SSE42 TRUE)
   set(CXX_HAS_AVX2 TRUE)
+  set(CXX_HAS_F16C TRUE)
 
-  # /arch:AVX for VC2012 and above
-  if(NOT MSVC_VERSION LESS 1700)
-    set(CYCLES_AVX2_FLAGS "/arch:AVX /arch:AVX2")
-  elseif(NOT CMAKE_CL_64)
-    set(CYCLES_AVX2_FLAGS "/arch:SSE2")
-  endif()
+  # No separate f16c flag for MSVC.
+  set(CYCLES_AVX2_FLAGS "/arch:AVX2")
+  set(CYCLES_AVX2_F16C_FLAGS "${CYCLES_AVX2_FLAGS}")
 
   # there is no /arch:SSE3, but intrinsics are available anyway
   if(CMAKE_CL_64)
@@ -87,37 +88,43 @@ elseif(WIN32 AND MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   else()
     set(CYCLES_SSE42_FLAGS "/arch:SSE2")
   endif()
-elseif(CMAKE_COMPILER_IS_GNUCC OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+elseif((CMAKE_C_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
   check_cxx_compiler_flag(-msse4.2 CXX_HAS_SSE42)
   check_cxx_compiler_flag(-mavx2 CXX_HAS_AVX2)
+  check_cxx_compiler_flag(-mf16c CXX_HAS_F16C)
 
   if(CXX_HAS_SSE42)
     set(CYCLES_SSE42_FLAGS "-msse -msse2 -msse3 -mssse3 -msse4.1 -msse4.2")
-    if(CXX_HAS_AVX2)
+    if(CXX_HAS_AVX2 AND CXX_HAS_F16C)
       set(CYCLES_AVX2_FLAGS "${CYCLES_SSE42_FLAGS} -mavx -mavx2 -mfma -mlzcnt -mbmi -mbmi2 -mf16c")
+      set(CYCLES_AVX2_F16C_FLAGS "${CYCLES_AVX2_FLAGS} -mf16c")
     endif()
   endif()
 
 elseif(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
   check_cxx_compiler_flag(/QxSSE4.2 CXX_HAS_SSE42)
   check_cxx_compiler_flag(/QxCORE-AVX2 CXX_HAS_AVX2)
+  set(CXX_HAS_F16C CXX_HAS_AVX) # Same flag enables AVX, FMA and F16C
 
   if(CXX_HAS_SSE42)
     set(CYCLES_SSE42_FLAGS "/QxSSE4.2")
 
-    if(CXX_HAS_AVX2)
+    if(CXX_HAS_AVX2 AND CXX_HAS_F16C)
       set(CYCLES_AVX2_FLAGS "/QxCORE-AVX2")
+      set(CYCLES_AVX2_F16C_FLAGS "${CYCLES_AVX2_FLAGS}")
     endif()
   endif()
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
   check_cxx_compiler_flag(-xsse4.2 CXX_HAS_SSE42)
   check_cxx_compiler_flag(-xcore-avx2 CXX_HAS_AVX2)
+  set(CXX_HAS_F16C CXX_HAS_AVX) # Same flag enables AVX, FMA and F16C
 
   if(CXX_HAS_SSE42)
     set(CYCLES_SSE42_FLAGS "-xsse4.2")
 
-    if(CXX_HAS_AVX2)
+    if(CXX_HAS_AVX2 AND CXX_HAS_F16C)
       set(CYCLES_AVX2_FLAGS "-xcore-avx2")
+      set(CYCLES_AVX2_F16C_FLAGS "${CYCLES_AVX2_FLAGS}")
     endif()
   endif()
 endif()
@@ -153,15 +160,19 @@ if(WIN32 AND MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
      AND CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64")
     string(APPEND CMAKE_CXX_FLAGS " /jumptablerdata")
   endif()
-elseif(CMAKE_COMPILER_IS_GNUCC OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+elseif((CMAKE_C_COMPILER_ID STREQUAL "GNU") OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
   # Assume no signal trapping for better code generation.
   list(APPEND CYCLES_MATH_FLAGS "-fno-trapping-math")
   # Avoid overhead of setting `errno` for NaNs.
   list(APPEND CYCLES_MATH_FLAGS "-fno-math-errno")
   # Let compiler optimize 0.0 - x without worrying about signed zeros.
   list(APPEND CYCLES_MATH_FLAGS "-fno-signed-zeros")
-  # Let the compiler generate fused multiply-add instructions
-  list(APPEND CYCLES_MATH_FLAGS "-ffp-contract=fast")
+  # Disable FMA auto-vectorization across different statements,
+  # which creates havoc in "intern/cycles/blender/camera.cpp"
+  # with GCC-15.2.1, for something like:
+  #   `const float2 dv = 2.0f * (aspectratio * bcam->shift + bcam->offset * aspect * 2.0f);`
+  # (probably due to https://gcc.gnu.org/bugzilla/show_bug.cgi?id=106902).
+  list(APPEND CYCLES_MATH_FLAGS "-ffp-contract=on")
   # Let the compiler replace x/y with x*(1/y)
   list(APPEND CYCLES_MATH_FLAGS "-freciprocal-math")
   # Let the compiler reorder terms to save operations
@@ -170,7 +181,7 @@ elseif(CMAKE_COMPILER_IS_GNUCC OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
   # Don't enable `-ffinite-math-only` since the BVH code relies on NaNs.
   # Otherwise, we could just use `-ffast-math`.
 
-  if(CMAKE_COMPILER_IS_GNUCC)
+  if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     # Assume no signal trapping for better code generation.
     list(APPEND CYCLES_MATH_FLAGS "-fno-signaling-nans")
     # Assume a fixed rounding mode for better constant folding.
@@ -194,21 +205,8 @@ endif()
 # Definitions and Includes
 
 add_definitions(
-  ${BOOST_DEFINITIONS}
-)
-
-add_definitions(
   -DCCL_NAMESPACE_BEGIN=namespace\ ccl\ {
   -DCCL_NAMESPACE_END=}
-)
-
-include_directories(
-  SYSTEM
-  ${BOOST_INCLUDE_DIR}
-  ${OPENIMAGEIO_INCLUDE_DIRS}
-  ${IMATH_INCLUDE_DIRS}
-  ${OPENEXR_INCLUDE_DIRS}
-  ${PUGIXML_INCLUDE_DIR}
 )
 
 if(WITH_CYCLES_DEBUG)
@@ -224,10 +222,6 @@ endif()
 
 if(WITH_CYCLES_OSL)
   add_definitions(-DWITH_OSL)
-  include_directories(
-    SYSTEM
-    ${OSL_INCLUDE_DIR}
-  )
 endif()
 
 if(WITH_CYCLES_DEVICE_CUDA OR WITH_CYCLES_DEVICE_OPTIX)
@@ -251,7 +245,7 @@ if(WITH_CYCLES_DEVICE_HIP)
 
   if(WITH_CYCLES_DEVICE_HIPRT)
     include_directories(
-      ${HIPRT_INCLUDE_DIR}
+      ${HIPRT_INCLUDE_DIRS}
     )
     add_definitions(-DWITH_HIPRT)
   endif()
@@ -300,65 +294,37 @@ if(WITH_CYCLES_EMBREE)
       add_compile_definitions("$<$<CONFIG:Release>:WITH_EMBREE_GPU>")
       add_compile_definitions("$<$<CONFIG:RelWithDebInfo>:WITH_EMBREE_GPU>")
       add_compile_definitions("$<$<CONFIG:MinSizeRel>:WITH_EMBREE_GPU>")
-      if(CMAKE_BUILD_TYPE MATCHES "Debug" OR GENERATOR_IS_MULTI_CONFIG)
-        message(STATUS "The use of Embree GPU is disabled for the Debug configuration as embree${EMBREE_MAJOR_VERSION}_sycl_d.lib is not found.")
+      if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR GENERATOR_IS_MULTI_CONFIG)
+        message(STATUS
+          "The use of Embree GPU is disabled for the Debug configuration "
+          "as embree${EMBREE_MAJOR_VERSION}_sycl_d.lib is not found."
+        )
       endif()
     else()
       add_definitions(-DWITH_EMBREE_GPU)
     endif()
   endif()
   add_definitions(-DEMBREE_MAJOR_VERSION=${EMBREE_MAJOR_VERSION})
-  include_directories(
-    SYSTEM
-    ${EMBREE_INCLUDE_DIRS}
-  )
 endif()
 
 if(WITH_OPENIMAGEDENOISE)
   add_definitions(-DWITH_OPENIMAGEDENOISE)
-  include_directories(
-    SYSTEM
-    ${OPENIMAGEDENOISE_INCLUDE_DIRS}
-  )
 endif()
 
-# Includes that might be overrides by USD last, to avoid compiling
-# against the wrong versions of other libraries.
-include_directories(
-  SYSTEM
-  ${TBB_INCLUDE_DIRS}
-)
-
 if(WITH_OPENVDB)
-  add_definitions(-DWITH_OPENVDB ${OPENVDB_DEFINITIONS})
-  include_directories(
-    SYSTEM
-    ${OPENVDB_INCLUDE_DIRS}
-  )
+  add_definitions(-DWITH_OPENVDB)
 endif()
 
 if(WITH_NANOVDB)
   add_definitions(-DWITH_NANOVDB)
-  include_directories(
-    SYSTEM
-    ${NANOVDB_INCLUDE_DIR}
-  )
 endif()
 
 if(WITH_OPENSUBDIV)
   add_definitions(-DWITH_OPENSUBDIV)
-  include_directories(
-    SYSTEM
-    ${OPENSUBDIV_INCLUDE_DIRS}
-  )
 endif()
 
 if(WITH_OPENCOLORIO)
   add_definitions(-DWITH_OCIO)
-  include_directories(
-    SYSTEM
-    ${OPENCOLORIO_INCLUDE_DIRS}
-  )
 endif()
 
 if(WITH_CYCLES_PATH_GUIDING)
@@ -368,15 +334,10 @@ if(WITH_CYCLES_PATH_GUIDING)
   # Different levels can be selected to measure the overhead of different stages.
   # 1 = recording the path segments
   # 2 = 1 + generating (not storing) sample data from the segments
-  # 3 = 2 + storing the generates sample data
+  # 3 = 2 + storing the generated sample data
   # 4 = 3 + training the guiding fields
   # 5 = 4 + querying the trained guiding for sampling (full path guiding)
   add_definitions(-DPATH_GUIDING_LEVEL=5)
-
-  include_directories(
-    SYSTEM
-    ${OPENPGL_INCLUDE_DIR}
-  )
 endif()
 
 # NaN debugging
@@ -417,30 +378,9 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE AND (NOT WITH_BLENDER) AND (NOT WITH_CYCLES
   set(CYCLES_INSTALL_PATH ${CYCLES_INSTALL_PATH}/hdCycles/resources)
 endif()
 
-if(WITH_CYCLES_CUDA_BINARIES)
-  if(MSVC)
-    set(MAX_MSVC 1800)
-    if(${CUDA_VERSION} EQUAL "8.0")
-      set(MAX_MSVC 1900)
-    elseif(${CUDA_VERSION} EQUAL "9.0")
-      set(MAX_MSVC 1910)
-    elseif(${CUDA_VERSION} EQUAL "9.1")
-      set(MAX_MSVC 1911)
-    elseif(${CUDA_VERSION} VERSION_GREATER_EQUAL 10.0)
-      set(MAX_MSVC 1999)
-    endif()
-    unset(MAX_MSVC)
-  endif()
-endif()
-
 # Subdirectories
 
 if(WITH_CYCLES_BLENDER)
-  # Not needed to make cycles automated tests pass with -march=native.
-  # However Blender itself needs this flag.
-  # Note: the clang-cl style removal must go first, to avoid a dangling "/clang:"
-  remove_cc_flag("/clang:-ffp-contract=off")
-  remove_cc_flag("-ffp-contract=off")
   add_definitions(-DWITH_BLENDER_GUARDEDALLOC)
   add_subdirectory(blender)
 endif()

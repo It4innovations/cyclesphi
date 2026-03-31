@@ -21,6 +21,7 @@ CCL_NAMESPACE_BEGIN
 
 enum ShaderNodeType {
 #define SHADER_NODE_TYPE(name) name,
+#define SHADER_NODE_TYPE_DERIVATIVE(name) name, name##_DERIVATIVE,
 #include "node_types_template.h"
 
   NODE_NUM
@@ -223,6 +224,7 @@ enum NodeVectorMathType {
   NODE_VECTOR_MATH_MULTIPLY_ADD,
   NODE_VECTOR_MATH_POWER,
   NODE_VECTOR_MATH_SIGN,
+  NODE_VECTOR_MATH_ROUND,
 };
 
 enum NodeClampType {
@@ -272,7 +274,8 @@ enum NodeConvert {
   NODE_CONVERT_VF,
   NODE_CONVERT_VI,
   NODE_CONVERT_IF,
-  NODE_CONVERT_IV
+  NODE_CONVERT_IV,
+  NODE_CONVERT_NONE,
 };
 
 enum NodeNoiseType {
@@ -354,6 +357,23 @@ enum NodeNormalMapSpace {
   NODE_NORMAL_MAP_WORLD,
   NODE_NORMAL_MAP_BLENDER_OBJECT,
   NODE_NORMAL_MAP_BLENDER_WORLD,
+};
+
+enum NodeNormalMapConvention {
+  NODE_NORMAL_MAP_CONVENTION_OPENGL = 0,
+  NODE_NORMAL_MAP_CONVENTION_DIRECTX = 1,
+};
+
+enum NodeNormalMapBase {
+  NODE_NORMAL_MAP_BASE_ORIGINAL = 0,
+  NODE_NORMAL_MAP_BASE_DISPLACED = 1,
+};
+
+/* Flags for SVM node encoding, packing space/convention/base into one byte. */
+enum NodeNormalMapFlags {
+  NODE_NORMAL_MAP_FLAG_SPACE_MASK = 0x7,
+  NODE_NORMAL_MAP_FLAG_DIRECTX = (1 << 3),
+  NODE_NORMAL_MAP_FLAG_ORIGINAL = (1 << 4),
 };
 
 enum NodeImageProjection {

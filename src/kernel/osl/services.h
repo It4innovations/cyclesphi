@@ -41,26 +41,21 @@ struct ThreadKernelGlobalsCPU;
  * These are stored in a concurrent hash map, because OSL can compile multiple
  * shaders in parallel.
  *
- * NOTE: The svm_slots array contains a compressed mapping of tile to svm_slot pairs
- * stored as follows: x:tile_a, y:svm_slot_a, z:tile_b, w:svm_slot_b etc. */
+ * NOTE: The svm_image_texture_ids array contains a compressed mapping of tile to
+ * svm_image_texture_ids pairs stored as follows: x:tile_a,
+ * y:svm_image_texture_ids_a, z:tile_b, w:svm_image_texture_ids_b etc. */
 
 struct OSLTextureHandle {
   enum Type { OIIO, SVM, IES, BEVEL, AO };
 
-  OSLTextureHandle(Type type, const vector<int4> &svm_slots) : type(type), svm_slots(svm_slots) {}
+  OSLTextureHandle(Type type, const int id = -1) : type(type), id(id) {}
 
-  OSLTextureHandle(Type type = OIIO, const int svm_slot = -1)
-      : OSLTextureHandle(type, {make_int4(0, svm_slot, -1, -1)})
-  {
-  }
-
-  OSLTextureHandle(const ImageHandle &handle)
-      : type(SVM), svm_slots(handle.get_svm_slots()), handle(handle)
+  OSLTextureHandle(const ImageHandle &handle) : type(SVM), id(handle.kernel_id()), handle(handle)
   {
   }
 
   Type type;
-  vector<int4> svm_slots;
+  int id = -1;
   OSL::TextureSystem::TextureHandle *oiio_handle = nullptr;
   ColorSpaceProcessor *processor = nullptr;
   ImageHandle handle;
@@ -248,88 +243,28 @@ class OSLRenderServices : public OSL::RendererServices {
                         void *data,
                         OSLUStringHash *errormessage) override;
 
+  static bool get_attribute(ShaderGlobals *globals,
+                            ShaderData *sd,
+                            bool derivatives,
+                            OSLUStringHash object_name,
+                            TypeDesc type,
+                            OSLUStringHash name,
+                            void *val);
+
   static bool get_background_attribute(ShaderGlobals *globals,
+                                       ShaderData *sd,
                                        OSLUStringHash name,
-                                       const TypeDesc type,
+                                       TypeDesc type,
                                        bool derivatives,
                                        void *val);
   static bool get_camera_attribute(
       ShaderGlobals *globals, OSLUStringHash name, TypeDesc type, bool derivatives, void *val);
   static bool get_object_standard_attribute(ShaderGlobals *globals,
+                                            ShaderData *sd,
                                             OSLUStringHash name,
-                                            const TypeDesc type,
+                                            TypeDesc type,
                                             bool derivatives,
                                             void *val);
-
-  static ustring u_distance;
-  static ustring u_index;
-  static ustring u_world;
-  static ustring u_camera;
-  static ustring u_screen;
-  static ustring u_raster;
-  static ustring u_ndc;
-  static ustring u_object_location;
-  static ustring u_object_color;
-  static ustring u_object_alpha;
-  static ustring u_object_index;
-  static ustring u_object_is_light;
-  static ustring u_bump_map_normal;
-  static ustring u_geom_dupli_generated;
-  static ustring u_geom_dupli_uv;
-  static ustring u_material_index;
-  static ustring u_object_random;
-  static ustring u_particle_index;
-  static ustring u_particle_random;
-  static ustring u_particle_age;
-  static ustring u_particle_lifetime;
-  static ustring u_particle_location;
-  static ustring u_particle_rotation;
-  static ustring u_particle_size;
-  static ustring u_particle_velocity;
-  static ustring u_particle_angular_velocity;
-  static ustring u_geom_numpolyvertices;
-  static ustring u_geom_trianglevertices;
-  static ustring u_geom_polyvertices;
-  static ustring u_geom_name;
-  static ustring u_geom_undisplaced;
-  static ustring u_is_smooth;
-  static ustring u_is_curve;
-  static ustring u_curve_thickness;
-  static ustring u_curve_length;
-  static ustring u_curve_tangent_normal;
-  static ustring u_curve_random;
-  static ustring u_is_point;
-  static ustring u_point_position;
-  static ustring u_point_radius;
-  static ustring u_point_random;
-  static ustring u_normal_map_normal;
-  static ustring u_path_ray_length;
-  static ustring u_path_ray_depth;
-  static ustring u_path_diffuse_depth;
-  static ustring u_path_glossy_depth;
-  static ustring u_path_transparent_depth;
-  static ustring u_path_transmission_depth;
-  static ustring u_path_portal_depth;
-  static ustring u_trace;
-  static ustring u_hit;
-  static ustring u_hitdist;
-  static ustring u_N;
-  static ustring u_Ng;
-  static ustring u_P;
-  static ustring u_I;
-  static ustring u_u;
-  static ustring u_v;
-  static ustring u_empty;
-  static ustring u_at_bevel;
-  static ustring u_at_ao;
-
-  /* Attributes for camera shaders. */
-  static ustring u_sensor_size;
-  static ustring u_image_resolution;
-  static ustring u_aperture_aspect_ratio;
-  static ustring u_aperture_size;
-  static ustring u_aperture_position;
-  static ustring u_focal_distance;
 
   /* Texture system and texture handle map are part of the services instead of
    * globals to be shared between different render sessions. This saves memory,

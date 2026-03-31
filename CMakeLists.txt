@@ -52,6 +52,9 @@ if(POLICY CMP0144)
   cmake_policy(SET CMP0144 NEW)
 endif() 
 
+# The target_sources() command converts relative paths to absolute.
+cmake_policy(SET CMP0076 NEW)
+
 # Avoid having empty buildtype.
 set(CMAKE_BUILD_TYPE_INIT "Release")
 
@@ -230,6 +233,10 @@ endif()
 # Hydra Render Delegate
 option(WITH_CYCLES_HYDRA_RENDER_DELEGATE "Build Cycles Hydra render delegate" ON)
 
+option(WITH_CYCLES_PARALLEL_DEVICE_KERNEL_BUILD
+       "Build Cycles kernels of difference devices in parallel (faster, but uses more memory)" OFF)
+mark_as_advanced(WITH_CYCLES_PARALLEL_DEVICE_KERNEL_BUILD)
+
 # Error Checking
 option(WITH_STRICT_BUILD_OPTIONS "When requirements for a build option are not met, error instead of disabling the option" OFF)
 
@@ -239,6 +246,7 @@ option(WITH_STRICT_BUILD_OPTIONS "When requirements for a build option are not m
 include(CheckCXXCompilerFlag)
 include(detect_platform)
 include(external_libs)
+include(dependency_targets)
 include(configure_build)
 include(CTest)
 
@@ -248,6 +256,8 @@ include(CTest)
 include_directories(
 	third_party/cuew/include
 	third_party/hipew/include
+  third_party/sky/include
+  third_party/mikktspace
 )
 
 ###########################################################################
