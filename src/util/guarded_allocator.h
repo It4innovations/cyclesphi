@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <memory>
 #include <new>
 
 #ifdef WITH_BLENDER_GUARDEDALLOC

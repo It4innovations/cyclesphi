@@ -430,10 +430,10 @@ void xml_write_node_socket(XMLWriter& writer, Node* node, xml_node xml_root, con
         Transform tfm = node->get_transform(socket);
         
         Object* ob = dynamic_cast<Object*>(node);
-        if (!ob || ob->get_geometry() && (
-            ob->get_geometry()->geometry_type == Geometry::Type::VOLUME
-            || ob->get_geometry()->geometry_type == Geometry::Type::LIGHT
-            || !ob->get_geometry()->transform_applied)) {
+        if (!ob || ob->get_geometry() &&
+                       (ob->get_geometry()->is_volume() ||
+                        ob->get_geometry()->is_light() ||
+                        !ob->get_geometry()->transform_applied)) {
             std::stringstream ss;
             for (int i = 0; i < 3; i++) {
                 if (i == 2)

@@ -109,6 +109,7 @@ set(LIB
   PUBLIC cycles_integrator
   PUBLIC cycles_subd
   PUBLIC cycles_util
+  PRIVATE bf::dependencies::optional::pugixml
   PRIVATE bf::dependencies::optional::openvdb
   PRIVATE bf::dependencies::optional::nanovdb
 )

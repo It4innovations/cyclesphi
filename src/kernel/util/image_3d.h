@@ -300,7 +300,7 @@ __device__ __forceinline__ const nanovdb::NanoGrid<T>* getDerivGridPtr(
 
 template<typename OutT, typename T>
 __device__ __forceinline__ OutT kernel_tex_image_interp_nanovdb_multires(
-    const ccl_global TextureInfo& __restrict__ info,
+    const ccl_global KernelImageInfo& __restrict__ info,
     const float x, const float y, const float z,
     const uint /*interpolation*/)
 {
@@ -377,7 +377,7 @@ __device__ __forceinline__ OutT kernel_tex_image_interp_nanovdb_multires(
 
 template<typename OutT, typename T>
 __device__ __forceinline__ OutT kernel_tex_image_interp_nanovdb_derivates(
-    const ccl_global TextureInfo& __restrict__ info,
+    const ccl_global KernelImageInfo& __restrict__ info,
     const float x, const float y, const float z,
     const uint /*interpolation*/)
 {
@@ -518,14 +518,14 @@ ccl_device_inline double derivBasisValue_host(int derivIdx, double px, double py
 
 #  if defined(__KERNEL_METAL__)
 template<typename OutT, typename T>
-__attribute__((noinline)) OutT kernel_tex_image_interp_nanovdb_multires(const ccl_global TextureInfo &info,
+__attribute__((noinline)) OutT kernel_tex_image_interp_nanovdb_multires(const ccl_global KernelImageInfo &info,
                                                                const float x,
                                                                const float y,
                                                                const float z,
                                                                const uint interpolation)
 #  else
 template<typename OutT, typename T>
-ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_multires(const ccl_global TextureInfo &info,
+ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_multires(const ccl_global KernelImageInfo &info,
                                                          const float x,
                                                          const float y,
                                                          const float z,
@@ -631,14 +631,14 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_multires(const ccl_glob
 
 #  if defined(__KERNEL_METAL__)
 template<typename OutT, typename T>
-__attribute__((noinline)) OutT kernel_tex_image_interp_nanovdb_derivates(const ccl_global TextureInfo &info,
+__attribute__((noinline)) OutT kernel_tex_image_interp_nanovdb_derivates(const ccl_global KernelImageInfo &info,
                                                                const float x,
                                                                const float y,
                                                                const float z,
                                                                const uint interpolation)
 #  else
 template<typename OutT, typename T>
-ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates(const ccl_global TextureInfo &info,
+ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates(const ccl_global KernelImageInfo &info,
                                                          const float x,
                                                          const float y,
                                                          const float z,
@@ -804,9 +804,8 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
   }
   if (data_type == IMAGE_DATA_TYPE_RAW3D_FLOAT) {
     float* data = (float *)info.data;
-    float w = info.transform_3d.x.x;
-    float h = info.transform_3d.y.y;
-    float d = info.transform_3d.z.z;
+        float w = tex.transform_3d.x.x;
+        float h = tex.transform_3d.y.y;
 
     size_t index = (size_t)floorf(P.x) + (size_t)floorf(P.y) * w + (size_t)floorf(P.z) * w * h;
     const float f = data[index];
@@ -814,9 +813,8 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
   }
   if (data_type == IMAGE_DATA_TYPE_RAW3D_FLOAT3) {
     float3* data = (float3 *)info.data;
-    float w = info.transform_3d.x.x;
-    float h = info.transform_3d.y.y;
-    float d = info.transform_3d.z.z;
+        float w = tex.transform_3d.x.x;
+        float h = tex.transform_3d.y.y;
 
     size_t index = (size_t)floorf(P.x) + (size_t)floorf(P.y) * w + (size_t)floorf(P.z) * w * h;
     const float3 f = data[index];

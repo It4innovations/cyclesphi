@@ -88,13 +88,9 @@ public:
     NanoVDBImageLoader(vector<char> &g);
     ~NanoVDBImageLoader();
 
-    virtual bool load_metadata(const ImageDeviceFeatures& features,
-        ImageMetaData& metadata) override;
+    virtual bool load_metadata(ImageMetaData& metadata) override;
 
-    virtual bool load_pixels(const ImageMetaData& metadata,
-        void* pixels,
-        const size_t pixels_size,
-        const bool associate_alpha) override;
+    virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
 
     virtual string name() const override;
 
@@ -127,13 +123,9 @@ public:
     NanoVDBMultiResImageLoader(vector<char> &g, NanoVDBMultiResImageLoaderType t);
     ~NanoVDBMultiResImageLoader();
 
-    virtual bool load_metadata(const ImageDeviceFeatures& features,
-        ImageMetaData& metadata) override;
+    virtual bool load_metadata(ImageMetaData& metadata) override;
 
-    virtual bool load_pixels(const ImageMetaData& metadata,
-        void* pixels,
-        const size_t pixels_size,
-        const bool associate_alpha) override;
+    virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
 
     virtual string name() const override;
 
@@ -167,13 +159,9 @@ public:
     NanoVDBDerivatesImageLoader(vector<char> &g);
     ~NanoVDBDerivatesImageLoader();
 
-    virtual bool load_metadata(const ImageDeviceFeatures& features,
-        ImageMetaData& metadata) override;
+    virtual bool load_metadata(ImageMetaData& metadata) override;
 
-    virtual bool load_pixels(const ImageMetaData& metadata,
-        void* pixels,
-        const size_t pixels_size,
-        const bool associate_alpha) override;
+    virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
 
     virtual string name() const override;
 
@@ -261,13 +249,9 @@ public:
     RAWImageLoader(vector<char> &g, int dx, int dy, int dz, float sx, float sy, float sz, RAWImageLoaderType t, int c);
     ~RAWImageLoader();
 
-    virtual bool load_metadata(const ImageDeviceFeatures& features,
-        ImageMetaData& metadata) override;
+    virtual bool load_metadata(ImageMetaData& metadata) override;
 
-    virtual bool load_pixels(const ImageMetaData& metadata,
-        void* pixels,
-        const size_t pixels_size,
-        const bool associate_alpha) override;
+    virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
 
     virtual string name() const override;
 

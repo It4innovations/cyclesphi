@@ -578,8 +578,22 @@ static void xml_read_geom(XMLReadState& state, const xml_node xml_node_geom)
 	case Geometry::Type::POINTCLOUD:
 		geom = state.scene->create_node<PointCloud>();
 		break;
-	case Geometry::Type::LIGHT:
-		geom = state.scene->create_node<Light>();
+
+    //AREA_LIGHT, BACKGROUND_LIGHT, POINT_LIGHT, SPOT_LIGHT, SUN_LIGHT,
+  case Geometry::Type::AREA_LIGHT:
+		geom = state.scene->create_node<AreaLight>();
+		break;
+  case Geometry::Type::BACKGROUND_LIGHT:
+		geom = state.scene->create_node<BackgroundLight>();
+		break;
+  case Geometry::Type::POINT_LIGHT:
+		geom = state.scene->create_node<PointLight>();
+		break;
+  case Geometry::Type::SPOT_LIGHT:
+		geom = state.scene->create_node<SpotLight>();
+		break;
+  case Geometry::Type::SUN_LIGHT:
+		geom = state.scene->create_node<SunLight>();
 		break;
 	}
 
@@ -1170,9 +1184,8 @@ void xml_set_volume_to_attr(Scene* scene, std::string geom_name, std::string att
 				if (attr.name == attr_name) {
 					//openvdb::GridBase::Ptr float_grid;					
 
-					device_texture* dt = attr.data_voxel().image_memory();
-					//dt->device_free();
-					//dt->host_free();
+					// Legacy direct device texture access removed: image data is now updated
+					// through ImageHandle/ImageManager via add_image() below.
 
 					unique_ptr<ImageLoader> loader = nullptr;
 
@@ -1281,7 +1294,7 @@ void xml_set_volume_to_attr(Scene* scene, std::string geom_name, std::string att
 				if (attr.name == attr_name) {				
 					//openvdb::GridBase::Ptr float_grid;
 
-					device_texture* dt = attr.data_voxel().image_memory();
+					device_image* dt = attr.data_voxel().vdb_image_memory();
 					//dt->device_free();
 					//dt->host_free();
 

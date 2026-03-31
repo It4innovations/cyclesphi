@@ -16,6 +16,7 @@
 #include "scene/background.h"
 #include "scene/camera.h"
 #include "scene/film.h"
+#include "scene/image.h"
 #include "scene/integrator.h"
 #include "scene/light.h"
 #include "scene/mesh.h"
@@ -33,6 +34,7 @@
 //#include "util/foreach.h"
 #include "util/path.h"
 #include "util/projection.h"
+#include "util/progress.h"
 #include "util/transform.h"
 #include "util/xml.h"
 #include "util/string.h"
@@ -103,7 +105,7 @@ string write_vector_to_binary_file(XMLWriter& writer, const vector<T>& data)
 	return ss.str();
 }
 
-void save_image_to_memory(device_texture* dt, vector<char>& output_buffer) {
+void save_image_to_memory(device_image* dt, vector<char>& output_buffer) {
 #if 0
 	TypeDesc image_type;
 	switch (dt->data_type) {
@@ -410,7 +412,7 @@ void scene_write_xml_shader_graph(XMLWriteState& state, Shader* shader, xml_node
 			ImageSlotTextureNode* img = (ImageSlotTextureNode*)node;
 			//ImageMetaData metadata = img->handle.metadata();
 
-			device_texture* dt = img->handle.image_memory();
+			device_image* dt = img->handle.vdb_image_memory();
 			if (dt && dt->host_pointer) {
 #if 0
 				std::stringstream ss;
@@ -487,7 +489,8 @@ void scene_write_xml_shader_graph(XMLWriteState& state, Shader* shader, xml_node
 
 				// MetaData
 				xml_node node_attribute = xnode;
-				ImageMetaData attr = img->handle.metadata();
+				Progress progress;
+				ImageMetaData attr = img->handle.metadata(progress);
 
 				bool is_rgba = (attr.type == IMAGE_DATA_TYPE_FLOAT4 ||
 					attr.type == IMAGE_DATA_TYPE_HALF4 ||

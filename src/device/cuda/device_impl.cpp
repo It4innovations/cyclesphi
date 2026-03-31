@@ -1007,21 +1007,21 @@ bool CUDADevice::alloc_device_managed_memory(void *&device_pointer, const size_t
   if (main_device != nullptr) {
       if (main_device != this) {
 
-          auto it = main_device->managed_memory_map.find(mem.name);
+          auto it = main_device->managed_memory_map.find(mem.global_name());
           if (it == main_device->managed_memory_map.end()) {
-              printf("ERROR: CUDADevice::alloc_device_managed_memory: %s not found in map for dev: %d\n", mem.name, info.num);
+              printf("ERROR: CUDADevice::alloc_device_managed_memory: %s not found in map for dev: %d\n", mem.global_name(), info.num);
           }
 
-          device_pointer = (void*)main_device->managed_memory_map[mem.name]->device_pointer;
+          device_pointer = (void*)main_device->managed_memory_map[mem.global_name()]->device_pointer;
           return true;
       }
       else {
-          main_device->managed_memory_map[mem.name] = &mem;
+          main_device->managed_memory_map[mem.global_name()] = &mem;
       }
   }
 
   CUresult mem_alloc_result = cuMemAllocManaged((CUdeviceptr *)&device_pointer, size, CU_MEM_ATTACH_GLOBAL);
-  set_managed_memory_flag((CUdeviceptr)&device_pointer, size, mem.name);
+  set_managed_memory_flag((CUdeviceptr)&device_pointer, size, mem.global_name());
 
   return mem_alloc_result == CUDA_SUCCESS;  
 }

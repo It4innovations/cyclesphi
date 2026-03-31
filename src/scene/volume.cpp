@@ -684,17 +684,28 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
         //face_normals.push_back(quads[i].normal);
     }
 
-    volume->reserve_mesh(vertices.size(), indices.size() / 3);
-    //volume->used_shaders.clear();
-    //volume->used_shaders.push_back_slow(volume_shader);
+    const size_t num_triangles = indices.size() / 3;
+    volume->resize_mesh((int)vertices.size(), (int)num_triangles);
 
-    for (size_t i = 0; i < vertices.size(); ++i) {
-        volume->add_vertex(vertices[i]);
-    }
+    ccl::array<ccl::float3> mesh_verts;
+    mesh_verts.resize(vertices.size());
+    std::copy(cbegin(vertices), cend(vertices), mesh_verts.begin());
+    volume->set_verts(mesh_verts);
 
-    for (size_t i = 0; i < indices.size(); i += 3) {
-        volume->add_triangle(indices[i], indices[i + 1], indices[i + 2], 0, false);
-    }
+    ccl::array<int> triangles;
+    triangles.resize(indices.size());
+    std::copy(cbegin(indices), cend(indices), triangles.begin());
+    volume->set_triangles(triangles);
+
+    ccl::array<int> shaders;
+    shaders.resize(num_triangles);
+    std::fill(shaders.begin(), shaders.end(), 0);
+    volume->set_shader(shaders);
+
+    ccl::array<bool> smooth;
+    smooth.resize(num_triangles);
+    std::fill(smooth.begin(), smooth.end(), false);
+    volume->set_smooth(smooth);
 
     //Attribute* attr_fN = volume->attributes.add(ATTR_STD_FACE_NORMAL);
     //float3* fN = attr_fN->data_float3();
@@ -703,11 +714,10 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
     //    fN[i] = face_normals[i];
     //}
 #else
-    ImageDeviceFeatures features;
     ImageMetaData metadata;
-    vdb_loader->load_metadata(features, metadata);
+    vdb_loader->load_metadata(metadata);
     auto v_min = make_float3(0.5, 0.5f, 0.5f);
-    auto v_max = make_float3(metadata.width - 0.5f, metadata.height - 0.5f, metadata.depth - 0.5f);
+    auto v_max = make_float3(metadata.width - 0.5f, metadata.height - 0.5f, metadata.height - 0.5f);
     auto vertices = std::vector<float3>{
         {v_min.x, v_min.y, v_max.z},
         {v_max.x, v_min.y, v_max.z},
@@ -738,10 +748,26 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
         {1, 4, 0}
     };
     auto numTriangles = faces.size();
-    volume->reserve_mesh(numTriangles * 3, numTriangles);
-    for (const auto& f : faces) {
-        volume->add_triangle(f.x, f.y, f.z, 0, true);
+    volume->resize_mesh((int)vertices.size(), (int)numTriangles);
+
+    ccl::array<int> triangles;
+    triangles.resize(numTriangles * 3);
+    for (size_t i = 0; i < faces.size(); i++) {
+      triangles[i * 3 + 0] = faces[i].x;
+      triangles[i * 3 + 1] = faces[i].y;
+      triangles[i * 3 + 2] = faces[i].z;
     }
+    volume->set_triangles(triangles);
+
+    ccl::array<int> shaders;
+    shaders.resize(numTriangles);
+    std::fill(shaders.begin(), shaders.end(), 0);
+    volume->set_shader(shaders);
+
+    ccl::array<bool> smooth;
+    smooth.resize(numTriangles);
+    std::fill(smooth.begin(), smooth.end(), true);
+    volume->set_smooth(smooth);
 
     std::vector<float3> face_normals;
     for (const auto& f : faces) {

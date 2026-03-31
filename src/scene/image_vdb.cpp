@@ -301,7 +301,7 @@ NanoVDBImageLoader::~NanoVDBImageLoader()
 {
 }
 
-bool NanoVDBImageLoader::load_metadata(const ImageDeviceFeatures& features, ImageMetaData& metadata)
+bool NanoVDBImageLoader::load_metadata(ImageMetaData& metadata)
 {
     metadata.channels = (get_nanogrid()->gridType() == nanovdb::GridType::Float) ? 1 : 3; // TODO
 
@@ -317,7 +317,7 @@ bool NanoVDBImageLoader::load_metadata(const ImageDeviceFeatures& features, Imag
     //metadata.depth = dim[2];
 
     if (get_nanogrid()) {
-        metadata.byte_size = nanogrid_data.size();
+        metadata.nanovdb_byte_size = nanogrid_data.size();
         if (metadata.channels == 1) {
             metadata.type = IMAGE_DATA_TYPE_NANOVDB_FLOAT;
         }
@@ -356,7 +356,7 @@ bool NanoVDBImageLoader::load_metadata(const ImageDeviceFeatures& features, Imag
     return true;
 }
 
-bool NanoVDBImageLoader::load_pixels(const ImageMetaData&, void* pixels, const size_t, const bool)
+bool NanoVDBImageLoader::load_pixels(const ImageMetaData&, void* pixels)
 {
     if (nanogrid_data.size() > 0) {
         memcpy(pixels, get_nanogrid(), nanogrid_data.size());
@@ -463,7 +463,7 @@ NanoVDBMultiResImageLoader::~NanoVDBMultiResImageLoader()
 {
 }
 
-bool NanoVDBMultiResImageLoader::load_metadata(const ImageDeviceFeatures& features, ImageMetaData& metadata)
+bool NanoVDBMultiResImageLoader::load_metadata(ImageMetaData& metadata)
 {
     metadata.channels = (get_nanogrid(0)->gridType() == nanovdb::GridType::Float) ? 1 : 3; // TODO
 
@@ -500,7 +500,7 @@ bool NanoVDBMultiResImageLoader::load_metadata(const ImageDeviceFeatures& featur
     metadata.height = dim[1];
     //metadata.depth = dim[2];
 
-    metadata.byte_size = grids.size();
+    metadata.nanovdb_byte_size = grids.size();
     if (metadata.channels == 1) {
         metadata.type = IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT;
     }
@@ -549,7 +549,7 @@ bool NanoVDBMultiResImageLoader::load_metadata(const ImageDeviceFeatures& featur
     return true;
 }
 
-bool NanoVDBMultiResImageLoader::load_pixels(const ImageMetaData&, void* pixels, const size_t, const bool)
+bool NanoVDBMultiResImageLoader::load_pixels(const ImageMetaData&, void* pixels)
 {
     if (grids.size() > 0) {
         memcpy(pixels, grids.data(), grids.size());
@@ -715,7 +715,7 @@ NanoVDBDerivatesImageLoader::~NanoVDBDerivatesImageLoader()
 {
 }
 
-bool NanoVDBDerivatesImageLoader::load_metadata(const ImageDeviceFeatures& features, ImageMetaData& metadata)
+bool NanoVDBDerivatesImageLoader::load_metadata(ImageMetaData& metadata)
 {
     if (file_header.magic != 0x4E56444D || file_header.gridCount == 0) {
         return false;
@@ -724,7 +724,7 @@ bool NanoVDBDerivatesImageLoader::load_metadata(const ImageDeviceFeatures& featu
     // All derivative grids are float type
     metadata.channels = 1;
     metadata.type = IMAGE_DATA_TYPE_NANOVDB_DERIVATES;
-    metadata.byte_size = bundle_data.size();
+    metadata.nanovdb_byte_size = bundle_data.size();
 
     // Get bounding box from finest level
     const DerivLevelHeader* level_table = get_level_table();
@@ -768,7 +768,7 @@ bool NanoVDBDerivatesImageLoader::load_metadata(const ImageDeviceFeatures& featu
     return true;
 }
 
-bool NanoVDBDerivatesImageLoader::load_pixels(const ImageMetaData&, void* pixels, const size_t, const bool)
+bool NanoVDBDerivatesImageLoader::load_pixels(const ImageMetaData&, void* pixels)
 {
     if (bundle_data.size() > 0) {
         memcpy(pixels, bundle_data.data(), bundle_data.size());
@@ -889,14 +889,14 @@ RAWImageLoader::~RAWImageLoader()
 {
 }
 
-bool RAWImageLoader::load_metadata(const ImageDeviceFeatures& features, ImageMetaData& metadata)
+bool RAWImageLoader::load_metadata(ImageMetaData& metadata)
 {
     metadata.channels = channels;
     metadata.width = dimx;
     metadata.height = dimy;
     //metadata.depth = dimz;
 
-    metadata.byte_size = grid.size();
+    metadata.nanovdb_byte_size = grid.size();
 
     if (metadata.channels == 3) {
         switch (raw_type) {
@@ -920,7 +920,7 @@ bool RAWImageLoader::load_metadata(const ImageDeviceFeatures& features, ImageMet
     return true;
 }
 
-bool RAWImageLoader::load_pixels(const ImageMetaData&, void* pixels, const size_t, const bool)
+bool RAWImageLoader::load_pixels(const ImageMetaData&, void* pixels)
 {
     if (grid.size() > 0) {
         memcpy(pixels, grid.data(), grid.size());
