@@ -764,6 +764,37 @@ NanoVDBDerivatesImageLoader::NanoVDBDerivatesImageLoader(vector<char>& g)
                    vecD[0], vecD[1], vecD[2]);
         }
     }
+
+    // Print active voxels for each grid (limited to first 100 per grid)
+    printf("  Active voxels (sample):\n");
+    for (uint32_t grid_idx = 0; grid_idx < file_header.gridCount; ++grid_idx) {
+        nanovdb::NanoGrid<float>* grid = get_grid(grid_idx);
+        if (grid) {
+            printf("    Grid %u active voxels:\n", grid_idx);
+            int count = 0;
+            int max_print = 100;
+            
+            // Loop over child nodes of the root node
+            for (auto it2 = grid->tree().root().cbeginChild(); it2 && count < max_print; ++it2) {
+                // Loop over child nodes of the upper internal node
+                for (auto it1 = it2->cbeginChild(); it1 && count < max_print; ++it1) {
+                    // Loop over child nodes of the lower internal node
+                    for (auto it0 = it1->cbeginChild(); it0 && count < max_print; ++it0) {
+                        // Loop over active values
+                        for (auto it = it0->cbeginValueOn(); it && count < max_print; ++it) {
+                            float value = *it;
+                            nanovdb::Coord coord = it.getCoord();
+                            printf("      (%d, %d, %d): %.6f\n", coord[0], coord[1], coord[2], value);
+                            count++;
+                        }
+                    }
+                }
+            }
+            if (count >= max_print) {
+                printf("      ... (limited to %d voxels)\n", max_print);
+            }
+        }
+    }
 }
 
 NanoVDBDerivatesImageLoader::~NanoVDBDerivatesImageLoader()
