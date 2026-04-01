@@ -51,6 +51,10 @@ if(WITH_CYCLES_CUDA_BINARIES AND WITH_CYCLES_DEVICE_OPTIX)
       -I "${CMAKE_CURRENT_SOURCE_DIR}/../../.."
       -o ${output})
 
+    if(WITH_NANOVDB)
+      list(APPEND cuda_flags -I "${NANOVDB_INCLUDE_DIRS}")
+    endif()
+
     if(WITH_CYCLES_OSL)
       set(cuda_flags ${cuda_flags}
         -D OSL_LIBRARY_VERSION_CODE=${OSL_LIBRARY_VERSION_CODE})

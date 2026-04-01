@@ -5,10 +5,12 @@
 #pragma once
 
 #include "util/vector.h"
+#include <string>
 
 CCL_NAMESPACE_BEGIN
 
 class Scene;
+class Shader;
 
 void xml_read_file(Scene *scene, const char *filepath);
 void xml_set_volume_to_attr(Scene* scene, std::string geom_name, std::string attr_name, int type, vector<char>& file_content);

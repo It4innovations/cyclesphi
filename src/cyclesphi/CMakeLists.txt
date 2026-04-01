@@ -159,6 +159,9 @@ if(WITH_CYCLES_STANDALONE)
 
       ../app/cycles_xml_bin.cpp
       ../app/cycles_xml_bin.h
+
+      ../app/cycles_xml_nodes.cpp
+      ../app/cycles_xml_nodes.h      
   )
 
   add_executable(cyclesphi ${SRC} ${INC} ${INC_SYS})
@@ -201,6 +204,10 @@ if(WITH_CYCLES_STANDALONE)
 
       ../app/cycles_xml_bin.cpp
       ../app/cycles_xml_bin.h
+
+      ../app/cycles_xml_nodes.cpp
+      ../app/cycles_xml_nodes.h      
+
   )
 
   add_executable(cyclesphi_space ${SRC} ${INC} ${INC_SYS})
@@ -238,6 +245,10 @@ if(WITH_CYCLES_STANDALONE)
 
         ../app/cycles_xml_bin.cpp
         ../app/cycles_xml_bin.h
+
+      ../app/cycles_xml_nodes.cpp
+      ../app/cycles_xml_nodes.h      
+
     )
 
     add_executable(cyclesphi_mpi ${SRC} ${INC} ${INC_SYS})

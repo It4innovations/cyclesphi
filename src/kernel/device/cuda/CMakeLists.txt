@@ -127,6 +127,10 @@ if(WITH_CYCLES_CUDA_BINARIES)
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../../..
       -o ${CMAKE_CURRENT_BINARY_DIR}/${cuda_file})
 
+    if(WITH_NANOVDB)
+      list(APPEND cuda_flags -I "${NANOVDB_INCLUDE_DIRS}")
+    endif()
+
     cuda_add_common_flags(${cuda_version} ${arch} "${cuda_flags}" cuda_flags)
 
     set(_cuda_nvcc_args

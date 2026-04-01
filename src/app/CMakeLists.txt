@@ -78,6 +78,9 @@ if(WITH_CYCLES_STANDALONE)
     cycles_xml_bin.cpp
     #cycles_xml.h
     cycles_xml_bin.h
+
+    cycles_xml_nodes.cpp
+    cycles_xml_nodes.h
     
     oiio_output_driver.cpp
     oiio_output_driver.h

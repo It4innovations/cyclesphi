@@ -34,6 +34,7 @@ public:
 	FromCL(): 
 		port(7000), 
 		anim(-1), 
+		threads(0),
 		use_anim(false), 
 		used_device("CPU"), 		
 		use_mpi(false),    
@@ -52,6 +53,8 @@ public:
 	bool use_mpi;
 	int world_rank;
 	int world_size;
+
+	int threads;
 
 	// Atomic flag to control the infinite loops
 	std::atomic<bool> render_running;

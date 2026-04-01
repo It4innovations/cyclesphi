@@ -85,7 +85,8 @@ if(WITH_CYCLES_HIP_BINARIES AND WITH_CYCLES_DEVICE_HIP)
 
     if(WITH_NANOVDB)
       set(hip_flags ${hip_flags}
-        -D WITH_NANOVDB)
+        -D WITH_NANOVDB
+        -I "${NANOVDB_INCLUDE_DIRS}")
     endif()
 
     if(WITH_CYCLES_DEBUG)

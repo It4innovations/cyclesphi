@@ -248,7 +248,7 @@ void session_init(FromCL& fromCL, Options& options, int session_id)
 	options.session_params.samples = 1;
 
 	//TODO
-	//options.session_params.threads = 1;
+	options.session_params.threads = fromCL.threads;
 
 	options.output_pass = "combined";
 
@@ -787,6 +787,7 @@ void FromCL::usage()
 	std::cout << "\t--device X" << std::endl;
 	std::cout << "\t--port X" << std::endl;
 	std::cout << "\t--anim X" << std::endl;
+    std::cout << "\t--threads X" << std::endl;
 
 	const ccl::vector<ccl::DeviceInfo> devices = ccl::Device::available_devices();
 	printf("Devices:\n");
@@ -815,6 +816,9 @@ void FromCL::parse_args(int argc, char** argv)
 		else if (arg == "--anim") {
 			use_anim = true;
 			anim = std::stoi(argv[++i]);
+		}
+		else if (arg == "--threads") {
+			threads = std::stoi(argv[++i]);
 		}
 		else if (arg == "--scene") {
 			filepath = argv[++i];

@@ -101,6 +101,11 @@ if(WITH_CYCLES_HIP_BINARIES AND WITH_CYCLES_DEVICE_HIPRT)
     -ffast-math
   )
 
+  if(WITH_NANOVDB)
+    list(APPEND hiprt_compile_flags -D WITH_NANOVDB)
+    list(APPEND hiprt_compile_flags -I "${NANOVDB_INCLUDE_DIRS}")
+  endif()
+
   set(hiprt_hipfb "")
   foreach(arch ${CYCLES_HIP_BINARIES_ARCH})
     set(hiprt_file ${CMAKE_CURRENT_BINARY_DIR}/kernel_rt_${arch}.hipfb)
