@@ -207,7 +207,11 @@ device_image *ImageCache::load_image_full(Device &device,
     case IMAGE_DATA_TYPE_NANOVDB_FLOAT4:
     case IMAGE_DATA_TYPE_NANOVDB_FPN:
     case IMAGE_DATA_TYPE_NANOVDB_FP16:
-    case IMAGE_DATA_TYPE_NANOVDB_EMPTY: {
+    case IMAGE_DATA_TYPE_NANOVDB_EMPTY: 
+    case IMAGE_DATA_TYPE_NANOVDB_MULTIRES_FLOAT:
+    case IMAGE_DATA_TYPE_NANOVDB_DERIVATES:
+    case IMAGE_DATA_TYPE_RAW3D_FLOAT:
+    case IMAGE_DATA_TYPE_RAW3D_FLOAT3:{
 #ifdef WITH_NANOVDB
       mem = &alloc_full(
           device, type, interpolation, extension, metadata.nanovdb_byte_size, 0, image_info_id);

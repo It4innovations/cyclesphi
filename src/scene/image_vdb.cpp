@@ -306,7 +306,7 @@ bool NanoVDBImageLoader::load_metadata(ImageMetaData& metadata)
     metadata.channels = (get_nanogrid()->gridType() == nanovdb::GridType::Float) ? 1 : 3; // TODO
 
     /* Set dimensions. */
-    auto bbox = get_nanogrid()->worldBBox();
+    auto bbox = get_nanogrid()->indexBBox();//worldBBox();
     if (bbox.empty()) {
         return false;
     }
@@ -468,7 +468,7 @@ bool NanoVDBMultiResImageLoader::load_metadata(ImageMetaData& metadata)
     metadata.channels = (get_nanogrid(0)->gridType() == nanovdb::GridType::Float) ? 1 : 3; // TODO
 
     /* Set dimensions. */
-	nanovdb::Vec3dBBox bbox = get_nanogrid(0)->worldBBox();
+    nanovdb::CoordBBox bbox = get_nanogrid(0)->indexBBox();  // worldBBox();
     //auto bbox = get_nanogrid(0)->worldBBox();
     //if (bbox.empty()) {
     //    return false;
@@ -491,7 +491,7 @@ bool NanoVDBMultiResImageLoader::load_metadata(ImageMetaData& metadata)
 #endif    
 
 	for (int i = 1; i < levels; ++i) {
-		nanovdb::Vec3dBBox lbbox = get_nanogrid(i)->worldBBox();
+        nanovdb::CoordBBox lbbox = get_nanogrid(i)->indexBBox();  // worldBBox();
 		bbox.expand(lbbox);
 	}
 
@@ -745,7 +745,7 @@ bool NanoVDBDerivatesImageLoader::load_metadata(ImageMetaData& metadata)
     }
 
     // Set dimensions from world bounding box
-    auto bbox = grid->worldBBox();
+    auto bbox = grid->indexBBox();  // worldBBox();
     auto dim = bbox.dim();
     metadata.width = dim[0];
     metadata.height = dim[1];
