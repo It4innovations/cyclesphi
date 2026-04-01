@@ -89,6 +89,10 @@ if(WITH_CYCLES_HIP_BINARIES AND WITH_CYCLES_DEVICE_HIP)
         -I "${NANOVDB_INCLUDE_DIRS}")
     endif()
 
+    if(WITH_GPU_CPUIMAGE)
+        set(hip_flags ${hip_flags} -D WITH_GPU_CPUIMAGE)
+    endif()    
+
     if(WITH_CYCLES_DEBUG)
       set(hip_flags ${hip_flags} -D WITH_CYCLES_DEBUG)
     endif()

@@ -133,7 +133,11 @@ if(WITH_CYCLES_DEVICE_ONEAPI)
 
   if(WITH_NANOVDB)
     list(APPEND sycl_compiler_flags
-      -DWITH_NANOVDB)
+      -DWITH_NANOVDB -I ${NANOVDB_INCLUDE_DIR})
+  endif()
+
+  if(WITH_GPU_CPUIMAGE)
+    list(APPEND sycl_compiler_flags -DWITH_GPU_CPUIMAGE)
   endif()
 
   if(WITH_CYCLES_EMBREE AND EMBREE_SYCL_SUPPORT)

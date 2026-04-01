@@ -97,6 +97,12 @@ ccl_device_forceinline T ccl_gpu_image_object_read_2D(const ccl_gpu_image_object
 
 /* Half */
 
+/* CUDA 13+ provides native half support in cuda_fp16.h.
+ * Keep legacy inline-asm fallback for older toolchains. */
+#if (defined(__CUDACC_VER_MAJOR__) && (__CUDACC_VER_MAJOR__ >= 13)) || \
+  (defined(CUDA_VERSION) && (CUDA_VERSION >= 13000))
+#  include <cuda_fp16.h>
+#elif !defined(__CUDA_FP16_TYPES_EXIST__)
 typedef unsigned short half;
 
 ccl_device_forceinline half __float2half(const float f)
@@ -112,6 +118,7 @@ ccl_device_forceinline float __half2float(const half h)
   asm("{  cvt.f32.f16 %0, %1;}\n" : "=f"(val) : "h"(h));
   return val;
 }
+#endif
 
 /* Types */
 

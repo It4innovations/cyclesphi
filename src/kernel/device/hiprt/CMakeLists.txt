@@ -60,7 +60,11 @@ if(WITH_CYCLES_HIP_BINARIES AND WITH_CYCLES_DEVICE_HIPRT)
   endif()
 
   if(WITH_NANOVDB)
-    set(hiprt_compile_flags ${hiprt_compile_flags} -D WITH_NANOVDB)
+    set(hiprt_compile_flags ${hiprt_compile_flags} -D WITH_NANOVDB -I ${NANOVDB_INCLUDE_DIR})
+  endif()
+
+  if(WITH_GPU_CPUIMAGE)
+    set(hiprt_compile_flags ${hiprt_compile_flags} -D WITH_GPU_CPUIMAGE)
   endif()
 
   if(WITH_CYCLES_DEBUG)
@@ -100,11 +104,6 @@ if(WITH_CYCLES_HIP_BINARIES AND WITH_CYCLES_DEVICE_HIPRT)
     -Wno-unused-value
     -ffast-math
   )
-
-  if(WITH_NANOVDB)
-    list(APPEND hiprt_compile_flags -D WITH_NANOVDB)
-    list(APPEND hiprt_compile_flags -I "${NANOVDB_INCLUDE_DIRS}")
-  endif()
 
   set(hiprt_hipfb "")
   foreach(arch ${CYCLES_HIP_BINARIES_ARCH})

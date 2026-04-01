@@ -44,6 +44,11 @@ function(cuda_add_common_flags cuda_version arch in_flags out_flags)
     --use_fast_math
     -Wno-deprecated-gpu-targets)
 
+  # MSVC: Use standard conforming preprocessor for CUDA 13+ compatibility
+  if(MSVC)
+    set(flags ${flags} -Xcompiler /Zc:preprocessor)
+  endif()
+
   if(WITH_CYCLES_DEBUG)
     set(flags ${flags}
       -D WITH_CYCLES_DEBUG
@@ -51,8 +56,12 @@ function(cuda_add_common_flags cuda_version arch in_flags out_flags)
   endif()
 
   if(WITH_NANOVDB)
-    set(flags ${flags} -D WITH_NANOVDB)
+    set(flags ${flags} -D WITH_NANOVDB -I "${NANOVDB_INCLUDE_DIRS}")
   endif()
+
+  if(WITH_GPU_CPUIMAGE)
+      set(flags ${flags} -D WITH_GPU_CPUIMAGE)
+  endif()  
 
   if("${cuda_version}" GREATER_EQUAL 123 AND "${arch}" STREQUAL "sm_120")
     # Enable jump table generation for the SVM switch statement.
@@ -125,11 +134,7 @@ if(WITH_CYCLES_CUDA_BINARIES)
       -D _ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
       -m ${CUDA_BITS}
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../../..
-      -o ${CMAKE_CURRENT_BINARY_DIR}/${cuda_file})
-
-    if(WITH_NANOVDB)
-      list(APPEND cuda_flags -I "${NANOVDB_INCLUDE_DIRS}")
-    endif()
+      -o ${CMAKE_CURRENT_BINARY_DIR}/${cuda_file})    
 
     cuda_add_common_flags(${cuda_version} ${arch} "${cuda_flags}" cuda_flags)
 
