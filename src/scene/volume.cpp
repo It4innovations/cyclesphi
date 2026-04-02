@@ -624,7 +624,9 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
 
     vdb_loader->get_bbox(min, max);
 
-    const int3 resolution = make_int3(max[0] - min[0] + 1, max[1] - min[1] + 1, max[2] - min[2] + 1);
+    //TODO
+    //const int3 resolution = make_int3(max[0] - min[0] + 1, max[1] - min[1] + 1, max[2] - min[2] + 1);
+    const int3 resolution = make_int3(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
 
     unordered_map<size_t, int> used_verts;
 
@@ -656,14 +658,15 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
 
     //float3 cell_size = make_float3(1.0f / bbox.dim()[0], 1.0f / bbox.dim()[1], 1.0f / bbox.dim()[2]);
     float3 cell_size = make_float3(1.0f / resolution[0], 1.0f / resolution[1], 1.0f / resolution[2]);
-    float3 point_offset = cell_size * face_overlap_avoidance;
+    //TODO
+    float3 point_offset = cell_size;  // cell_size * face_overlap_avoidance;
 
     vertices.reserve(vertices_is.size());
 
     for (size_t i = 0; i < vertices_is.size(); ++i) {
         float3 vertex = vdb_loader->index_to_world(make_float3(vertices_is[i].x, vertices_is[i].y, vertices_is[i].z));
         //float3 vertex = make_float3((float)p[0], (float)p[1], (float)p[2]);
-        vertices.push_back(vertex + point_offset);
+        vertices.push_back(vertex); //- point_offset
     }
     ///////////////////////////////convert_quads_to_tris(quads, indices, face_normals);
     int index_offset = 0;

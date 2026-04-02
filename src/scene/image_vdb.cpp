@@ -823,27 +823,69 @@ void NanoVDBDerivatesImageLoader::get_bbox(int3 &min_bbox, int3 &max_bbox)
         return;
     }
 
-    // Compute unified bounding box across all levels
     const DerivLevelHeader* level_table = get_level_table();
     const DerivGridHeader* grid_table = get_grid_table();
+    
+    // Use finest level's first grid as reference coordinate system
+    const DerivLevelHeader& finest_level = level_table[finest_level_id];
+    if (finest_level.firstGridIndex >= file_header.gridCount) {
+        min_bbox = max_bbox = make_int3(0, 0, 0);
+        return;
+    }
+    
+    nanovdb::NanoGrid<float>* reference_grid = get_grid(finest_level.firstGridIndex);
+    if (!reference_grid) {
+        min_bbox = max_bbox = make_int3(0, 0, 0);
+        return;
+    }
     
     nanovdb::CoordBBox unified_bbox;
     bool first = true;
 
+    // Convert all grids' world bbox to reference grid's index space and union them
     for (uint32_t level_idx = 0; level_idx < file_header.levelCount; ++level_idx) {
         const DerivLevelHeader& lh = level_table[level_idx];
         
-        if (lh.firstGridIndex < file_header.gridCount) {
-            // Use first grid of each level for bbox
-            nanovdb::NanoGrid<float>* grid = get_grid(lh.firstGridIndex);
-            if (grid) {
-                nanovdb::CoordBBox level_bbox = grid->indexBBox();
-                
-                if (first) {
-                    unified_bbox = level_bbox;
-                    first = false;
-                } else {
-                    unified_bbox.expand(level_bbox);
+        // Iterate over ALL grids in this level (including all derivatives)
+        for (uint32_t deriv_idx = 0; deriv_idx < lh.derivativeCount; ++deriv_idx) {
+            uint32_t grid_idx = lh.firstGridIndex + deriv_idx;
+            
+            if (grid_idx < file_header.gridCount) {
+                nanovdb::NanoGrid<float>* grid = get_grid(grid_idx);
+                if (grid) {
+                    // Get world bbox of this grid
+                    nanovdb::Vec3dBBox world_bbox = grid->worldBBox();
+                    
+                    // Convert world bbox corners to reference grid's index space
+                    // Need to check all 8 corners since transform might have rotations/scales
+                    nanovdb::Vec3d wmin = world_bbox.min();
+                    nanovdb::Vec3d wmax = world_bbox.max();
+                    
+                    nanovdb::CoordBBox index_bbox;
+                    for (int i = 0; i < 8; ++i) {
+                        nanovdb::Vec3d corner(
+                            (i & 1) ? wmax[0] : wmin[0],
+                            (i & 2) ? wmax[1] : wmin[1],
+                            (i & 4) ? wmax[2] : wmin[2]
+                        );
+                        nanovdb::Vec3d index_pos = reference_grid->worldToIndex(corner);
+                        nanovdb::Coord index_coord(
+                            std::floor(index_pos[0]),
+                            std::floor(index_pos[1]),
+                            std::floor(index_pos[2])
+                        );
+                        
+                        if (i == 0 && first) {
+                            index_bbox = nanovdb::CoordBBox(index_coord, index_coord);
+                            first = false;
+                        } else {
+                            index_bbox.expand(index_coord);
+                        }
+                    }
+                    
+                    if (!first) {
+                        unified_bbox.expand(index_bbox);
+                    }
                 }
             }
         }
@@ -870,6 +912,16 @@ float3 NanoVDBDerivatesImageLoader::index_to_world(float3 in)
         nanovdb::NanoGrid<float>* grid = get_grid(finest_level.firstGridIndex);
         if (grid) {
             nanovdb::Vec3d p = grid->indexToWorld(nanovdb::Vec3d(in[0], in[1], in[2]));
+            
+            // Get voxel size from grid transform
+            const double* matD = grid->map().mMatD;
+            nanovdb::Vec3d voxel_size(matD[0], matD[4], matD[8]);
+            
+            // Offset by half voxel size
+            //p[0] -= voxel_size[0] * 0.5;
+            //p[1] -= voxel_size[1] * 0.5;
+            //p[2] -= voxel_size[2] * 0.5;
+            
             return make_float3((float)p[0], (float)p[1], (float)p[2]);
         }
     }
