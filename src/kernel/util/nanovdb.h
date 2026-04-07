@@ -22,7 +22,7 @@ CCL_NAMESPACE_BEGIN
 #define NANOVDB_USE_SINGLE_ROOT_KEY
 #define NANOVDB_DATA_ALIGNMENT 32  // NOLINT
 
-namespace nanovdb {
+namespace ccl_nanovdb {
 
 /* Utilities */
 

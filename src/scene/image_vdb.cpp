@@ -679,6 +679,7 @@ NanoVDBDerivatesImageLoader::NanoVDBDerivatesImageLoader(vector<char>& g)
         }
     }
 
+#if 0
     // Print active voxels for each grid (limited to first 100 per grid)
     printf("  Active voxels (sample):\n");
     for (uint32_t grid_idx = 0; grid_idx < file_header.gridCount; ++grid_idx) {
@@ -709,6 +710,7 @@ NanoVDBDerivatesImageLoader::NanoVDBDerivatesImageLoader(vector<char>& g)
             }
         }
     }
+#endif
 }
 
 NanoVDBDerivatesImageLoader::~NanoVDBDerivatesImageLoader()
