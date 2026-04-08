@@ -13,6 +13,102 @@
 CCL_NAMESPACE_BEGIN
 
 ////////////////ENUM TO STR//////////////////////////////
+// InterpolationType
+
+inline const char* enum_to_str(InterpolationType t)
+{
+  switch (t) {
+  case INTERPOLATION_NONE:      return "INTERPOLATION_NONE";
+  case INTERPOLATION_LINEAR:    return "INTERPOLATION_LINEAR";
+  case INTERPOLATION_CLOSEST:   return "INTERPOLATION_CLOSEST";
+  case INTERPOLATION_CUBIC:     return "INTERPOLATION_CUBIC";
+  case INTERPOLATION_SMART:     return "INTERPOLATION_SMART";
+  case INTERPOLATION_NUM_TYPES: return "INTERPOLATION_NUM_TYPES";
+  default: {
+    printf("enum_to_str: Unknown InterpolationType enum: %d\n", (int)t);
+    return "UNKNOWN_INTERPOLATION_TYPE";
+  }
+  }
+}
+
+inline bool str_to_enum(const char* str, InterpolationType& out)
+{
+  if (!str) {
+    return false;
+  }
+
+  if (std::strcmp(str, "INTERPOLATION_NONE") == 0) {
+    out = INTERPOLATION_NONE;
+  }
+  else if (std::strcmp(str, "INTERPOLATION_LINEAR") == 0) {
+    out = INTERPOLATION_LINEAR;
+  }
+  else if (std::strcmp(str, "INTERPOLATION_CLOSEST") == 0) {
+    out = INTERPOLATION_CLOSEST;
+  }
+  else if (std::strcmp(str, "INTERPOLATION_CUBIC") == 0) {
+    out = INTERPOLATION_CUBIC;
+  }
+  else if (std::strcmp(str, "INTERPOLATION_SMART") == 0) {
+    out = INTERPOLATION_SMART;
+  }
+  else if (std::strcmp(str, "INTERPOLATION_NUM_TYPES") == 0) {
+    out = INTERPOLATION_NUM_TYPES;
+  }
+  else {
+    printf("str_to_enum: Unknown InterpolationType string: %s\n", str);
+    return false;
+  }
+
+  return true;
+}
+
+// ExtensionType
+
+inline const char* enum_to_str(ExtensionType t)
+{
+  switch (t) {
+  case EXTENSION_REPEAT:    return "EXTENSION_REPEAT";
+  case EXTENSION_EXTEND:    return "EXTENSION_EXTEND";
+  case EXTENSION_CLIP:      return "EXTENSION_CLIP";
+  case EXTENSION_MIRROR:    return "EXTENSION_MIRROR";
+  case EXTENSION_NUM_TYPES: return "EXTENSION_NUM_TYPES";
+  default: {
+    printf("enum_to_str: Unknown ExtensionType enum: %d\n", (int)t);
+    return "UNKNOWN_EXTENSION_TYPE";
+  }
+  }
+}
+
+inline bool str_to_enum(const char* str, ExtensionType& out)
+{
+  if (!str) {
+    return false;
+  }
+
+  if (std::strcmp(str, "EXTENSION_REPEAT") == 0) {
+    out = EXTENSION_REPEAT;
+  }
+  else if (std::strcmp(str, "EXTENSION_EXTEND") == 0) {
+    out = EXTENSION_EXTEND;
+  }
+  else if (std::strcmp(str, "EXTENSION_CLIP") == 0) {
+    out = EXTENSION_CLIP;
+  }
+  else if (std::strcmp(str, "EXTENSION_MIRROR") == 0) {
+    out = EXTENSION_MIRROR;
+  }
+  else if (std::strcmp(str, "EXTENSION_NUM_TYPES") == 0) {
+    out = EXTENSION_NUM_TYPES;
+  }
+  else {
+    printf("str_to_enum: Unknown ExtensionType string: %s\n", str);
+    return false;
+  }
+
+  return true;
+}
+
 // ImageDataType
 
 inline const char* enum_to_str(ImageDataType t)

@@ -546,6 +546,20 @@ static void xml_read_background(XMLReadState &state, const xml_node node)
   xml_read_node(state, state.scene->background, node);
 }
 
+/* Image Params */
+static void xml_read_image_params(XMLReadState &state,
+                                  ImageParams &params,
+                                  const xml_node node_attribute)
+{ 
+  const xml_attribute attr_interpolation = node_attribute.attribute("interpolation");  
+  if (attr_interpolation)
+    str_to_enum(attr_interpolation.value(), params.interpolation);
+
+  const xml_attribute attr_extension = node_attribute.attribute("extension");
+  if (attr_extension)
+    str_to_enum(attr_extension.value(), params.extension);
+}
+
 /* Mesh */
 
 static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
@@ -731,7 +745,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           // attr->data_voxel() = state.scene->image_manager->add_image(loader, params, false);
 
           unique_ptr<ImageLoader> loader = make_unique<VDBImageLoader>(grid, name.string());
-          const ImageParams params;
+          
+          ImageParams params;
+          xml_read_image_params(state, params, node_attribute);
+
           attr->data_voxel() = state.scene->image_manager->add_image(std::move(loader), params);
         }
         else if (volume_type == "nanovdb") {
@@ -753,7 +770,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           }
 
           unique_ptr<ImageLoader> loader = make_unique<NanoVDBImageLoader>(nanogrid);
-          const ImageParams params;
+
+          ImageParams params;
+          xml_read_image_params(state, params, node_attribute);
+
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
         }
@@ -799,7 +819,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           unique_ptr<ImageLoader> loader = make_unique<NanoVDBMultiResImageLoader>(
               raw_data,
               NanoVDBMultiResImageLoader::NanoVDBMultiResImageLoaderType::eMultiResFloat);
-          const ImageParams params;
+
+          ImageParams params;
+          xml_read_image_params(state, params, node_attribute);
+
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
         }
@@ -830,7 +853,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
 
           // TODO: using multires read
           unique_ptr<ImageLoader> loader = make_unique<NanoVDBDerivatesImageLoader>(raw_data);
-          const ImageParams params;
+
+          ImageParams params;
+          xml_read_image_params(state, params, node_attribute);
+
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
         }
@@ -937,7 +963,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
 
           unique_ptr<ImageLoader> loader = make_unique<RAWImageLoader>(
               raw_data, width, height, depth, scal_x, scal_y, scal_z, type, channels);
-          const ImageParams params;
+
+          ImageParams params;
+          xml_read_image_params(state, params, node_attribute);
+
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
         }
