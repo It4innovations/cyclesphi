@@ -150,3 +150,50 @@ message(STATUS "Building nanovdb_derivates_convert")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+#####################################################################################
+##################nanovdb_derivates_convert_vec4 executable configuration##################
+# Create executable
+add_executable(nanovdb_derivates_convert_vec4 nanovdb_derivates_convert_vec4.cpp)
+
+# Include directories
+target_include_directories(nanovdb_derivates_convert_vec4 PRIVATE
+    ${OPENVDB_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIRS}
+)
+
+# Add NanoVDB include directory if specified separately
+if(NANOVDB_INCLUDE_DIR)
+    target_include_directories(nanovdb_derivates_convert_vec4 PRIVATE ${NANOVDB_INCLUDE_DIR})
+endif()
+
+# Link libraries
+target_link_libraries(nanovdb_derivates_convert_vec4 PRIVATE
+    ${OPENVDB_LIBRARY}
+    ${TBB_LIBRARY}
+)
+
+# Platform-specific linking
+if(UNIX AND NOT APPLE)
+    # Linux specific
+    target_link_libraries(nanovdb_derivates_convert_vec4 PRIVATE pthread dl)
+elseif(APPLE)
+    # macOS specific
+    target_link_libraries(nanovdb_derivates_convert_vec4 PRIVATE pthread)
+endif()
+
+# Set output directory
+set_target_properties(nanovdb_derivates_convert_vec4 PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Installation
+install(TARGETS nanovdb_derivates_convert_vec4
+    RUNTIME DESTINATION bin
+)
+
+# Print configuration info
+message(STATUS "Building nanovdb_derivates_convert_vec4")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
