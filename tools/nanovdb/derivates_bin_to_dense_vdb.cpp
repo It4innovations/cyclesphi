@@ -12,7 +12,7 @@
 #include <openvdb/openvdb.h>
 #include <openvdb/tools/Dense.h>
 #include <nanovdb/NanoVDB.h>
-#include <nanovdb/util/IO.h>
+#include <nanovdb/io/IO.h>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -20,6 +20,10 @@
 #include <cmath>
 #include <cfloat>
 #include <memory>
+
+#ifdef USE_OPENMP
+#include <omp.h>
+#endif
 
 // ============================================================================
 // NanoVDB Derivative Bundle Format - File Structures
@@ -320,20 +324,22 @@ float reconstructValueAtPosition(
 // ============================================================================
 int main(int argc, char* argv[])
 {
-    if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <input.bin> <output.vdb> [level_index]\n";
+    if (argc < 4) {
+        std::cerr << "Usage: " << argv[0] << " <input.bin> <output.vdb> <reference.vdb> [level_index]\n";
         std::cerr << "\n";
         std::cerr << "Converts NanoVDB derivative bundle to dense OpenVDB grid.\n";
-        std::cerr << "Optional level_index: process only specific level (default: all levels)\n";
+        std::cerr << "  <reference.vdb> : VDB file to read bounding box from\n";
+        std::cerr << "  Optional level_index: process only specific level (default: all levels)\n";
         return 1;
     }
 
     const char* inputFile = argv[1];
     const char* outputFile = argv[2];
+    const char* referenceVdbFile = argv[3];
     int specificLevel = -1; // -1 means process all levels
     
-    if (argc >= 4) {
-        specificLevel = std::atoi(argv[3]);
+    if (argc >= 5) {
+        specificLevel = std::atoi(argv[4]);
     }
 
     try {
@@ -435,65 +441,49 @@ int main(int argc, char* argv[])
         openvdb::initialize();
 
         // ====================================================================
-        // Step 6: Create dense output grid
-        // Compute unified bounding box across all levels in reference grid's index space
+        // Step 6: Read reference VDB file to get bounding box
         // ====================================================================
-        nanovdb::CoordBBox unifiedBBox;
-        bool first = true;
-
-        // Convert all grids' world bbox to reference grid's index space and union them
-        for (uint32_t levelIdx = 0; levelIdx < fh->levelCount; ++levelIdx) {
-            const DerivLevelHeader& lh = levelTable[levelIdx];
-            
-            // Iterate over ALL grids in this level (including all derivatives)
-            for (uint32_t derivIdx = 0; derivIdx < lh.derivativeCount; ++derivIdx) {
-                uint32_t gridIdx = lh.firstGridIndex + derivIdx;
-                
-                if (gridIdx < fh->gridCount) {
-                    const DerivGridHeader& gh = gridTable[gridIdx];
-                    const nanovdb::NanoGrid<float>* grid = getDerivGridPtr<float>(fileData.data(), gh);
-                    
-                    if (grid) {
-                        // Get world bbox of this grid
-                        nanovdb::Vec3dBBox worldBBox = grid->worldBBox();
-                        
-                        // Convert world bbox corners to reference grid's index space
-                        // Need to check all 8 corners since transform might have rotations/scales
-                        nanovdb::Vec3d wmin = worldBBox.min();
-                        nanovdb::Vec3d wmax = worldBBox.max();
-                        
-                        for (int i = 0; i < 8; ++i) {
-                            nanovdb::Vec3d corner(
-                                (i & 1) ? wmax[0] : wmin[0],
-                                (i & 2) ? wmax[1] : wmin[1],
-                                (i & 4) ? wmax[2] : wmin[2]
-                            );
-                            nanovdb::Vec3d indexPos = refNanoGrid->worldToIndex(corner);
-                            nanovdb::Coord indexCoord(
-                                static_cast<int32_t>(std::floor(indexPos[0])),
-                                static_cast<int32_t>(std::floor(indexPos[1])),
-                                static_cast<int32_t>(std::floor(indexPos[2]))
-                            );
-                            
-                            if (first) {
-                                unifiedBBox = nanovdb::CoordBBox(indexCoord, indexCoord);
-                                first = false;
-                            } else {
-                                unifiedBBox.expand(indexCoord);
-                            }
-                        }
-                    }
-                }
-            }
+        std::cout << "\nReading reference VDB file: " << referenceVdbFile << std::endl;
+        
+        openvdb::io::File refFile(referenceVdbFile);
+        refFile.open();
+        
+        openvdb::GridPtrVecPtr allGridsPtr = refFile.getGrids();
+        refFile.close();
+        
+        if (!allGridsPtr || allGridsPtr->empty()) {
+            std::cerr << "Error: No grids found in reference VDB file" << std::endl;
+            return 1;
         }
-
-        // Convert NanoVDB CoordBBox to OpenVDB CoordBBox
-        const nanovdb::Coord& nanoMin = unifiedBBox.min();
-        const nanovdb::Coord& nanoMax = unifiedBBox.max();
-        openvdb::CoordBBox outputBBox(
-            openvdb::Coord(nanoMin.x(), nanoMin.y(), nanoMin.z()),
-            openvdb::Coord(nanoMax.x(), nanoMax.y(), nanoMax.z())
-        );
+        
+        openvdb::GridBase::Ptr refBaseGrid = (*allGridsPtr)[0];
+        std::cout << "  Using grid: " << refBaseGrid->getName() << std::endl;
+        
+        openvdb::FloatGrid::Ptr refGrid = openvdb::gridPtrCast<openvdb::FloatGrid>(refBaseGrid);
+        if (!refGrid) {
+            std::cerr << "Error: Reference grid is not a FloatGrid" << std::endl;
+            return 1;
+        }
+        
+        // Get active voxel bounding box from reference grid
+        auto refBBox = refGrid->evalActiveVoxelBoundingBox();
+        
+        std::cout << "  Reference grid bbox: " << refBBox << std::endl;
+        
+        // Compute dimensions from reference bbox
+        struct Dims3 {
+            int64_t x, y, z;
+        };
+        
+        Dims3 refDims;
+        refDims.x = refBBox.max().x() - refBBox.min().x() + 1;
+        refDims.y = refBBox.max().y() - refBBox.min().y() + 1;
+        refDims.z = refBBox.max().z() - refBBox.min().z() + 1;
+        
+        std::cout << "  Reference dimensions: [" << refDims.x << ", " << refDims.y << ", " << refDims.z << "]" << std::endl;
+        
+        // Use reference bbox as output bbox
+        openvdb::CoordBBox outputBBox = refBBox;
 
         std::cout << "\nCreating dense output grid..." << std::endl;
         std::cout << "  Output bbox: " << outputBBox << std::endl;
@@ -525,25 +515,96 @@ int main(int argc, char* argv[])
         const openvdb::Coord& bmin = outputBBox.min();
         const openvdb::Coord& bmax = outputBBox.max();
         
-        const int64_t totalVoxels = static_cast<int64_t>(bmax.x() - bmin.x() + 1) *
-                                    static_cast<int64_t>(bmax.y() - bmin.y() + 1) *
-                                    static_cast<int64_t>(bmax.z() - bmin.z() + 1);
+        const int64_t dimX = bmax.x() - bmin.x() + 1;
+        const int64_t dimY = bmax.y() - bmin.y() + 1;
+        const int64_t dimZ = bmax.z() - bmin.z() + 1;
+        const int64_t totalVoxels = dimX * dimY * dimZ;
         
+        std::cout << "  Grid dimensions: [" << dimX << ", " << dimY << ", " << dimZ << "]" << std::endl;
         std::cout << "  Total voxels to process: " << totalVoxels << std::endl;
         
-        int64_t processedVoxels = 0;
+#ifdef USE_OPENMP
+        std::cout << "  Using OpenMP with " << omp_get_max_threads() << " threads" << std::endl;
+#endif
+        
+        // Allocate dense array for reconstruction (XYZ layout)
+        std::vector<float> denseData(totalVoxels, 0.0f);
+        
         int64_t nonZeroVoxels = 0;
+        const int64_t totalZSlices = dimZ;
+        int64_t completedZSlices = 0;
+
+#ifdef USE_OPENMP
+        // Parallel version with OpenMP - fill dense array
+        #pragma omp parallel
+        {
+            int64_t localNonZero = 0;
+            
+            #pragma omp for schedule(dynamic, 1)
+            for (int64_t iz = 0; iz < dimZ; ++iz) {
+                for (int64_t iy = 0; iy < dimY; ++iy) {
+                    for (int64_t ix = 0; ix < dimX; ++ix) {
+                        // Convert array index to grid index
+                        int gridX = bmin.x() + ix;
+                        int gridY = bmin.y() + iy;
+                        int gridZ = bmin.z() + iz;
+                        
+                        // Convert index to world coordinates
+                        // Use voxel center (add 0.5 to index)
+                        openvdb::Vec3d indexPos(gridX + 0.5, gridY + 0.5, gridZ + 0.5);
+                        openvdb::Vec3d worldPos = indexToWorld.indexToWorld(indexPos);
+
+                        // Reconstruct value using Taylor polynomial
+                        float value = reconstructValueAtPosition<float>(
+                            fileData.data(), fh, levelTable, gridTable,
+                            worldPos.x(),
+                            worldPos.y(),
+                            worldPos.z()
+                        );
+
+                        // Store in dense array (XYZ layout: x + dimX * (y + dimY * z))
+                        int64_t arrayIdx = ix + dimX * (iy + dimY * iz);
+                        denseData[arrayIdx] = value;
+                        
+                        if (value != 0.0f) {
+                            localNonZero++;
+                        }
+                    }
+                }
+                
+                // Progress reporting (every 5% of z-slices)
+                #pragma omp critical
+                {
+                    completedZSlices++;
+                    if (totalZSlices >= 20 && completedZSlices % (totalZSlices / 20) == 0) {
+                        double percent = 100.0 * completedZSlices / totalZSlices;
+                        std::cout << "  Progress: " << percent << "% (" 
+                                  << completedZSlices << "/" << totalZSlices 
+                                  << " z-slices completed)" << std::endl;
+                    }
+                }
+            }
+            
+            // Accumulate thread-local non-zero counts
+            #pragma omp atomic
+            nonZeroVoxels += localNonZero;
+        }
+#else
+        // Serial version without OpenMP - fill dense array
+        int64_t processedVoxels = 0;
         const int64_t reportInterval = totalVoxels / 20; // Report every 5%
-
-        auto accessor = outputGrid->getAccessor();
-
-        // Iterate through all voxels in bounding box
-        for (int iz = bmin.z(); iz <= bmax.z(); ++iz) {
-            for (int iy = bmin.y(); iy <= bmax.y(); ++iy) {
-                for (int ix = bmin.x(); ix <= bmax.x(); ++ix) {
+        
+        for (int64_t iz = 0; iz < dimZ; ++iz) {
+            for (int64_t iy = 0; iy < dimY; ++iy) {
+                for (int64_t ix = 0; ix < dimX; ++ix) {
+                    // Convert array index to grid index
+                    int gridX = bmin.x() + ix;
+                    int gridY = bmin.y() + iy;
+                    int gridZ = bmin.z() + iz;
+                    
                     // Convert index to world coordinates
                     // Use voxel center (add 0.5 to index)
-                    openvdb::Vec3d indexPos(ix + 0.5, iy + 0.5, iz + 0.5);
+                    openvdb::Vec3d indexPos(gridX + 0.5, gridY + 0.5, gridZ + 0.5);
                     openvdb::Vec3d worldPos = indexToWorld.indexToWorld(indexPos);
 
                     // Reconstruct value using Taylor polynomial
@@ -554,9 +615,11 @@ int main(int argc, char* argv[])
                         worldPos.z()
                     );
 
-                    // Set value in output grid
+                    // Store in dense array (XYZ layout: x + dimX * (y + dimY * z))
+                    int64_t arrayIdx = ix + dimX * (iy + dimY * iz);
+                    denseData[arrayIdx] = value;
+                    
                     if (value != 0.0f) {
-                        accessor.setValue(openvdb::Coord(ix, iy, iz), value);
                         nonZeroVoxels++;
                     }
 
@@ -572,10 +635,46 @@ int main(int argc, char* argv[])
                 }
             }
         }
+#endif
 
-        std::cout << "  Completed: " << processedVoxels << " voxels processed" << std::endl;
+        std::cout << "  Completed: " << totalVoxels << " voxels processed" << std::endl;
         std::cout << "  Non-zero voxels: " << nonZeroVoxels 
                   << " (" << (100.0 * nonZeroVoxels / totalVoxels) << "%)" << std::endl;
+
+        // ====================================================================
+        // Step 7b: Copy dense array to OpenVDB grid
+        // ====================================================================
+        std::cout << "\nCopying dense data to OpenVDB grid..." << std::endl;
+        
+        // Create bbox starting at origin for dense array
+        openvdb::math::CoordBBox denseBBox(
+            openvdb::Coord(0, 0, 0), 
+            openvdb::Coord(dimX - 1, dimY - 1, dimZ - 1)
+        );
+        
+        // Wrap dense array in OpenVDB Dense wrapper
+        openvdb::tools::Dense<const float, openvdb::tools::LayoutXYZ> dense(denseBBox, denseData.data());
+        
+        // Copy from dense array to grid, shifting by bmin offset
+        // We need to create a temporary grid at origin, then copy with offset
+        openvdb::FloatGrid::Ptr tempGrid = openvdb::FloatGrid::create(0.0f);
+        openvdb::tools::copyFromDense(dense, tempGrid->tree(), 0.0f);
+        
+        // Now copy to output grid with proper offset
+        auto tempAccessor = tempGrid->getAccessor();
+        auto outputAccessor = outputGrid->getAccessor();
+        
+        for (auto iter = tempGrid->cbeginValueOn(); iter; ++iter) {
+            openvdb::Coord tempCoord = iter.getCoord();
+            openvdb::Coord outputCoord(
+                tempCoord.x() + bmin.x(),
+                tempCoord.y() + bmin.y(),
+                tempCoord.z() + bmin.z()
+            );
+            outputAccessor.setValue(outputCoord, *iter);
+        }
+        
+        std::cout << "  Dense data copied to grid" << std::endl;
 
         // ====================================================================
         // Step 8: Write output VDB file
@@ -596,14 +695,19 @@ int main(int argc, char* argv[])
         
         std::cout << "  Active voxel bbox: " << outputGrid->evalActiveVoxelBoundingBox() << std::endl;
         
+#if 0        
         // Find min/max values in the output grid
         std::cout << "\n  Computing min/max values..." << std::endl;
         float minValue = FLT_MAX, maxValue = -FLT_MAX;
         
+        auto minMaxAccessor = outputGrid->getAccessor();
+#ifdef USE_OPENMP
+        #pragma omp parallel for reduction(min:minValue) reduction(max:maxValue)
+#endif
         for (int iz = bmin.z(); iz <= bmax.z(); ++iz) {
             for (int iy = bmin.y(); iy <= bmax.y(); ++iy) {
                 for (int ix = bmin.x(); ix <= bmax.x(); ++ix) {
-                    float value = accessor.getValue(openvdb::Coord(ix, iy, iz));
+                    float value = minMaxAccessor.getValue(openvdb::Coord(ix, iy, iz));
                     minValue = fminf(minValue, value);
                     maxValue = fmaxf(maxValue, value);
                 }
@@ -612,6 +716,7 @@ int main(int argc, char* argv[])
         
         std::cout << "  Min value: " << minValue << std::endl;
         std::cout << "  Max value: " << maxValue << std::endl;
+#endif        
         
         openvdb::io::File file(outputFile);
         openvdb::GridPtrVec grids;

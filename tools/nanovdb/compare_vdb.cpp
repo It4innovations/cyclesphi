@@ -1,5 +1,6 @@
 #include <openvdb/openvdb.h>
 #include <openvdb/io/File.h>
+#include <openvdb/tools/Dense.h>
 
 #include <iostream>
 #include <iomanip>
@@ -7,6 +8,12 @@
 #include <cmath>
 #include <cfloat>
 #include <algorithm>
+#include <sys/stat.h>
+
+// OpenMP support (define USE_OPENMP to enable parallel processing)
+#ifdef USE_OPENMP
+#include <omp.h>
+#endif
 
 // Global dimensions of the grid
 struct Dims3 {
@@ -118,23 +125,7 @@ inline float getValue(const char* data, int x, int y, int z)
     return floatData[index];
 }
 
-/**
- * @brief Gets a value from an OpenVDB grid at given 3D coordinates
- * 
- * @tparam GridType Type of the OpenVDB grid
- * @param grid OpenVDB grid
- * @param x X coordinate (array index)
- * @param y Y coordinate (array index)
- * @param z Z coordinate (array index)
- * @return Value at (x, y, z)
- * @note Converts array indices to VDB coordinates using global offset
- */
-template <typename GridType>
-inline float getValue(std::shared_ptr<GridType> grid, int x, int y, int z)
-{
-    auto acc = grid->getConstAccessor();
-    return acc.getValue(openvdb::Coord(x + g_offset.x, y + g_offset.y, z + g_offset.z));
-}
+
 
 /**
  * @brief Applies a 3D uniform box filter (moving average)
@@ -151,6 +142,9 @@ std::vector<double> applyUniformFilter(const std::vector<double>& image, int win
     std::vector<double> result(image.size(), 0.0);
     int half_win = win_size / 2;
     
+#ifdef USE_OPENMP
+    #pragma omp parallel for collapse(3)
+#endif
     for (int i = half_win; i < g_dims.x - half_win; ++i) {
         for (int j = half_win; j < g_dims.y - half_win; ++j) {
             for (int k = half_win; k < g_dims.z - half_win; ++k) {
@@ -182,9 +176,8 @@ std::vector<double> applyUniformFilter(const std::vector<double>& image, int win
  * SSIM measures the perceived quality difference between two images.
  * It considers luminance, contrast, and structure.
  * 
- * @tparam CompressedType Type of the compressed data (VDB grid or array)
  * @param reference Pointer to reference data
- * @param compressed Compressed data to compare against
+ * @param compressed Pointer to compressed data
  * @param stats Pre-computed statistics containing min/max values
  * @param data_range Dynamic range of the data (default: 1.0 for normalized)
  * @param win_size Window size for local statistics (default: 7)
@@ -192,16 +185,19 @@ std::vector<double> applyUniformFilter(const std::vector<double>& image, int win
  * @param K2 Algorithm constant for stability (default: 0.03)
  * @return SSIM value (typically in [0, 1], where 1 is identical)
  */
-template <typename CompressedType>
-double computeSSIM(const char* reference, CompressedType compressed, 
+double computeSSIM(const char* reference, const char* compressed, 
                    const ComparisonStats& stats, double data_range = 1.0, 
                    int win_size = 7, double K1 = 0.01, double K2 = 0.03)
 {
+    std::cout << "  - Computing SSIM: Normalizing images ... " << std::flush;
     size_t N = g_dims.x * size_t(g_dims.y) * g_dims.z;
     std::vector<double> im1(N);
     std::vector<double> im2(N);
 
     // Convert both inputs to normalized double arrays
+#ifdef USE_OPENMP
+    #pragma omp parallel for collapse(3)
+#endif
     for (int k = 0; k < g_dims.z; ++k) {
         for (int j = 0; j < g_dims.y; ++j) {
             for (int i = 0; i < g_dims.x; ++i) {
@@ -216,18 +212,24 @@ double computeSSIM(const char* reference, CompressedType compressed,
             }
         }
     }
+    std::cout << "done\n";
 
     // SSIM constants for numerical stability
     double C1 = (K1 * data_range) * (K1 * data_range);
     double C2 = (K2 * data_range) * (K2 * data_range);
     
+    std::cout << "  - Computing SSIM: Applying filters (1/3) ... " << std::flush;
     // Compute local means
     auto mu1 = applyUniformFilter(im1, win_size);
     auto mu2 = applyUniformFilter(im2, win_size);
+    std::cout << "done\n";
     
     // Compute squared means and cross-product
     std::vector<double> mu1_sq(N, 0.0), mu2_sq(N, 0.0), mu1_mu2(N, 0.0);
       
+#ifdef USE_OPENMP
+    #pragma omp parallel for collapse(3)
+#endif
     for (int i = 0; i < g_dims.x; ++i) {
         for (int j = 0; j < g_dims.y; ++j) {
             for (int k = 0; k < g_dims.z; ++k) {
@@ -242,17 +244,25 @@ double computeSSIM(const char* reference, CompressedType compressed,
     // Compute element-wise squares for variance calculation
     std::vector<double> im1_sq(N), im2_sq(N), im1_im2(N);
 
+#ifdef USE_OPENMP
+    #pragma omp parallel for
+#endif
     for (size_t i = 0; i < N; ++i) {
         im1_sq[i] = im1[i] * im1[i];
         im2_sq[i] = im2[i] * im2[i];
         im1_im2[i] = im1[i] * im2[i];
     }
     
+    std::cout << "  - Computing SSIM: Applying filters (2/3) ... " << std::flush;
     // Compute local variances and covariance
     auto sigma1_sq = applyUniformFilter(im1_sq, win_size);
     auto sigma2_sq = applyUniformFilter(im2_sq, win_size);
     auto sigma12 = applyUniformFilter(im1_im2, win_size);
+    std::cout << "done\n";
       
+#ifdef USE_OPENMP
+    #pragma omp parallel for collapse(3)
+#endif
     for (int i = 0; i < g_dims.x; ++i) {
         for (int j = 0; j < g_dims.y; ++j) {
             for (int k = 0; k < g_dims.z; ++k) {
@@ -264,10 +274,14 @@ double computeSSIM(const char* reference, CompressedType compressed,
         }
     }
     
+    std::cout << "  - Computing SSIM: Calculating final metric ... " << std::flush;
     // Compute SSIM for each voxel and average
     double ssim_sum = 0.0;
     size_t count = 0;
 
+#ifdef USE_OPENMP
+    #pragma omp parallel for reduction(+:ssim_sum,count) collapse(3)
+#endif
     for (int i = win_size / 2; i < g_dims.x - win_size / 2; ++i) {
         for (int j = win_size / 2; j < g_dims.y - win_size / 2; ++j) {
             for (int k = win_size / 2; k < g_dims.z - win_size / 2; ++k) {
@@ -281,6 +295,7 @@ double computeSSIM(const char* reference, CompressedType compressed,
             }
         }
     }
+    std::cout << "done\n";
     
     return ssim_sum / count;
 }
@@ -293,21 +308,24 @@ double computeSSIM(const char* reference, CompressedType compressed,
  * 2. Each normalized to its own range
  * 3. Raw values without normalization
  * 
- * @tparam CompressedType Type of the compressed data (VDB grid or array)
  * @param reference Pointer to reference data
- * @param compressed Compressed data to compare against
+ * @param compressed Pointer to compressed data
+ * @param enableSSIM If true, computes SSIM (computationally expensive)
  * @return ComparisonStats structure with all metrics
  */
-template <typename CompressedType>
-ComparisonStats computeComparisonStats(const char* reference, CompressedType compressed)
+ComparisonStats computeComparisonStats(const char* reference, const char* compressed, bool enableSSIM = true)
 {
     ComparisonStats stats;
 
+    std::cout << "  - Finding min/max values ... " << std::flush;
     // Find min/max values in both datasets
     // Use local variables for OpenMP reduction (struct members can't be reduced directly)
     float minValue = FLT_MAX, maxValue = -FLT_MAX;
     float minVDB = FLT_MAX, maxVDB = -FLT_MAX;
      
+#ifdef USE_OPENMP
+    #pragma omp parallel for reduction(min:minValue,minVDB) reduction(max:maxValue,maxVDB) collapse(3)
+#endif
     for (int z = 0; z < g_dims.z; ++z) {
         for (int y = 0; y < g_dims.y; ++y) {
             for (int x = 0; x < g_dims.x; ++x) {
@@ -327,16 +345,23 @@ ComparisonStats computeComparisonStats(const char* reference, CompressedType com
     stats.maxValue = maxValue;
     stats.minVDB = minVDB;
     stats.maxVDB = maxVDB;
+    std::cout << "done\n";
 
     // Compute SSIM (uses normalized images, so data_range = 1.0)
-    stats.ssim = computeSSIM(reference, compressed, stats, 1.0);
+    if (enableSSIM) {
+        stats.ssim = computeSSIM(reference, compressed, stats, 1.0);
+    }
 
     // Accumulators for three different normalization strategies
     double sumSquared1{0.0}, sumSquaredErr1{0.0};
     double sumSquared2{0.0}, sumSquaredErr2{0.0};
     double sumSquared3{0.0}, sumSquaredErr3{0.0};
 
+    std::cout << "  - Computing error metrics (MSE, SNR, PSNR) ... " << std::flush;
     // Compute error metrics for all three strategies
+#ifdef USE_OPENMP
+    #pragma omp parallel for reduction(+:sumSquared1,sumSquaredErr1,sumSquared2,sumSquaredErr2,sumSquared3,sumSquaredErr3) collapse(3)
+#endif
     for (int z = 0; z < g_dims.z; ++z) {
         for (int y = 0; y < g_dims.y; ++y) {
             for (int x = 0; x < g_dims.x; ++x) {
@@ -378,9 +403,11 @@ ComparisonStats computeComparisonStats(const char* reference, CompressedType com
             }
         }
     }
+    std::cout << "done\n";
     
     size_t N = g_dims.x * size_t(g_dims.y) * g_dims.z;
 
+    std::cout << "  - Calculating final metrics ... " << std::flush;
     // Compute metrics for Strategy 1
     {
         stats.mse = sumSquaredErr1 / N;
@@ -425,6 +452,7 @@ ComparisonStats computeComparisonStats(const char* reference, CompressedType com
             stats.psnr3 = 10.0 * log10(stats.maxValue * stats.maxValue / noiseMean);
         }
     }
+    std::cout << "done\n";
     
     return stats;
 }
@@ -434,8 +462,13 @@ ComparisonStats computeComparisonStats(const char* reference, CompressedType com
  * 
  * @param stats Statistics structure to print
  * @param useScientific If true, use scientific notation for doubles; otherwise use default format
+ * @param includeSSIM If true, prints SSIM value
+ * @param refFileSize Size of reference VDB file on disk (in bytes)
+ * @param compFileSize Size of compressed VDB file on disk (in bytes)
+ * @param memorySize Size of data in CPU memory (in bytes)
  */
-void printStats(const ComparisonStats& stats, bool useScientific = true)
+void printStats(const ComparisonStats& stats, bool useScientific = true, bool includeSSIM = true,
+                size_t refFileSize = 0, size_t compFileSize = 0, size_t memorySize = 0)
 {
     // Set output format based on parameter
     if (useScientific) {
@@ -445,6 +478,39 @@ void printStats(const ComparisonStats& stats, bool useScientific = true)
     }
     
     std::cout << "\n=== VDB Comparison Statistics ===\n\n";
+    
+    // Print size information if available
+    if (refFileSize > 0 || compFileSize > 0 || memorySize > 0) {
+        std::cout << "Storage Size:\n";
+        if (refFileSize > 0) {
+            double refSizeMB = refFileSize / (1024.0 * 1024.0);
+            std::cout << "  Reference on disk  : " << std::fixed << std::setprecision(2) 
+                      << refSizeMB << " MB (" << refFileSize << " bytes)\n";
+        }
+        if (compFileSize > 0) {
+            double compSizeMB = compFileSize / (1024.0 * 1024.0);
+            std::cout << "  Compressed on disk : " << std::fixed << std::setprecision(2) 
+                      << compSizeMB << " MB (" << compFileSize << " bytes)\n";
+            if (refFileSize > 0) {
+                double compressionRatio = (double)refFileSize / compFileSize;
+                std::cout << "  Compression ratio  : " << std::fixed << std::setprecision(2) 
+                          << compressionRatio << "x\n";
+            }
+        }
+        if (memorySize > 0) {
+            double memorySizeMB = memorySize / (1024.0 * 1024.0);
+            std::cout << "  In CPU memory      : " << std::fixed << std::setprecision(2) 
+                      << memorySizeMB << " MB (" << memorySize << " bytes)\n";
+        }
+        std::cout << "\n";
+        
+        // Reset to requested format
+        if (useScientific) {
+            std::cout << std::scientific << std::setprecision(6);
+        } else {
+            std::cout << std::defaultfloat << std::setprecision(6);
+        }
+    }
     
     std::cout << "Data Range:\n";
     std::cout << "  Reference min/max : [" << stats.minValue << ", " << stats.maxValue << "]\n";
@@ -465,10 +531,13 @@ void printStats(const ComparisonStats& stats, bool useScientific = true)
     std::cout << "  SNR  : " << stats.snr3 << " dB\n";
     std::cout << "  PSNR : " << stats.psnr3 << " dB\n\n";
 
-    std::cout << "Structural Similarity:\n";
-    std::cout << "  SSIM : " << stats.ssim << '\n';
+    if (includeSSIM) {
+        std::cout << "Structural Similarity:\n";
+        std::cout << "  SSIM : " << stats.ssim << '\n';
+        std::cout << "\n";
+    }
     
-    std::cout << "\n================================\n";
+    std::cout << "================================\n";
     
     // Reset to default format
     std::cout << std::defaultfloat;
@@ -479,18 +548,44 @@ void printStats(const ComparisonStats& stats, bool useScientific = true)
  */
 int main(int argc, char* argv[])
 {
-    if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " <reference.vdb> <compressed.vdb>\n";
+    if (argc < 3) {
+        std::cerr << "Usage: " << argv[0] << " <reference.vdb> <compressed.vdb> [options]\n";
         std::cerr << "\nCompares two VDB files and outputs statistics:\n";
         std::cerr << "  - MSE (Mean Squared Error)\n";
         std::cerr << "  - SNR (Signal-to-Noise Ratio)\n";
         std::cerr << "  - PSNR (Peak Signal-to-Noise Ratio)\n";
-        std::cerr << "  - SSIM (Structural Similarity Index)\n";
+        std::cerr << "  - SSIM (Structural Similarity Index) [optional]\n";
+        std::cerr << "\nOptions:\n";
+        std::cerr << "  --ssim           Enable SSIM computation (slower, disabled by default)\n";
+        std::cerr << "  --no-scientific  Use fixed-point notation instead of scientific\n";
         return 1;
+    }
+
+    // Parse command-line arguments
+    bool enableSSIM = false;  // Disabled by default
+    bool useScientific = true;  // Scientific notation by default
+    for (int i = 3; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--ssim") {
+            enableSSIM = true;
+        } else if (arg == "--no-scientific") {
+            useScientific = false;
+        } else {
+            std::cerr << "Warning: Unknown option " << arg << "\n";
+        }
     }
 
     // Initialize OpenVDB library
     openvdb::initialize();
+
+    // Helper function to get file size
+    auto getFileSize = [](const char* filename) -> size_t {
+        struct stat st;
+        if (stat(filename, &st) == 0) {
+            return st.st_size;
+        }
+        return 0;
+    };
 
     try {
         // Read reference VDB file
@@ -549,7 +644,7 @@ int main(int argc, char* argv[])
             std::cerr << "\nError: Grid dimensions do not match!\n";
             std::cerr << "  Reference : " << refDims.x << " x " << refDims.y << " x " << refDims.z << "\n";
             std::cerr << "  Compressed: " << compDims.x << " x " << compDims.y << " x " << compDims.z << "\n";
-            return 1;
+            // return 1;
         }
         
         g_dims = refDims;
@@ -563,29 +658,48 @@ int main(int argc, char* argv[])
         std::cout << "Total voxels: " << (g_dims.x * size_t(g_dims.y) * g_dims.z) << "\n";
         std::cout << "Compressed grid offset: (" << g_offset.x << ", " << g_offset.y << ", " << g_offset.z << ")\n";
 
-        // Convert reference VDB to dense float array
+        // Convert reference VDB to dense float array using openvdb::tools::copyToDense
         std::cout << "Converting reference to dense array ... " << std::flush;
         size_t N = g_dims.x * size_t(g_dims.y) * g_dims.z;
+        size_t memorySize = N * sizeof(float) * 2;  // Both reference and compressed arrays
         std::vector<float> refArray(N);
-        auto refAcc = refGrid->getConstAccessor();
         
-        for (int z = 0; z < g_dims.z; ++z) {
-            for (int y = 0; y < g_dims.y; ++y) {
-                for (int x = 0; x < g_dims.x; ++x) {
-                    size_t idx = size_t(x) + size_t(y) * g_dims.x + size_t(z) * g_dims.x * g_dims.y;
-                    openvdb::Coord coord(x + refBBox.min().x(), y + refBBox.min().y(), z + refBBox.min().z());
-                    refArray[idx] = refAcc.getValue(coord);
-                }
-            }
-        }
+        // Create dense grid wrapper
+        openvdb::tools::Dense<float, openvdb::tools::LayoutXYZ> denseGrid(
+            openvdb::CoordBBox(refBBox.min(), refBBox.max()), 
+            refArray.data()
+        );
+        
+        // Use parallel copyToDense for faster conversion
+        openvdb::tools::copyToDense(*refGrid, denseGrid, /*serial=*/false);
+        std::cout << "done\n";
+
+        // Convert compressed VDB to dense float array using openvdb::tools::copyToDense
+        std::cout << "Converting compressed to dense array ... " << std::flush;
+        std::vector<float> compArray(N);
+        
+        // Create dense grid wrapper
+        openvdb::tools::Dense<float, openvdb::tools::LayoutXYZ> denseCompGrid(
+            openvdb::CoordBBox(compBBox.min(), compBBox.max()), 
+            compArray.data()
+        );
+        
+        // Use parallel copyToDense for faster conversion
+        openvdb::tools::copyToDense(*compGrid, denseCompGrid, /*serial=*/false);
         std::cout << "done\n";
 
         // Compute and print statistics
         std::cout << "Computing statistics ... " << std::flush;
-        auto stats = computeComparisonStats(reinterpret_cast<const char*>(refArray.data()), compGrid);
+        auto stats = computeComparisonStats(reinterpret_cast<const char*>(refArray.data()), 
+                                           reinterpret_cast<const char*>(compArray.data()),
+                                           enableSSIM);
         std::cout << "done\n";
         
-        printStats(stats);
+        // Get file sizes
+        size_t refFileSize = getFileSize(argv[1]);
+        size_t compFileSize = getFileSize(argv[2]);
+        
+        printStats(stats, useScientific, enableSSIM, refFileSize, compFileSize, memorySize);
 
         return 0;
     }
