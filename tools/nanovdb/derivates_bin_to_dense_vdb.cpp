@@ -18,6 +18,7 @@
 #include <vector>
 #include <cstring>
 #include <cmath>
+#include <cfloat>
 #include <memory>
 
 // ============================================================================
@@ -216,7 +217,7 @@ float reconstructValueAtPosition(
     const DerivFileHeader* fh,
     const DerivLevelHeader* levelTable,
     const DerivGridHeader* gridTable,
-    float x, float y, float z)
+    double x, double y, double z)
 {
     const uint32_t levelCount = fh->levelCount;
     if (levelCount == 0) return 0.0f;
@@ -548,9 +549,9 @@ int main(int argc, char* argv[])
                     // Reconstruct value using Taylor polynomial
                     float value = reconstructValueAtPosition<float>(
                         fileData.data(), fh, levelTable, gridTable,
-                        static_cast<float>(worldPos.x()),
-                        static_cast<float>(worldPos.y()),
-                        static_cast<float>(worldPos.z())
+                        worldPos.x(),
+                        worldPos.y(),
+                        worldPos.z()
                     );
 
                     // Set value in output grid
@@ -594,6 +595,23 @@ int main(int argc, char* argv[])
         }
         
         std::cout << "  Active voxel bbox: " << outputGrid->evalActiveVoxelBoundingBox() << std::endl;
+        
+        // Find min/max values in the output grid
+        std::cout << "\n  Computing min/max values..." << std::endl;
+        float minValue = FLT_MAX, maxValue = -FLT_MAX;
+        
+        for (int iz = bmin.z(); iz <= bmax.z(); ++iz) {
+            for (int iy = bmin.y(); iy <= bmax.y(); ++iy) {
+                for (int ix = bmin.x(); ix <= bmax.x(); ++ix) {
+                    float value = accessor.getValue(openvdb::Coord(ix, iy, iz));
+                    minValue = fminf(minValue, value);
+                    maxValue = fmaxf(maxValue, value);
+                }
+            }
+        }
+        
+        std::cout << "  Min value: " << minValue << std::endl;
+        std::cout << "  Max value: " << maxValue << std::endl;
         
         openvdb::io::File file(outputFile);
         openvdb::GridPtrVec grids;
