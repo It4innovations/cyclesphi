@@ -16,6 +16,9 @@ else()
     add_compile_options(-Wall -Wextra -pedantic)
 endif()
 
+# Options
+option(WITH_ZFP "Build ZFP compression tools" OFF)
+
 # Blender library path configuration
 set(BLENDER_LIB_DIR "" CACHE PATH "Path to Blender lib directory (e.g., blender/lib/windows_x64)")
 message(STATUS "Using Blender libraries from: ${BLENDER_LIB_DIR}")
@@ -194,6 +197,248 @@ install(TARGETS nanovdb_derivates_convert_vec4
 
 # Print configuration info
 message(STATUS "Building nanovdb_derivates_convert_vec4")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+
+#####################################################################################
+##################downsampled_vdb executable configuration##################
+# Create executable
+add_executable(downsampled_vdb downsampled_vdb.cpp)
+
+# Include directories
+target_include_directories(downsampled_vdb PRIVATE
+    ${OPENVDB_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIRS}
+)
+
+# Add NanoVDB include directory if specified separately
+if(NANOVDB_INCLUDE_DIR)
+    target_include_directories(downsampled_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
+endif()
+
+# Link libraries
+target_link_libraries(downsampled_vdb PRIVATE
+    ${OPENVDB_LIBRARY}
+    ${TBB_LIBRARY}
+)
+
+# Platform-specific linking
+if(UNIX AND NOT APPLE)
+    # Linux specific
+    target_link_libraries(downsampled_vdb PRIVATE pthread dl)
+elseif(APPLE)
+    # macOS specific
+    target_link_libraries(downsampled_vdb PRIVATE pthread)
+endif()
+
+# Set output directory
+set_target_properties(downsampled_vdb PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Installation
+install(TARGETS downsampled_vdb
+    RUNTIME DESTINATION bin
+)
+
+# Print configuration info
+message(STATUS "Building downsampled_vdb")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+
+#####################################################################################
+##################compare_vdb executable configuration##################
+# Create executable
+add_executable(compare_vdb compare_vdb.cpp)
+
+# Include directories
+target_include_directories(compare_vdb PRIVATE
+    ${OPENVDB_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIRS}
+)
+
+# Add NanoVDB include directory if specified separately
+if(NANOVDB_INCLUDE_DIR)
+    target_include_directories(compare_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
+endif()
+
+# Link libraries
+target_link_libraries(compare_vdb PRIVATE
+    ${OPENVDB_LIBRARY}
+    ${TBB_LIBRARY}
+)
+
+# Platform-specific linking
+if(UNIX AND NOT APPLE)
+    # Linux specific
+    target_link_libraries(compare_vdb PRIVATE pthread dl)
+elseif(APPLE)
+    # macOS specific
+    target_link_libraries(compare_vdb PRIVATE pthread)
+endif()
+
+# Set output directory
+set_target_properties(compare_vdb PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Installation
+install(TARGETS compare_vdb
+    RUNTIME DESTINATION bin
+)
+
+# Print configuration info
+message(STATUS "Building compare_vdb")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+
+#####################################################################################
+##################compressed_zfp_to_vdb executable configuration##################
+if(WITH_ZFP)
+    # Create executable
+    add_executable(compressed_zfp_to_vdb compressed_zfp_to_vdb.cpp)
+
+    # Include directories
+    target_include_directories(compressed_zfp_to_vdb PRIVATE
+        ${OPENVDB_INCLUDE_DIRS}
+        ${TBB_INCLUDE_DIRS}
+    )
+
+    # Add NanoVDB include directory if specified separately
+    if(NANOVDB_INCLUDE_DIR)
+        target_include_directories(compressed_zfp_to_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
+    endif()
+
+    # Link libraries
+    target_link_libraries(compressed_zfp_to_vdb PRIVATE
+        ${OPENVDB_LIBRARY}
+        ${TBB_LIBRARY}
+    )
+
+    # Platform-specific linking
+    if(UNIX AND NOT APPLE)
+        # Linux specific
+        target_link_libraries(compressed_zfp_to_vdb PRIVATE pthread dl)
+    elseif(APPLE)
+        # macOS specific
+        target_link_libraries(compressed_zfp_to_vdb PRIVATE pthread)
+    endif()
+
+    # Set output directory
+    set_target_properties(compressed_zfp_to_vdb PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+
+    # Installation
+    install(TARGETS compressed_zfp_to_vdb
+        RUNTIME DESTINATION bin
+    )
+
+    # Print configuration info
+    message(STATUS "Building compressed_zfp_to_vdb")
+    message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+    message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+    message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+endif()
+
+
+#####################################################################################
+##################derivates_bin_to_dense_vdb executable configuration##################
+# Create executable
+add_executable(derivates_bin_to_dense_vdb derivates_bin_to_dense_vdb.cpp)
+
+# Include directories
+target_include_directories(derivates_bin_to_dense_vdb PRIVATE
+    ${OPENVDB_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIRS}
+)
+
+# Add NanoVDB include directory if specified separately
+if(NANOVDB_INCLUDE_DIR)
+    target_include_directories(derivates_bin_to_dense_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
+endif()
+
+# Link libraries
+target_link_libraries(derivates_bin_to_dense_vdb PRIVATE
+    ${OPENVDB_LIBRARY}
+    ${TBB_LIBRARY}
+)
+
+# Platform-specific linking
+if(UNIX AND NOT APPLE)
+    # Linux specific
+    target_link_libraries(derivates_bin_to_dense_vdb PRIVATE pthread dl)
+elseif(APPLE)
+    # macOS specific
+    target_link_libraries(derivates_bin_to_dense_vdb PRIVATE pthread)
+endif()
+
+# Set output directory
+set_target_properties(derivates_bin_to_dense_vdb PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Installation
+install(TARGETS derivates_bin_to_dense_vdb
+    RUNTIME DESTINATION bin
+)
+
+# Print configuration info
+message(STATUS "Building derivates_bin_to_dense_vdb")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+
+#####################################################################################
+##################hierarchical_compression_vdb executable configuration##################
+# Create executable
+add_executable(hierarchical_compression_vdb hierarchical_compression_vdb.cpp)
+
+# Include directories
+target_include_directories(hierarchical_compression_vdb PRIVATE
+    ${OPENVDB_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIRS}
+)
+
+# Add NanoVDB include directory if specified separately
+if(NANOVDB_INCLUDE_DIR)
+    target_include_directories(hierarchical_compression_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
+endif()
+
+# Link libraries
+target_link_libraries(hierarchical_compression_vdb PRIVATE
+    ${OPENVDB_LIBRARY}
+    ${TBB_LIBRARY}
+)
+
+# Platform-specific linking
+if(UNIX AND NOT APPLE)
+    # Linux specific
+    target_link_libraries(hierarchical_compression_vdb PRIVATE pthread dl)
+elseif(APPLE)
+    # macOS specific
+    target_link_libraries(hierarchical_compression_vdb PRIVATE pthread)
+endif()
+
+# Set output directory
+set_target_properties(hierarchical_compression_vdb PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Installation
+install(TARGETS hierarchical_compression_vdb
+    RUNTIME DESTINATION bin
+)
+
+# Print configuration info
+message(STATUS "Building hierarchical_compression_vdb")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
