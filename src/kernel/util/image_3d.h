@@ -8,6 +8,7 @@
 #include "kernel/sample/lcg.h"
 
 #include "util/types_image.h"
+#include "kernel/util/image_3d_derivates.h"
 
 #if !defined(__KERNEL_METAL__) && !defined(__KERNEL_ONEAPI__)
 #  ifdef WITH_NANOVDB
@@ -212,51 +213,6 @@ OutT kernel_image_interp_nanovdb(const ccl_global KernelImageInfo &info,
 
 #endif
 }
-
-// ============================================================================
-// NanoVDB Derivative Bundle Format - On-Device Structures
-// ============================================================================
-// Binary layout:
-//   1. FileHeader (64 bytes, aligned to 32)
-//   2. LevelHeader[levelCount]
-//   3. GridHeader[gridCount]
-//   4. NanoVDB grid payloads (each 32-byte aligned)
-// ============================================================================
-
-struct DerivFileHeader {
-    uint32_t magic;              // Magic number: 0x4E56444D
-    uint32_t version;            // File format version
-    uint32_t payloadAlignment;   // Alignment requirement for grid payloads
-    uint32_t levelCount;         // Number of levels
-    uint32_t gridCount;          // Total number of grids
-    uint32_t reserved1;
-    uint64_t levelTableOffset;   // Byte offset to LevelHeader array
-    uint64_t gridTableOffset;    // Byte offset to GridHeader array
-    uint64_t payloadBlockOffset; // Byte offset to first grid payload
-    uint64_t totalFileSize;      // Total file size in bytes
-    uint64_t reserved2;
-};
-
-struct DerivLevelHeader {
-    uint32_t levelIndex;         // Level index (0-based)
-    uint32_t derivativeCount;    // Number of derivatives in this level
-    uint32_t firstGridIndex;     // Index of first grid in GridHeader array
-    uint32_t reserved;
-};
-
-struct DerivGridHeader {
-    uint32_t levelIndex;                // Which level this grid belongs to
-    uint32_t derivativeIndex;           // Derivative index within level (0-based)
-    uint32_t derivativeCountInLevel;    // Total derivatives in this level
-    uint32_t reserved1;
-    uint64_t payloadOffset;             // Byte offset to grid payload
-    uint64_t payloadSize;               // Size of grid payload in bytes
-    int32_t  bboxMin[3];                // Bounding box min
-    int32_t  bboxMax[3];                // Bounding box max
-    uint32_t dims[3];                   // Grid dimensions
-    uint32_t reserved2;
-    char     name[56];                  // Grid name for debugging
-};
 
 // ============================================================================
 // Helpers for NanoVDB Derivative Bundle
@@ -581,6 +537,202 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates(
     return OutT(0.0f);
 }
 
+// ============================================================================
+// Vec4-Packed Derivative Format (New Format)
+// ============================================================================
+// This format packs up to 4 derivatives per grid to reduce grid count.
+// Packed grid types: float (1), Vec3f (2-3), Vec4f (4)
+// Raw derivative index = packedGridIndex * 4 + componentIndex
+// ============================================================================
+
+// Helper to read component from packed grid
+template<typename T>
+ccl_device_inline float readPackedComponent(const T& value, uint32_t componentIdx)
+{
+    if constexpr (sizeof(T) == sizeof(float)) {
+        // float grid - only component 0 is valid
+        return (componentIdx == 0) ? value : 0.0f;
+    }
+    else if constexpr (sizeof(T) == sizeof(nanovdb::Vec3f)) {
+        // Vec3f grid - components 0-2
+        const auto& vec = reinterpret_cast<const nanovdb::Vec3f&>(value);
+        return (componentIdx < 3) ? vec[componentIdx] : 0.0f;
+    }
+    else if constexpr (sizeof(T) == sizeof(nanovdb::Vec4f)) {
+        // Vec4f grid - components 0-3
+        const auto& vec = reinterpret_cast<const nanovdb::Vec4f&>(value);
+        return (componentIdx < 4) ? vec[componentIdx] : 0.0f;
+    }
+    else {
+        return 0.0f;
+    }
+}
+
+#if defined(__KERNEL_METAL__)
+template<typename OutT>
+__attribute__((noinline)) OutT kernel_tex_image_interp_nanovdb_derivates_vec4(
+    const ccl_global KernelImageInfo &info,
+    const float x, const float y, const float z,
+    const uint /*interpolation*/)
+#else
+template<typename OutT>
+ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates_vec4(
+    const ccl_global KernelImageInfo &info,
+    const float x, const float y, const float z,
+    const uint /*interpolation*/)
+#endif
+{
+    using namespace nanovdb;
+
+    const uint8_t* base = reinterpret_cast<const uint8_t*>(info.data);
+
+    // Read FileHeader
+    const DerivFileHeader* fh = reinterpret_cast<const DerivFileHeader*>(base);
+    
+    const uint32_t levelCount = fh->levelCount;
+    if (levelCount == 0) return OutT(0.0f);
+
+    const DerivLevelHeader* levelTable = 
+        reinterpret_cast<const DerivLevelHeader*>(base + fh->levelTableOffset);
+    const DerivGridHeader* gridTable = 
+        reinterpret_cast<const DerivGridHeader*>(base + fh->gridTableOffset);
+
+    const float wx = x, wy = y, wz = z;
+
+    // Get voxel size from level 0 (finest level) for consistent normalization
+    // Use first grid of level 0 to read transform (same for all grids in level)
+    const DerivLevelHeader& level0Header = levelTable[0];
+    const DerivGridHeader& level0Grid0Header = gridTable[level0Header.firstGridIndex];
+    const ccl_global nanovdb::NanoGrid<float>* level0Grid0 = 
+        reinterpret_cast<const ccl_global nanovdb::NanoGrid<float>*>(
+            base + level0Grid0Header.payloadOffset);
+    const double level0_voxel_size0 = level0Grid0->voxelSize()[0];
+    const double level0_voxel_size1 = level0Grid0->voxelSize()[1];
+    const double level0_voxel_size2 = level0Grid0->voxelSize()[2];
+
+    // Iterate through levels
+    for (uint32_t levelIdx = 0; levelIdx < levelCount; ++levelIdx) {
+        const DerivLevelHeader& lh = levelTable[levelIdx];
+        
+        const uint32_t packedGridCount = lh.derivativeCount;  // Number of packed grids
+        const uint32_t firstGrid = lh.firstGridIndex;
+
+        // Bounds check
+        if (firstGrid + packedGridCount > fh->gridCount) continue;
+
+        // Sample first grid to get reference point for local coordinates
+        const DerivGridHeader& gh0 = gridTable[firstGrid];
+        const ccl_global nanovdb::NanoGrid<float>* grid0 = 
+            reinterpret_cast<const ccl_global nanovdb::NanoGrid<float>*>(
+                base + gh0.payloadOffset);
+        
+        // Convert world to index space
+        const nanovdb::Vec3d ijk_d = grid0->worldToIndex(nanovdb::Vec3d(wx, wy, wz));
+        
+        // Integer voxel coordinate
+        const int32_t ix = (int32_t)floorf((float)ijk_d[0]);
+        const int32_t iy = (int32_t)floorf((float)ijk_d[1]);
+        const int32_t iz = (int32_t)floorf((float)ijk_d[2]);
+        const nanovdb::Coord coord(ix, iy, iz);
+
+        // Local offset from voxel center for Taylor expansion
+        const nanovdb::Vec3d voxel_center_idx(ix + 0.5, iy + 0.5, iz + 0.5);
+        const nanovdb::Vec3d voxel_center_world = grid0->indexToWorld(voxel_center_idx);
+        const double px = (wx - voxel_center_world[0]) / level0_voxel_size0;
+        const double py = (wy - voxel_center_world[1]) / level0_voxel_size1;
+        const double pz = (wz - voxel_center_world[2]) / level0_voxel_size2;
+
+        // Accumulate Taylor polynomial reconstruction
+        double result = 0.0;
+        bool hasNonZero = false;
+
+        // Iterate through packed grids in this level
+        for (uint32_t packedIdx = 0; packedIdx < packedGridCount; ++packedIdx) {
+            const DerivGridHeader& gh = gridTable[firstGrid + packedIdx];
+            
+            // Base derivative index for this packed grid
+            const uint32_t baseDerivIdx = packedIdx * 4;
+
+            // Dispatch based on grid type
+            const DerivGridType gridType = (DerivGridType)gh.gridType;
+            
+            if (gridType == DERIV_GRID_TYPE_FLOAT) {
+                // Float grid - 1 component
+                const ccl_global nanovdb::NanoGrid<float>* grid = 
+                    reinterpret_cast<const ccl_global nanovdb::NanoGrid<float>*>(
+                        base + gh.payloadOffset);
+                ReadAccessor<float> acc(grid->tree().root());
+                const float coeff = acc.getValue(coord);
+                
+                if (coeff != 0.0f) {
+                    hasNonZero = true;
+                    const double basis = derivBasisValue(baseDerivIdx, px, py, pz);
+                    result += (double)coeff * basis;
+                }
+            }
+            else if (gridType == DERIV_GRID_TYPE_VEC3F) {
+                // Vec3f grid - up to 3 components
+                const ccl_global nanovdb::NanoGrid<packed_float3>* grid = 
+                    reinterpret_cast<const ccl_global nanovdb::NanoGrid<packed_float3>*>(
+                        base + gh.payloadOffset);
+                ReadAccessor<packed_float3> acc(grid->tree().root());
+                const packed_float3 packedValue = acc.getValue(coord);
+                
+                for (uint32_t compIdx = 0; compIdx < 3; ++compIdx) {
+                    const float coeff = readPackedComponent(packedValue, compIdx);
+                    if (coeff != 0.0f) {
+                        hasNonZero = true;
+                        const uint32_t derivIdx = baseDerivIdx + compIdx;
+                        const double basis = derivBasisValue(derivIdx, px, py, pz);
+                        result += (double)coeff * basis;
+                    }
+                }
+            }
+            else if (gridType == DERIV_GRID_TYPE_VEC4F) {
+                // Vec4f grid - 4 components
+                const ccl_global nanovdb::NanoGrid<float4>* grid = 
+                    reinterpret_cast<const ccl_global nanovdb::NanoGrid<float4>*>(
+                        base + gh.payloadOffset);
+                ReadAccessor<float4> acc(grid->tree().root());
+                const float4 packedValue = acc.getValue(coord);
+                
+                for (uint32_t compIdx = 0; compIdx < 4; ++compIdx) {
+                    const float coeff = readPackedComponent(packedValue, compIdx);
+                    if (coeff != 0.0f) {
+                        hasNonZero = true;
+                        const uint32_t derivIdx = baseDerivIdx + compIdx;
+                        const double basis = derivBasisValue(derivIdx, px, py, pz);
+                        result += (double)coeff * basis;
+                    }
+                }
+            }
+        }
+
+        // If this level has non-zero data, return the reconstruction
+        if (hasNonZero) {
+#ifdef MULTIRES_COUNTER
+#ifdef __CUDA_ARCH__
+            unsigned long long int *counter = const_cast<unsigned long long int*>(
+                info_multires_level_counter + levelIdx);
+            atomicAdd(counter, 1ULL);
+#endif    
+#endif
+            return OutT(result);
+        }
+    }
+
+    // No non-zero data found in any level
+#ifdef MULTIRES_COUNTER
+#ifdef __CUDA_ARCH__
+    unsigned long long int *counter = const_cast<unsigned long long int*>(
+        info_multires_level_counter + 15);
+    atomicAdd(counter, 1ULL);
+#endif    
+#endif
+
+    return OutT(0.0f);
+}
+
 #endif /* WITH_NANOVDB */
 
 ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
@@ -638,6 +790,10 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
   }
   if (data_type == IMAGE_DATA_TYPE_NANOVDB_DERIVATES) {
     const float f = kernel_tex_image_interp_nanovdb_derivates<float, float>(info, P.x, P.y, P.z, (uint)interpolation);
+    return make_float4(f, f, f, 1.0f);
+  }
+  if (data_type == IMAGE_DATA_TYPE_NANOVDB_DERIVATES_VEC4) {
+    const float f = kernel_tex_image_interp_nanovdb_derivates_vec4<float>(info, P.x, P.y, P.z, (uint)interpolation);
     return make_float4(f, f, f, 1.0f);
   }
   if (data_type == IMAGE_DATA_TYPE_NANOVDB_EMPTY) {

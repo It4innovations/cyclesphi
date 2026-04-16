@@ -116,6 +116,13 @@ add_executable(nanovdb_derivates_convert nanovdb_derivates_convert.cpp)
 target_include_directories(nanovdb_derivates_convert PRIVATE
     ${OPENVDB_INCLUDE_DIRS}
     ${TBB_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
+)
+
+# Define Cycles namespace macros needed by kernel headers
+target_compile_definitions(nanovdb_derivates_convert PRIVATE
+    CCL_NAMESPACE_BEGIN=
+    CCL_NAMESPACE_END=
 )
 
 # Add NanoVDB include directory if specified separately
@@ -163,6 +170,13 @@ add_executable(nanovdb_derivates_convert_vec4 nanovdb_derivates_convert_vec4.cpp
 target_include_directories(nanovdb_derivates_convert_vec4 PRIVATE
     ${OPENVDB_INCLUDE_DIRS}
     ${TBB_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
+)
+
+# Define Cycles namespace macros needed by kernel headers
+target_compile_definitions(nanovdb_derivates_convert_vec4 PRIVATE
+    CCL_NAMESPACE_BEGIN=
+    CCL_NAMESPACE_END=
 )
 
 # Add NanoVDB include directory if specified separately
@@ -357,6 +371,13 @@ add_executable(derivates_bin_to_dense_vdb derivates_bin_to_dense_vdb.cpp)
 target_include_directories(derivates_bin_to_dense_vdb PRIVATE
     ${OPENVDB_INCLUDE_DIRS}
     ${TBB_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
+)
+
+# Define Cycles namespace macros needed by kernel headers
+target_compile_definitions(derivates_bin_to_dense_vdb PRIVATE
+    CCL_NAMESPACE_BEGIN=
+    CCL_NAMESPACE_END=
 )
 
 # Add NanoVDB include directory if specified separately

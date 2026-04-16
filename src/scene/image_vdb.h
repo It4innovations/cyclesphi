@@ -20,6 +20,7 @@
 #include "scene/image_loader.h"
 
 #include "util/transform.h"
+#include "kernel/util/image_3d_derivates.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -178,42 +179,6 @@ public:
     virtual float3 index_to_world(float3 in) override;
 
 protected:
-    // On-disk structures matching the export format
-    struct DerivFileHeader {
-        uint32_t magic;
-        uint32_t version;
-        uint32_t payloadAlignment;
-        uint32_t levelCount;
-        uint32_t gridCount;
-        uint32_t reserved1;
-        uint64_t levelTableOffset;
-        uint64_t gridTableOffset;
-        uint64_t payloadBlockOffset;
-        uint64_t totalFileSize;
-        uint64_t reserved2;
-    };
-
-    struct DerivLevelHeader {
-        uint32_t levelIndex;
-        uint32_t derivativeCount;
-        uint32_t firstGridIndex;
-        uint32_t reserved;
-    };
-
-    struct DerivGridHeader {
-        uint32_t levelIndex;
-        uint32_t derivativeIndex;
-        uint32_t derivativeCountInLevel;
-        uint32_t reserved1;
-        uint64_t payloadOffset;
-        uint64_t payloadSize;
-        int32_t  bboxMin[3];
-        int32_t  bboxMax[3];
-        uint32_t dims[3];
-        uint32_t reserved2;
-        char     name[56];
-    };
-
     vector<char> bundle_data;
     DerivFileHeader file_header;
     size_t finest_level_id;

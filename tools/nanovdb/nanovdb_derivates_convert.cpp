@@ -20,6 +20,9 @@
 #include <openvdb/openvdb.h>
 #include <openvdb/io/File.h>
 
+// Include shared derivative format structures
+#include "../../src/kernel/util/image_3d_derivates.h"
+
 // ============================================================================
 // Binary File Format for NanoVDB Multi-Level Derivative Grids
 // ============================================================================
@@ -75,43 +78,11 @@ inline void writePadding(std::ofstream& out, uint64_t currentPos, uint64_t align
 // Note: We do NOT use packed structs for portability.
 // Alignment is natural; explicit padding ensures consistent layout.
 
-struct FileHeader {
-    uint32_t magic;              // Magic number: 0x4E56444D
-    uint32_t version;            // File format version
-    uint32_t payloadAlignment;   // Alignment requirement for grid payloads (typically 32)
-    uint32_t levelCount;         // Number of levels
-    uint32_t gridCount;          // Total number of grids across all levels
-    uint32_t reserved1;          // Reserved for future use
-    uint64_t levelTableOffset;   // Byte offset to LevelHeader array
-    uint64_t gridTableOffset;    // Byte offset to GridHeader array
-    uint64_t payloadBlockOffset; // Byte offset to first grid payload
-    uint64_t totalFileSize;      // Total file size in bytes
-    uint64_t reserved2;          // Reserved for future use
-};
-static_assert(sizeof(FileHeader) == 64, "FileHeader must be 64 bytes");
-
-struct LevelHeader {
-    uint32_t levelIndex;         // Level index (0-based)
-    uint32_t derivativeCount;    // Number of derivatives in this level
-    uint32_t firstGridIndex;     // Index of first grid in global GridHeader array
-    uint32_t reserved;           // Reserved for alignment
-};
-static_assert(sizeof(LevelHeader) == 16, "LevelHeader must be 16 bytes");
-
-struct GridHeader {
-    uint32_t levelIndex;                // Which level this grid belongs to
-    uint32_t derivativeIndex;           // Derivative index within this level (0-based)
-    uint32_t derivativeCountInLevel;    // Total number of derivatives in this level
-    uint32_t reserved1;                 // Reserved for alignment
-    uint64_t payloadOffset;             // Byte offset to grid payload (32-byte aligned)
-    uint64_t payloadSize;               // Size of grid payload in bytes
-    int32_t  bboxMin[3];                // Bounding box min (index space)
-    int32_t  bboxMax[3];                // Bounding box max (index space)
-    uint32_t dims[3];                   // Grid dimensions
-    uint32_t reserved2;                 // Reserved for alignment
-    char     name[56];                  // Grid name for debugging (null-terminated)
-};
-static_assert(sizeof(GridHeader) == 128, "GridHeader must be 128 bytes");
+// Using shared structs from image_3d_derivates.h
+// Verify struct sizes match expectations
+static_assert(sizeof(DerivFileHeader) == 64, "DerivFileHeader must be 64 bytes");
+static_assert(sizeof(DerivLevelHeader) == 16, "DerivLevelHeader must be 16 bytes");
+static_assert(sizeof(DerivGridHeader) == 128, "DerivGridHeader must be 128 bytes");
 
 // ============================================================================
 // Input Structure for API
@@ -341,16 +312,16 @@ bool writeNanoVdbBundle(const std::string& outputPath, const std::vector<GridInp
     
     // FileHeader (64 bytes, align to 32)
     const uint64_t fileHeaderOffset = 0;
-    currentOffset = sizeof(FileHeader);
+    currentOffset = sizeof(DerivFileHeader);
     currentOffset = alignUp(currentOffset, PAYLOAD_ALIGNMENT);
     
     // LevelHeader array
     const uint64_t levelTableOffset = currentOffset;
-    currentOffset += levelCount * sizeof(LevelHeader);
+    currentOffset += levelCount * sizeof(DerivLevelHeader);
     
     // GridHeader array
     const uint64_t gridTableOffset = currentOffset;
-    currentOffset += gridCount * sizeof(GridHeader);
+    currentOffset += gridCount * sizeof(DerivGridHeader);
     
     // Payload block (align to PAYLOAD_ALIGNMENT)
     const uint64_t payloadBlockOffset = alignUp(currentOffset, PAYLOAD_ALIGNMENT);
@@ -390,8 +361,8 @@ bool writeNanoVdbBundle(const std::string& outputPath, const std::vector<GridInp
         return false;
     }
     
-    // Write FileHeader
-    FileHeader fileHeader = {};
+    // Write DerivFileHeader
+    DerivFileHeader fileHeader = {};
     fileHeader.magic = FILE_MAGIC;
     fileHeader.version = FILE_VERSION;
     fileHeader.payloadAlignment = PAYLOAD_ALIGNMENT;
@@ -402,26 +373,27 @@ bool writeNanoVdbBundle(const std::string& outputPath, const std::vector<GridInp
     fileHeader.payloadBlockOffset = payloadBlockOffset;
     fileHeader.totalFileSize = totalFileSize;
     
-    out.write(reinterpret_cast<const char*>(&fileHeader), sizeof(FileHeader));
-    writePadding(out, sizeof(FileHeader), PAYLOAD_ALIGNMENT);
+    out.write(reinterpret_cast<const char*>(&fileHeader), sizeof(DerivFileHeader));
+    writePadding(out, sizeof(DerivFileHeader), PAYLOAD_ALIGNMENT);
     
-    // Write LevelHeader array
+    // Write DerivLevelHeader array
     for (const auto& level : levels) {
-        LevelHeader lh = {};
+        DerivLevelHeader lh = {};
         lh.levelIndex = level.levelIndex;
         lh.derivativeCount = level.derivativeCount;
         lh.firstGridIndex = level.firstGridIndex;
-        out.write(reinterpret_cast<const char*>(&lh), sizeof(LevelHeader));
+        out.write(reinterpret_cast<const char*>(&lh), sizeof(DerivLevelHeader));
     }
     
-    // Write GridHeader array
-    for (uint32_t i = 0; i < gridCount; ++i) {
+    // Write DerivGridHeader array
+    for (size_t i = 0; i < gridsMeta.size(); ++i) {
         const auto& gm = gridsMeta[i];
         
-        GridHeader gh = {};
+        DerivGridHeader gh = {};
         gh.levelIndex = gm.meta.levelIndex;
         gh.derivativeIndex = gm.meta.derivativeIndex;
         gh.derivativeCountInLevel = gm.meta.derivativeCountInLevel;
+        gh.gridType = DERIV_GRID_TYPE_FLOAT;  // Single derivative per grid
         gh.payloadOffset = payloadOffsets[i];
         gh.payloadSize = gm.input.sizeBytes;
         std::memcpy(gh.bboxMin, gm.input.bboxMin, sizeof(gh.bboxMin));
@@ -432,11 +404,11 @@ bool writeNanoVdbBundle(const std::string& outputPath, const std::vector<GridInp
         std::strncpy(gh.name, gm.input.name.c_str(), sizeof(gh.name) - 1);
         gh.name[sizeof(gh.name) - 1] = '\0';
         
-        out.write(reinterpret_cast<const char*>(&gh), sizeof(GridHeader));
+        out.write(reinterpret_cast<const char*>(&gh), sizeof(DerivGridHeader));
     }
     
     // Align to payload block
-    uint64_t currentPos = gridTableOffset + gridCount * sizeof(GridHeader);
+    uint64_t currentPos = gridTableOffset + gridCount * sizeof(DerivGridHeader);
     writePadding(out, currentPos, PAYLOAD_ALIGNMENT);
     
     // Write payloads
