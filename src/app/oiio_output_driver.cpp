@@ -61,12 +61,35 @@ void OIIOOutputDriver::write_render_tile(const Tile &tile)
 
   /* Apply gamma correction for (some) non-linear file formats.
    * TODO: use OpenColorIO view transform if available. */
+#if 0  
   if (ColorSpaceManager::detect_known_colorspace(
           u_colorspace_auto, "", image_output->format_name(), true) == u_colorspace_srgb)
   {
     const float g = 1.0f / 2.2f;
     OIIO::ImageBufAlgo::pow(image_buffer, image_buffer, {g, g, g, 1.0f});
   }
+
+#else
+
+  const std::string display = "sRGB";
+  const std::string view = "AgX";
+  const std::string fromspace = "scene_linear";
+
+  OIIO::ImageBuf tmp;
+  const bool result = OIIO::ImageBufAlgo::ociodisplay(
+      tmp, image_buffer, display, view, fromspace);
+
+  if (result) {
+    printf("\nOCIO display transform applied successfully.\n");
+    image_buffer.copy(tmp);
+  }
+  else {    
+    printf("\nOCIO display transform failed, falling back.\n");
+    const float g = 1.0f / 2.2f;
+    OIIO::ImageBufAlgo::pow(image_buffer, image_buffer, {g, g, g, 1.0f});
+  } 
+  
+#endif  
 
   /* Write to disk and close */
   image_buffer.set_write_format(TypeDesc::FLOAT);

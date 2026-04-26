@@ -484,7 +484,7 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates(
     const DerivGridHeader* gridTable = 
         reinterpret_cast<const DerivGridHeader*>(base + fh->gridTableOffset);
 
-    const float wx = x, wy = y, wz = z;
+    const double wx = x, wy = y, wz = z;
 
     // Get voxel size from level 0 (finest level) for consistent normalization
     const DerivLevelHeader& level0Header = levelTable[0];
@@ -648,7 +648,7 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
         float w = tex.transform_3d.x.x;
         float h = tex.transform_3d.y.y;
 
-    size_t index = (size_t)floorf(P.x) + (size_t)floorf(P.y) * w + (size_t)floorf(P.z) * w * h;
+    size_t index = (size_t)(floorf(P.x)) + (size_t)(floorf(P.y) * w) + (size_t)(floorf(P.z) * w * h);
     const float f = data[index];
     return make_float4(f, f, f, 1.0f);
   }
@@ -657,7 +657,7 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
         float w = tex.transform_3d.x.x;
         float h = tex.transform_3d.y.y;
 
-    size_t index = (size_t)floorf(P.x) + (size_t)floorf(P.y) * w + (size_t)floorf(P.z) * w * h;
+    size_t index = (size_t)(floorf(P.x)) + (size_t)(floorf(P.y) * w) + (size_t)(floorf(P.z) * w * h);
     const float3 f = data[index];
     return make_float4(f, 1.0f);
   }  

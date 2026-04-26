@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 #include <cstdlib>
+#include <sstream>
+#include <sys/stat.h>
 
 /**
  * @brief Downsamples an OpenVDB grid by a given integer factor
@@ -188,6 +190,16 @@ int main(int argc, char* argv[])
     try {
         // Open input file
         std::cout << "Opening input file: " << inputFile << std::endl;
+        
+        // Check if file exists and get its size
+        struct stat fileStat;
+        if (stat(inputFile.c_str(), &fileStat) != 0) {
+            std::cerr << "Error: Input file does not exist or cannot be accessed: " << inputFile << std::endl;
+            return 1;
+        }
+        std::cout << "File size: " << fileStat.st_size << " bytes (" 
+                  << (fileStat.st_size / (1024.0 * 1024.0)) << " MB)" << std::endl;
+        
         openvdb::io::File file(inputFile);
         file.open();
         
@@ -255,8 +267,47 @@ int main(int argc, char* argv[])
         
         return 0;
     }
+    catch (const std::runtime_error& e) {
+        std::string errorMsg(e.what());
+        std::cerr << "\n============================================" << std::endl;
+        std::cerr << "RUNTIME ERROR" << std::endl;
+        std::cerr << "============================================" << std::endl;
+        std::cerr << "Error message: " << errorMsg << std::endl;
+        
+        // Check if it's a Blosc decompression error
+        if (errorMsg.find("Blosc") != std::string::npos || 
+            errorMsg.find("blosc") != std::string::npos ||
+            errorMsg.find("BLOSC") != std::string::npos) {
+            std::cerr << "\n*** BLOSC DECOMPRESSION ERROR DETECTED ***" << std::endl;
+            std::cerr << "\nPossible causes:" << std::endl;
+            std::cerr << "  1. Corrupted VDB file" << std::endl;
+            std::cerr << "  2. Incomplete file transfer" << std::endl;
+            std::cerr << "  3. File created with incompatible Blosc version" << std::endl;
+            std::cerr << "  4. Insufficient memory for decompression" << std::endl;
+            std::cerr << "  5. File metadata corruption" << std::endl;
+            std::cerr << "\nDebugging steps:" << std::endl;
+            std::cerr << "  - Verify file integrity (checksum if available)" << std::endl;
+            std::cerr << "  - Check available system memory" << std::endl;
+            std::cerr << "  - Try reading with vdb_print or vdb_view utilities" << std::endl;
+            std::cerr << "  - Verify Blosc library version compatibility" << std::endl;
+            std::cerr << "\nInput file: " << inputFile << std::endl;
+            
+            // Get file info again
+            struct stat fileStat;
+            if (stat(inputFile.c_str(), &fileStat) == 0) {
+                std::cerr << "File size: " << fileStat.st_size << " bytes" << std::endl;
+            }
+        }
+        std::cerr << "============================================" << std::endl;
+        return 1;
+    }
     catch (const std::exception& e) {
+        std::cerr << "\n============================================" << std::endl;
+        std::cerr << "EXCEPTION" << std::endl;
+        std::cerr << "============================================" << std::endl;
         std::cerr << "Error: " << e.what() << std::endl;
+        std::cerr << "Input file: " << inputFile << std::endl;
+        std::cerr << "============================================" << std::endl;
         return 1;
     }
 }
