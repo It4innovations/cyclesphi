@@ -25,6 +25,9 @@
 #include <omp.h>
 #endif
 
+// Include shared derivative format structures
+#include "../../src/kernel/util/image_3d_derivates.h"
+
 // ============================================================================
 // NanoVDB Derivative Bundle Format - File Structures
 // ============================================================================
@@ -35,44 +38,9 @@
 //   4. NanoVDB grid payloads (each 32-byte aligned)
 // ============================================================================
 
-struct DerivFileHeader {
-    uint32_t magic;              // Magic number: 0x4E56444D ('NVDM')
-    uint32_t version;            // File format version
-    uint32_t payloadAlignment;   // Alignment requirement for grid payloads
-    uint32_t levelCount;         // Number of resolution levels
-    uint32_t gridCount;          // Total number of grids across all levels
-    uint32_t reserved1;
-    uint64_t levelTableOffset;   // Byte offset to LevelHeader array
-    uint64_t gridTableOffset;    // Byte offset to GridHeader array
-    uint64_t payloadBlockOffset; // Byte offset to first grid payload
-    uint64_t totalFileSize;      // Total file size in bytes
-    uint64_t reserved2;
-};
+// Using shared structs from image_3d_derivates.h
 
-struct DerivLevelHeader {
-    uint32_t levelIndex;         // Level index (0-based, 0=finest)
-    uint32_t derivativeCount;    // Number of derivative grids in this level
-    uint32_t firstGridIndex;     // Index of first grid in GridHeader array
-    uint32_t reserved;
-};
-
-struct DerivGridHeader {
-    uint32_t levelIndex;                // Which level this grid belongs to
-    uint32_t derivativeIndex;           // Derivative index within level (0-based)
-    uint32_t derivativeCountInLevel;    // Total derivatives in this level
-    uint32_t reserved1;
-    uint64_t payloadOffset;             // Byte offset to grid payload from file start
-    uint64_t payloadSize;               // Size of grid payload in bytes
-    int32_t  bboxMin[3];                // Bounding box min in index space
-    int32_t  bboxMax[3];                // Bounding box max in index space
-    uint32_t dims[3];                   // Grid dimensions [x, y, z]
-    uint32_t reserved2;
-    char     name[56];                  // Grid name for debugging
-};
-
-// ============================================================================
 // Taylor Polynomial Basis Functions
-// ============================================================================
 // Computes the basis function value for a given derivative index at a local
 // position (px, py, pz) relative to voxel center.
 //

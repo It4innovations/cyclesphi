@@ -664,16 +664,31 @@ NanoVDBDerivatesImageLoader::NanoVDBDerivatesImageLoader(vector<char>& g)
 
     printf("  Finest level: %u (resolution %u)\n", (unsigned)finest_level_id, max_resolution);
 
+    // Detect format type by checking gridType
+    bool is_vec4_format = false;
+    for (uint32_t i = 0; i < file_header.gridCount; ++i) {
+        if (grid_table[i].gridType != DERIV_GRID_TYPE_FLOAT) {
+            is_vec4_format = true;
+            break;
+        }
+    }
+    printf("  Format: %s\n", is_vec4_format ? "VEC4 (packed)" : "FLOAT (single)");
+
     // Print transform information for each grid
     printf("  Grid transforms:\n");
     for (uint32_t grid_idx = 0; grid_idx < file_header.gridCount; ++grid_idx) {
+        const DerivGridHeader& gh = grid_table[grid_idx];
+        const char* gridtype_str = (gh.gridType == DERIV_GRID_TYPE_FLOAT) ? "FLOAT" :
+                                   (gh.gridType == DERIV_GRID_TYPE_VEC3F) ? "VEC3F" :
+                                   (gh.gridType == DERIV_GRID_TYPE_VEC4F) ? "VEC4F" : "UNKNOWN";
+        
         nanovdb::NanoGrid<float>* grid = get_grid(grid_idx);
         if (grid) {
             const double* matD = grid->map().mMatD;
             const double* vecD = grid->map().mVecD;
             
-            printf("    Grid %u: matD=[%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f], vecD=[%.6f, %.6f, %.6f]\n",
-                   grid_idx,
+            printf("    Grid %u (type=%s): matD=[%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f], vecD=[%.6f, %.6f, %.6f]\n",
+                   grid_idx, gridtype_str,
                    matD[0], matD[1], matD[2], matD[3], matD[4], matD[5], matD[6], matD[7], matD[8],
                    vecD[0], vecD[1], vecD[2]);
         }
@@ -723,14 +738,28 @@ bool NanoVDBDerivatesImageLoader::load_metadata(ImageMetaData& metadata)
         return false;
     }
 
-    // All derivative grids are float type
+    // All derivative grids are float type for output
     metadata.channels = 1;
-    metadata.type = IMAGE_DATA_TYPE_NANOVDB_DERIVATES;
     metadata.nanovdb_byte_size = bundle_data.size();
+
+    // Determine format type by checking gridType field
+    // VEC4 format has packed grids (gridType != DERIV_GRID_TYPE_FLOAT)
+    // Regular format has only float grids (gridType == DERIV_GRID_TYPE_FLOAT)
+    const DerivGridHeader* grid_table = get_grid_table();
+    bool is_vec4_format = false;
+    
+    for (uint32_t i = 0; i < file_header.gridCount; ++i) {
+        if (grid_table[i].gridType != DERIV_GRID_TYPE_FLOAT) {
+            is_vec4_format = true;
+            break;
+        }
+    }
+    
+    metadata.type = is_vec4_format ? IMAGE_DATA_TYPE_NANOVDB_DERIVATES_VEC4 
+                                   : IMAGE_DATA_TYPE_NANOVDB_DERIVATES;
 
     // Get bounding box from finest level
     const DerivLevelHeader* level_table = get_level_table();
-    const DerivGridHeader* grid_table = get_grid_table();
     
     const DerivLevelHeader& finest_level = level_table[finest_level_id];
     
