@@ -125,6 +125,13 @@ target_compile_definitions(nanovdb_derivates_convert PRIVATE
     CCL_NAMESPACE_END=
 )
 
+# Remove pedantic flag and allow permissive compilation for this target
+# to avoid conflicts with Cycles math functions and stdlib
+target_compile_options(nanovdb_derivates_convert PRIVATE
+    -Wno-pedantic
+    -fpermissive
+)
+
 # Add NanoVDB include directory if specified separately
 if(NANOVDB_INCLUDE_DIR)
     target_include_directories(nanovdb_derivates_convert PRIVATE ${NANOVDB_INCLUDE_DIR})
@@ -177,6 +184,13 @@ target_include_directories(nanovdb_derivates_convert_vec4 PRIVATE
 target_compile_definitions(nanovdb_derivates_convert_vec4 PRIVATE
     CCL_NAMESPACE_BEGIN=
     CCL_NAMESPACE_END=
+)
+
+# Remove pedantic flag and allow permissive compilation for this target
+# to avoid conflicts with Cycles math functions and stdlib
+target_compile_options(nanovdb_derivates_convert_vec4 PRIVATE
+    -Wno-pedantic
+    -fpermissive
 )
 
 # Add NanoVDB include directory if specified separately
@@ -460,6 +474,54 @@ install(TARGETS hierarchical_compression_vdb
 
 # Print configuration info
 message(STATUS "Building hierarchical_compression_vdb")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+
+#####################################################################################
+##################openvdb_to_nanovdb executable configuration##################
+# Create executable
+add_executable(openvdb_to_nanovdb openvdb_to_nanovdb.cpp)
+
+# Include directories
+target_include_directories(openvdb_to_nanovdb PRIVATE
+    ${OPENVDB_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIRS}
+)
+
+# Add NanoVDB include directory if specified separately
+if(NANOVDB_INCLUDE_DIR)
+    target_include_directories(openvdb_to_nanovdb PRIVATE ${NANOVDB_INCLUDE_DIR})
+endif()
+
+# Link libraries
+target_link_libraries(openvdb_to_nanovdb PRIVATE
+    ${OPENVDB_LIBRARY}
+    ${TBB_LIBRARY}
+)
+
+# Platform-specific linking
+if(UNIX AND NOT APPLE)
+    # Linux specific
+    target_link_libraries(openvdb_to_nanovdb PRIVATE pthread dl)
+elseif(APPLE)
+    # macOS specific
+    target_link_libraries(openvdb_to_nanovdb PRIVATE pthread)
+endif()
+
+# Set output directory
+set_target_properties(openvdb_to_nanovdb PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Installation
+install(TARGETS openvdb_to_nanovdb
+    RUNTIME DESTINATION bin
+)
+
+# Print configuration info
+message(STATUS "Building openvdb_to_nanovdb")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")

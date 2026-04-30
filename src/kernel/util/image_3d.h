@@ -597,7 +597,7 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates_vec4(
     const DerivGridHeader* gridTable = 
         reinterpret_cast<const DerivGridHeader*>(base + fh->gridTableOffset);
 
-    const float wx = x, wy = y, wz = z;
+    const double wx = x, wy = y, wz = z;
 
     // Get voxel size from level 0 (finest level) for consistent normalization
     // Use first grid of level 0 to read transform (same for all grids in level)
