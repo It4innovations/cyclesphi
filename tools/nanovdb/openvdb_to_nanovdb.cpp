@@ -11,6 +11,7 @@
 #include <nanovdb/tools/CreateNanoGrid.h>
 #include <openvdb/openvdb.h>
 #include <openvdb/io/File.h>
+#include "w.openvdb.array.h"
 
 int main(int argc, char* argv[])
 {
@@ -26,6 +27,20 @@ int main(int argc, char* argv[])
     try {
         // Initialize OpenVDB library
         openvdb::initialize();
+        
+        // Register VDBArrayWrapper grid types
+        openvdb::Grid<openvdb::tree::Tree4<it4i::mesio::VDBArrayWrapper<4, float>, 5, 4, 3>::Type>::registerGrid();
+        openvdb::Grid<openvdb::tree::Tree4<it4i::mesio::VDBArrayWrapper<4, double>, 5, 4, 3>::Type>::registerGrid();
+        openvdb::Grid<openvdb::tree::Tree4<it4i::mesio::VDBArrayWrapper<10, float>, 5, 4, 3>::Type>::registerGrid();
+        openvdb::Grid<openvdb::tree::Tree4<it4i::mesio::VDBArrayWrapper<10, double>, 5, 4, 3>::Type>::registerGrid();
+        openvdb::Grid<openvdb::tree::Tree4<it4i::mesio::VDBArrayWrapper<20, float>, 5, 4, 3>::Type>::registerGrid();
+        openvdb::Grid<openvdb::tree::Tree4<it4i::mesio::VDBArrayWrapper<20, double>, 5, 4, 3>::Type>::registerGrid();
+        openvdb::Grid<openvdb::tree::Tree4<it4i::mesio::VDBArrayWrapper<35, float>, 5, 4, 3>::Type>::registerGrid();
+        openvdb::Grid<openvdb::tree::Tree4<it4i::mesio::VDBArrayWrapper<35, double>, 5, 4, 3>::Type>::registerGrid();
+        openvdb::Grid<openvdb::tree::Tree4<it4i::mesio::VDBArrayWrapper<56, float>, 5, 4, 3>::Type>::registerGrid();
+        openvdb::Grid<openvdb::tree::Tree4<it4i::mesio::VDBArrayWrapper<56, double>, 5, 4, 3>::Type>::registerGrid();
+        openvdb::Grid<openvdb::tree::Tree4<it4i::mesio::VDBArrayWrapper<84, float>, 5, 4, 3>::Type>::registerGrid();
+        openvdb::Grid<openvdb::tree::Tree4<it4i::mesio::VDBArrayWrapper<84, double>, 5, 4, 3>::Type>::registerGrid();
 
         std::cout << "============================================\n";
         std::cout << "OpenVDB to NanoVDB Converter\n";

@@ -47,6 +47,9 @@ endif()
 find_library(OPENVDB_LIBRARY NAMES openvdb libopenvdb PATHS ${OPENVDB_LIBRARY_DIR} NO_DEFAULT_PATH)
 find_library(TBB_LIBRARY NAMES tbb libtbb PATHS ${TBB_LIBRARY_DIR} NO_DEFAULT_PATH)
 
+# Find OpenMP
+find_package(OpenMP REQUIRED)
+
 # Debug output
 message(STATUS "TBB_LIBRARY_DIR: ${TBB_LIBRARY_DIR}")
 message(STATUS "TBB_LIBRARY: ${TBB_LIBRARY}")
@@ -392,6 +395,14 @@ target_include_directories(derivates_bin_to_dense_vdb PRIVATE
 target_compile_definitions(derivates_bin_to_dense_vdb PRIVATE
     CCL_NAMESPACE_BEGIN=
     CCL_NAMESPACE_END=
+    USE_OPENMP
+)
+
+# Remove pedantic flag and allow permissive compilation for this target
+# to avoid conflicts with Cycles math functions and stdlib
+target_compile_options(derivates_bin_to_dense_vdb PRIVATE
+    -Wno-pedantic
+    -fpermissive
 )
 
 # Add NanoVDB include directory if specified separately
@@ -399,10 +410,16 @@ if(NANOVDB_INCLUDE_DIR)
     target_include_directories(derivates_bin_to_dense_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
 endif()
 
+# Enable OpenMP
+if(OpenMP_CXX_FOUND)
+    target_compile_options(derivates_bin_to_dense_vdb PRIVATE ${OpenMP_CXX_FLAGS})
+endif()
+
 # Link libraries
 target_link_libraries(derivates_bin_to_dense_vdb PRIVATE
     ${OPENVDB_LIBRARY}
     ${TBB_LIBRARY}
+    OpenMP::OpenMP_CXX
 )
 
 # Platform-specific linking
@@ -522,6 +539,100 @@ install(TARGETS openvdb_to_nanovdb
 
 # Print configuration info
 message(STATUS "Building openvdb_to_nanovdb")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+#####################################################################################
+##################vdb_print executable configuration##################
+# Create executable
+add_executable(vdb_print vdb_print.cpp)
+
+# Include directories
+target_include_directories(vdb_print PRIVATE
+    ${OPENVDB_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIRS}
+)
+
+# Add NanoVDB include directory if specified separately
+if(NANOVDB_INCLUDE_DIR)
+    target_include_directories(vdb_print PRIVATE ${NANOVDB_INCLUDE_DIR})
+endif()
+
+# Link libraries
+target_link_libraries(vdb_print PRIVATE
+    ${OPENVDB_LIBRARY}
+    ${TBB_LIBRARY}
+)
+
+# Platform-specific linking
+if(UNIX AND NOT APPLE)
+    # Linux specific
+    target_link_libraries(vdb_print PRIVATE pthread dl)
+elseif(APPLE)
+    # macOS specific
+    target_link_libraries(vdb_print PRIVATE pthread)
+endif()
+
+# Set output directory
+set_target_properties(vdb_print PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Installation
+install(TARGETS vdb_print
+    RUNTIME DESTINATION bin
+)
+
+# Print configuration info
+message(STATUS "Building vdb_print")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+#####################################################################################
+##################nanovdb_print executable configuration##################
+# Create executable
+add_executable(nanovdb_print nanovdb_print.cpp)
+
+# Include directories
+target_include_directories(nanovdb_print PRIVATE
+    ${OPENVDB_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIRS}
+)
+
+# Add NanoVDB include directory if specified separately
+if(NANOVDB_INCLUDE_DIR)
+    target_include_directories(nanovdb_print PRIVATE ${NANOVDB_INCLUDE_DIR})
+endif()
+
+# Link libraries
+target_link_libraries(nanovdb_print PRIVATE
+    ${OPENVDB_LIBRARY}
+    ${TBB_LIBRARY}
+)
+
+# Platform-specific linking
+if(UNIX AND NOT APPLE)
+    # Linux specific
+    target_link_libraries(nanovdb_print PRIVATE pthread dl)
+elseif(APPLE)
+    # macOS specific
+    target_link_libraries(nanovdb_print PRIVATE pthread)
+endif()
+
+# Set output directory
+set_target_properties(nanovdb_print PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Installation
+install(TARGETS nanovdb_print
+    RUNTIME DESTINATION bin
+)
+
+# Print configuration info
+message(STATUS "Building nanovdb_print")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
