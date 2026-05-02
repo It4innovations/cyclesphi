@@ -24,55 +24,88 @@ std::string g_outFileName;
 std::string g_compressedFileName;
 std::string g_vdbOutputFileName;
 
-/**
- * Compresses a 3D float array using ZFP compression algorithm with accuracy mode.
- * 
- * @param input The input float vector containing the 3D volume data in row-major order
- * @param tolerance The accuracy tolerance for compression
- * @param dim_size The dimension size (assumes cubic volume)
- * @return A vector of bytes containing the compressed data
- */
-std::vector<uchar> zfpCompress_accuracy(std::vector<float> &input, double tolerance, size_t dim_size)
+// /**
+//  * Compresses a 3D float array using ZFP compression algorithm with accuracy mode.
+//  * 
+//  * @param input The input float vector containing the 3D volume data in row-major order
+//  * @param tolerance The accuracy tolerance for compression
+//  * @param dim_size The dimension size (assumes cubic volume)
+//  * @return A vector of bytes containing the compressed data
+//  */
+// std::vector<uchar> zfpCompress_accuracy(std::vector<float> &input, double tolerance, size_t dim_size)
+// {
+//     zfp_type type = zfp_type_float;
+//     zfp_field* field = zfp_field_3d(input.data(), type, dim_size, dim_size, dim_size);
+//     zfp_stream* zfp = zfp_stream_open(NULL);
+//     //zfp_stream_set_rate(zfp, compression_rate*8/*8 bits*/, type, dims, 0);
+//     //zfp_stream_set_precision(zfp, precision, type);
+//     zfp_stream_set_accuracy(zfp, tolerance);
+//     size_t bufsize = zfp_stream_maximum_size(zfp, field);
+//     std::vector<uchar> buffer(bufsize);
+//     bitstream* stream = stream_open(buffer.data(), bufsize);
+//     zfp_stream_set_bit_stream(zfp, stream);
+//     zfp_stream_rewind(zfp);
+//     std::cout << "compress...\n";
+//     size_t size = zfp_compress(zfp, field);
+//     buffer.resize(size); // adjust to actual size
+//     return buffer;
+// }
+
+// /**
+//  * Decompresses ZFP-compressed data back to a 3D float array using accuracy mode.
+//  * 
+//  * @param buffer The compressed data buffer
+//  * @param tolerance The accuracy tolerance used during compression
+//  * @param dim_size The dimension size (assumes cubic volume)
+//  * @return A vector of floats containing the decompressed 3D volume data
+//  */
+// std::vector<float> zfpDecompress_accuracy(std::vector<uchar> &buffer, double tolerance, size_t dim_size)
+// {
+//     std::vector<float> result(dim_size*size_t(dim_size)*dim_size);
+//     zfp_type type = zfp_type_float;
+//     zfp_field* field = zfp_field_3d(result.data(), type, dim_size, dim_size, dim_size);
+//     zfp_stream* zfp = zfp_stream_open(NULL);
+//     zfp_stream_set_accuracy(zfp, tolerance);
+//     bitstream* stream = stream_open(buffer.data(), buffer.size());
+//     zfp_stream_set_bit_stream(zfp, stream);
+//     zfp_stream_rewind(zfp);
+//     zfp_decompress(zfp, field);
+//     return result;
+// }
+
+std::vector<uchar> zfpCompress(std::vector<float> &input)
 {
-    uint dims = 3;
-    zfp_type type = zfp_type_float;
-    zfp_field* field = zfp_field_3d(input.data(), type, dim_size, dim_size, dim_size);
-    zfp_stream* zfp = zfp_stream_open(NULL);
-    //zfp_stream_set_rate(zfp, compression_rate*8/*8 bits*/, type, dims, 0);
-    //zfp_stream_set_precision(zfp, precision, type);
-    zfp_stream_set_accuracy(zfp, tolerance);
-    size_t bufsize = zfp_stream_maximum_size(zfp, field);
-    std::vector<uchar> buffer(bufsize);
-    bitstream* stream = stream_open(buffer.data(), bufsize);
-    zfp_stream_set_bit_stream(zfp, stream);
-    zfp_stream_rewind(zfp);
-    std::cout << "compress...\n";
-    size_t size = zfp_compress(zfp, field);
-    buffer.resize(size); // adjust to actual size
-    return buffer;
+  uint dims = 3;
+  zfp_type type = zfp_type_float;
+  zfp_field* field = zfp_field_3d(input.data(), type, g_dims.x, g_dims.y, g_dims.z); 
+  zfp_stream* zfp = zfp_stream_open(NULL);
+  zfp_stream_set_rate(zfp, g_compressionRate*8/*8 bits*/, type, dims, 0);
+  //zfp_stream_set_precision(zfp, precision, type);
+  //zfp_stream_set_accuracy(zfp, tolerance, type);
+  size_t bufsize = zfp_stream_maximum_size(zfp, field);
+  std::vector<uchar> buffer(bufsize);
+  bitstream* stream = stream_open(buffer.data(), bufsize);
+  zfp_stream_set_bit_stream(zfp, stream);
+  zfp_stream_rewind(zfp);
+  std::cout << "compress...\n";
+  size_t size = zfp_compress(zfp, field);
+  buffer.resize(size); // adjust to actual size
+  return buffer;
 }
 
-/**
- * Decompresses ZFP-compressed data back to a 3D float array using accuracy mode.
- * 
- * @param buffer The compressed data buffer
- * @param tolerance The accuracy tolerance used during compression
- * @param dim_size The dimension size (assumes cubic volume)
- * @return A vector of floats containing the decompressed 3D volume data
- */
-std::vector<float> zfpDecompress_accuracy(std::vector<uchar> &buffer, double tolerance, size_t dim_size)
+std::vector<float> zfpDecompress(std::vector<uchar> &buffer)
 {
-    uint dims = 3;
-    std::vector<float> result(dim_size*size_t(dim_size)*dim_size);
-    zfp_type type = zfp_type_float;
-    zfp_field* field = zfp_field_3d(result.data(), type, dim_size, dim_size, dim_size);
-    zfp_stream* zfp = zfp_stream_open(NULL);
-    zfp_stream_set_accuracy(zfp, tolerance);
-    bitstream* stream = stream_open(buffer.data(), buffer.size());
-    zfp_stream_set_bit_stream(zfp, stream);
-    zfp_stream_rewind(zfp);
-    size_t size = zfp_decompress(zfp, field);
-    return result;
+  uint dims = 3;
+  std::vector<float> result(g_dims.x*size_t(g_dims.y)*g_dims.z);
+  zfp_type type = zfp_type_float;
+  zfp_field* field = zfp_field_3d(result.data(), type, g_dims.x, g_dims.y, g_dims.z); 
+  zfp_stream* zfp = zfp_stream_open(NULL);
+  zfp_stream_set_rate(zfp, g_compressionRate*8/* bits*/, type, dims, 0);
+  bitstream* stream = stream_open(buffer.data(), buffer.size());
+  zfp_stream_set_bit_stream(zfp, stream);
+  zfp_stream_rewind(zfp);
+  size_t size = zfp_decompress(zfp, field);
+  return result;
 }
 
 /**
@@ -299,14 +332,18 @@ int main(int argc, char* argv[])
         
         // Step 3: Compress with ZFP
         std::cout << "\n[3/6] Compressing with ZFP..." << std::endl;
-        std::vector<uchar> compressedData = compressVolumeDataWithZFP(denseData);
+        // Note: Using g_compressionRate as tolerance and assumes cubic dimensions
+        size_t maxDim = std::max({g_dims.x, g_dims.y, g_dims.z});
+        // std::vector<uchar> compressedData = zfpCompress_accuracy(denseData, g_compressionRate, maxDim);
+        std::vector<uchar> compressedData = zfpCompress(denseData);
         
         // Save compressed data
         saveCompressedData(compressedData, g_compressedFileName);
         
         // Step 4: Decompress with ZFP
         std::cout << "\n[4/6] Decompressing with ZFP..." << std::endl;
-        std::vector<float> decompressedData = decompressVolumeDataWithZFP(compressedData);
+        // std::vector<float> decompressedData = zfpDecompress_accuracy(compressedData, g_compressionRate, maxDim);
+        std::vector<float> decompressedData = zfpDecompress(compressedData);
         
         // Save decompressed raw data
         saveDecompressedData(decompressedData, g_outFileName);

@@ -47,6 +47,12 @@ endif()
 find_library(OPENVDB_LIBRARY NAMES openvdb libopenvdb PATHS ${OPENVDB_LIBRARY_DIR} NO_DEFAULT_PATH)
 find_library(TBB_LIBRARY NAMES tbb libtbb PATHS ${TBB_LIBRARY_DIR} NO_DEFAULT_PATH)
 
+# Find ZFP package using config file
+if(WITH_ZFP)
+    find_package(zfp REQUIRED CONFIG)
+    message(STATUS "Found ZFP: ${zfp_DIR}")
+endif()
+
 # Find OpenMP
 find_package(OpenMP REQUIRED)
 
@@ -350,6 +356,7 @@ if(WITH_ZFP)
     target_link_libraries(compressed_zfp_to_vdb PRIVATE
         ${OPENVDB_LIBRARY}
         ${TBB_LIBRARY}
+        zfp::zfp
     )
 
     # Platform-specific linking
@@ -633,6 +640,54 @@ install(TARGETS nanovdb_print
 
 # Print configuration info
 message(STATUS "Building nanovdb_print")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+
+#####################################################################################
+##################raw_to_openvdb executable configuration##################
+# Create executable
+add_executable(raw_to_openvdb raw_to_openvdb.cpp)
+
+# Include directories
+target_include_directories(raw_to_openvdb PRIVATE
+    ${OPENVDB_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIRS}
+)
+
+# Add NanoVDB include directory if specified separately
+if(NANOVDB_INCLUDE_DIR)
+    target_include_directories(raw_to_openvdb PRIVATE ${NANOVDB_INCLUDE_DIR})
+endif()
+
+# Link libraries
+target_link_libraries(raw_to_openvdb PRIVATE
+    ${OPENVDB_LIBRARY}
+    ${TBB_LIBRARY}
+)
+
+# Platform-specific linking
+if(UNIX AND NOT APPLE)
+    # Linux specific
+    target_link_libraries(raw_to_openvdb PRIVATE pthread dl)
+elseif(APPLE)
+    # macOS specific
+    target_link_libraries(raw_to_openvdb PRIVATE pthread)
+endif()
+
+# Set output directory
+set_target_properties(raw_to_openvdb PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Installation
+install(TARGETS raw_to_openvdb
+    RUNTIME DESTINATION bin
+)
+
+# Print configuration info
+message(STATUS "Building raw_to_openvdb")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
