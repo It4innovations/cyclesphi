@@ -61,6 +61,12 @@ if(WITH_CYCLES_OSL)
   )
 endif()
 
+if(WITH_ZFP_LOADER)
+  list(APPEND LIB
+    PRIVATE bf::dependencies::optional::zfp
+  )
+endif()
+
 cycles_add_library(cycles_kernel_cpu "${LIB}"
   ${SRC_KERNEL_DEVICE_CPU}
   ${SRC_KERNEL_DEVICE_CPU_HEADERS}

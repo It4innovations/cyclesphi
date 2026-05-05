@@ -110,6 +110,12 @@ target_link_libraries(cycles_hydra
   ${LIB}
 )
 
+if(WITH_ZFP_LOADER)
+  target_link_libraries(cycles_hydra
+    PRIVATE bf::dependencies::optional::zfp
+  )
+endif()
+
 if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
   set(SRC_HD_CYCLES_PLUGIN
     plugin.h

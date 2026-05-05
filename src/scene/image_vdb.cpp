@@ -10,6 +10,12 @@
 #include "util/openvdb.h"
 #include "util/types_image.h"
 
+#ifdef WITH_ZFP_LOADER
+#  include <zfp/array3.hpp>
+#  include <zfp.h>
+#  include <climits>
+#endif
+
 #ifdef WITH_OPENVDB
 #  include <openvdb/tools/Dense.h>
 #endif
@@ -1060,5 +1066,175 @@ float3 RAWImageLoader::index_to_world(float3 in)
 {    
     return make_float3((float)in[0], (float)in[1], (float)in[2]);
 }
+
+#ifdef WITH_ZFP_LOADER
+ZFPImageLoader::ZFPImageLoader(vector<char> &g, size_t cache_size_bytes)
+    : zfp_data(std::move(g)), VDBImageLoader(""), zfp_array(nullptr), nx(0), ny(0), nz(0),
+      cache_size(cache_size_bytes), spacing_x(1.0f), spacing_y(1.0f), spacing_z(1.0f)
+{
+    printf("ZFPImageLoader: size in bytes: %lld\n", zfp_data.size());
+    printf("ZFPImageLoader: cache size: %zu bytes\n", cache_size);
+    deserialize_zfp_array();
+}
+
+ZFPImageLoader::~ZFPImageLoader()
+{
+    if (zfp_array) {
+        delete zfp_array;
+        zfp_array = nullptr;
+    }
+}
+
+void ZFPImageLoader::deserialize_zfp_array()
+{
+    if (zfp_data.empty()) {
+        printf("ZFPImageLoader: No data to deserialize\n");
+        return;
+    }
+
+    printf("ZFPImageLoader: Deserializing ZFP compressed array\n");
+    printf("  Input data size: %lld bytes\n", zfp_data.size());
+    printf("  Cache size: %zu bytes\n", cache_size);
+    
+    // Read header: [nx:8][ny:8][nz:8][rate:8][compressed_size:8][compressed_data]
+    size_t header_size = 5 * sizeof(size_t);
+    if (zfp_data.size() < header_size) {
+        printf("ZFPImageLoader: Data too small for header\n");
+        return;
+    }
+    
+    const size_t* header = reinterpret_cast<const size_t*>(zfp_data.data());
+    nx = header[0];
+    ny = header[1];
+    nz = header[2];
+    
+    double rate;
+    std::memcpy(&rate, &header[3], sizeof(double));
+    
+    size_t compressed_size = header[4];
+    
+    printf("  Dimensions: %zu x %zu x %zu\n", nx, ny, nz);
+    printf("  Rate: %.2f bits/value\n", rate);
+    printf("  Compressed data size: %zu bytes\n", compressed_size);
+    
+    // Verify data size
+    if (zfp_data.size() < header_size + compressed_size) {
+        printf("ZFPImageLoader: Insufficient data for compressed array\n");
+        return;
+    }
+    
+    try {
+        // Create array with dimensions and rate (no initial data)
+        // This allocates the compressed storage
+        zfp_array = new zfp::array3f(nx, ny, nz, rate, nullptr, cache_size);
+        
+        // Copy compressed data directly into the array's compressed storage
+        void* array_compressed_data = zfp_array->compressed_data();
+        const void* file_compressed_data = zfp_data.data() + header_size;
+        
+        std::memcpy(array_compressed_data, file_compressed_data, compressed_size);
+        
+        printf("ZFPImageLoader: Successfully loaded compressed array\n");
+        printf("  Array compressed size: %zu bytes\n", zfp_array->compressed_size());
+        
+    }
+    catch (const std::exception& e) {
+        printf("ZFPImageLoader: Exception during deserialization: %s\n", e.what());
+        if (zfp_array) {
+            delete zfp_array;
+            zfp_array = nullptr;
+        }
+    }
+    catch (...) {
+        printf("ZFPImageLoader: Unknown exception during deserialization\n");
+        if (zfp_array) {
+            delete zfp_array;
+            zfp_array = nullptr;
+        }
+    }
+}
+
+bool ZFPImageLoader::load_metadata(ImageMetaData& metadata)
+{
+    if (!zfp_array) {
+        printf("ZFPImageLoader: ZFP array not initialized\n");
+        return false;
+    }
+
+    metadata.channels = 1; // ZFP array3f stores float values
+
+    /* Set dimensions. */
+    metadata.width = nx;
+    metadata.height = ny;
+
+    metadata.nanovdb_byte_size = zfp_data.size();
+    metadata.type = IMAGE_DATA_TYPE_ZFP_FLOAT;
+
+    /* Set transform from object space to voxel index. */
+    // Simple uniform scaling based on dimensions
+    Transform index_to_object = transform_scale(
+        make_float3(spacing_x, spacing_y, spacing_z));
+
+    metadata.transform_3d = transform_inverse(index_to_object);
+    metadata.use_transform_3d = true;
+
+    return true;
+}
+
+bool ZFPImageLoader::load_pixels(const ImageMetaData&, void* pixels)
+{
+    if (zfp_data.size() > 0 && zfp_array) {
+        // Copy the zfp::array3f object for GPU access
+        // Note: This requires zfp::array3f to be accessible from GPU code
+        memcpy(pixels, zfp_array, sizeof(zfp::array3f));
+    }
+
+    return true;
+}
+
+string ZFPImageLoader::name() const
+{
+    return "ZFP Compressed Volume";
+}
+
+bool ZFPImageLoader::equals(const ImageLoader& other) const
+{
+    const ZFPImageLoader& other_loader = (const ZFPImageLoader&)other;
+    
+    if (zfp_data.size() != other_loader.zfp_data.size()) {
+        return false;
+    }
+    
+    if (nx != other_loader.nx || ny != other_loader.ny || nz != other_loader.nz) {
+        return false;
+    }
+    
+    return !memcmp(zfp_data.data(), other_loader.zfp_data.data(), zfp_data.size());
+}
+
+void ZFPImageLoader::cleanup()
+{
+}
+
+bool ZFPImageLoader::is_vdb_loader() const
+{
+    return true;
+}
+bool ZFPImageLoader::is_simple_mesh() const
+{
+    return true;
+}
+
+void ZFPImageLoader::get_bbox(int3 &min_bbox, int3 &max_bbox)
+{
+    min_bbox = make_int3(0, 0, 0);
+    max_bbox = make_int3(nx - 1, ny - 1, nz - 1);
+}
+
+float3 ZFPImageLoader::index_to_world(float3 in)
+{
+    return make_float3(in.x * spacing_x, in.y * spacing_y, in.z * spacing_z);
+}
+#endif
 
 CCL_NAMESPACE_END

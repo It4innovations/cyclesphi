@@ -860,6 +860,40 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
         }
+        else if (volume_type == "zfp") {
+          vector<char> zfp_data;
+          std::string filename = attr_buffer.value();
+
+          // Open file in binary mode and move pointer to end to get file size
+          std::ifstream file(filename, std::ios::binary | std::ios::ate);
+
+          if (!file) {
+            std::cerr << "Error: Could not open file " << filename << std::endl;
+            continue;
+          }
+
+          // Get file size
+          std::streamsize size = file.tellg();
+          file.seekg(0, std::ios::beg);
+
+          // Allocate buffer and read file into it
+          zfp_data.resize(size);
+          if (!file.read(zfp_data.data(), size)) {
+            std::cerr << "Error reading file!" << std::endl;
+            continue;
+          }
+
+          file.close();
+
+          // TODO: using zfp read
+          unique_ptr<ImageLoader> loader = make_unique<ZFPImageLoader>(zfp_data);
+
+          ImageParams params;
+          xml_read_image_params(state, params, node_attribute);
+
+          attr->data_voxel() = state.scene->image_manager->add_image(
+              std::move(loader), params, false);
+        }
         else
 #endif
             if (volume_type == "raw")

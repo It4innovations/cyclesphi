@@ -16,6 +16,9 @@
 #    include <nanovdb/util/GridHandle.h>
 #  endif
 #endif
+#ifdef WITH_ZFP_LOADER
+#  include <zfp/array3.hpp>
+#endif
 
 #include "scene/image_loader.h"
 
@@ -239,5 +242,40 @@ protected:
     RAWImageLoaderType raw_type;
     vector<char> grid;
 };
+
+#ifdef WITH_ZFP_LOADER
+class ZFPImageLoader : public VDBImageLoader {
+public:
+    ZFPImageLoader(vector<char> &g, size_t cache_size_bytes = 4096);
+    ~ZFPImageLoader();
+
+    virtual bool load_metadata(ImageMetaData& metadata) override;
+
+    virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
+
+    virtual string name() const override;
+
+    virtual bool equals(const ImageLoader& other) const override;
+
+    virtual void cleanup() override;
+
+    virtual bool is_vdb_loader() const override;
+
+    virtual bool is_simple_mesh() const override;
+
+    virtual void get_bbox(int3& min_bbox, int3& max_bbox) override;
+
+    virtual float3 index_to_world(float3 in) override;
+
+protected:
+    vector<char> zfp_data;
+    zfp::array3f* zfp_array;
+    size_t nx, ny, nz;
+    size_t cache_size;
+    float spacing_x, spacing_y, spacing_z;
+    
+    void deserialize_zfp_array();
+};
+#endif
 
 CCL_NAMESPACE_END

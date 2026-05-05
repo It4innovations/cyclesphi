@@ -35,6 +35,12 @@ set(LIB
   PRIVATE bf::dependencies::optional::pugixml
 )
 
+if(WITH_ZFP_LOADER)
+  list(APPEND LIB
+    PRIVATE bf::dependencies::optional::zfp
+  )
+endif()
+
 if(APPLE)
   # Disable allocation warning on macOS prior to 10.14: the OSLRenderServices
   # contains member which is 64 bytes aligned (cache inside of OIIO's

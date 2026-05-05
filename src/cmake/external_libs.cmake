@@ -114,6 +114,7 @@ if(EXISTS ${_cycles_lib_dir} AND WITH_LIBS_PRECOMPILED)
   _set_default(VULKAN_ROOT_DIR "${_cycles_lib_dir}/vulkan")
   _set_default(WEBP_ROOT_DIR "${_cycles_lib_dir}/webp")
   _set_default(ZLIB_ROOT "${_cycles_lib_dir}/zlib")
+  _set_default(ZFP_ROOT_DIR "${_cycles_lib_dir}/zfp")
   _set_default(ZSTD_ROOT_DIR "${_cycles_lib_dir}/zstd")
   if(WIN32)
     set(LEVEL_ZERO_ROOT_DIR ${_cycles_lib_dir}/level_zero)
@@ -584,6 +585,28 @@ if(WITH_CYCLES_NANOVDB)
     set(NANOVDB_INCLUDE_DIRS ${NANOVDB_INCLUDE_DIR})
   else()
     find_package(NanoVDB REQUIRED)
+  endif()
+endif()
+
+###########################################################################
+# ZFP
+###########################################################################
+
+if(WITH_ZFP_LOADER)
+  if(NOT zfp_DIR AND EXISTS ${_cycles_lib_dir})
+    set(zfp_DIR ${_cycles_lib_dir}/zfp/lib/cmake/zfp)
+  endif()
+
+  find_package(zfp CONFIG)
+  set_and_warn_library_found("ZFP" zfp_FOUND WITH_ZFP_LOADER)
+
+  if(zfp_FOUND)
+    message(STATUS "Found ZFP: ${zfp_DIR}")
+    if(WIN32)
+      add_bundled_libraries(zfp/bin)
+    else()
+      add_bundled_libraries(zfp/lib)
+    endif()
   endif()
 endif()
 

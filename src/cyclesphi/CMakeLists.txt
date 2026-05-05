@@ -115,6 +115,12 @@ if(WITH_USD)
   )
 endif()
 
+if(WITH_ZFP_LOADER)
+  list(APPEND LIB
+    bf::dependencies::optional::zfp
+  )
+endif()
+
 cycles_external_libraries_append(LIB)
 
 # Common configuration.

@@ -319,6 +319,10 @@ if(WITH_NANOVDB)
   add_definitions(-DWITH_NANOVDB)
 endif()
 
+if(WITH_ZFP_LOADER)
+  add_definitions(-DWITH_ZFP_LOADER)
+endif()
+
 if(WITH_OPENSUBDIV)
   add_definitions(-DWITH_OPENSUBDIV)
 endif()

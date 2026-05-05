@@ -358,6 +358,19 @@ if(WITH_NANOVDB)
 endif()
 
 # -----------------------------------------------------------------------------
+# Configure ZFP
+
+add_library(bf_deps_optional_zfp INTERFACE)
+add_library(bf::dependencies::optional::zfp ALIAS bf_deps_optional_zfp)
+
+if(WITH_ZFP_LOADER)
+  target_compile_definitions(bf_deps_optional_zfp INTERFACE WITH_ZFP_LOADER)
+  if(TARGET zfp::zfp)
+    target_link_libraries(bf_deps_optional_zfp INTERFACE zfp::zfp)
+  endif()
+endif()
+
+# -----------------------------------------------------------------------------
 # Configure Epoxy
 
 add_library(bf_deps_epoxy INTERFACE)

@@ -18,6 +18,7 @@ endif()
 
 # Options
 option(WITH_ZFP "Build ZFP compression tools" OFF)
+option(WITH_ZFP_LOADER "Enable ZFP loader" OFF)
 
 # Blender library path configuration
 set(BLENDER_LIB_DIR "" CACHE PATH "Path to Blender lib directory (e.g., blender/lib/windows_x64)")
@@ -48,7 +49,7 @@ find_library(OPENVDB_LIBRARY NAMES openvdb libopenvdb PATHS ${OPENVDB_LIBRARY_DI
 find_library(TBB_LIBRARY NAMES tbb libtbb PATHS ${TBB_LIBRARY_DIR} NO_DEFAULT_PATH)
 
 # Find ZFP package using config file
-if(WITH_ZFP)
+if(WITH_ZFP OR WITH_ZFP_LOADER)
     find_package(zfp REQUIRED CONFIG)
     message(STATUS "Found ZFP: ${zfp_DIR}")
 endif()
@@ -136,10 +137,12 @@ target_compile_definitions(convert_vdb_to_nanovdb_derivates PRIVATE
 
 # Remove pedantic flag and allow permissive compilation for this target
 # to avoid conflicts with Cycles math functions and stdlib
-target_compile_options(convert_vdb_to_nanovdb_derivates PRIVATE
-    -Wno-pedantic
-    -fpermissive
-)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(convert_vdb_to_nanovdb_derivates PRIVATE
+        -Wno-pedantic
+        -fpermissive
+    )
+endif()
 
 # Add NanoVDB include directory if specified separately
 if(NANOVDB_INCLUDE_DIR)
@@ -197,10 +200,12 @@ target_compile_definitions(convert_vdb_to_nanovdb_derivates_vec4 PRIVATE
 
 # Remove pedantic flag and allow permissive compilation for this target
 # to avoid conflicts with Cycles math functions and stdlib
-target_compile_options(convert_vdb_to_nanovdb_derivates_vec4 PRIVATE
-    -Wno-pedantic
-    -fpermissive
-)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(convert_vdb_to_nanovdb_derivates_vec4 PRIVATE
+        -Wno-pedantic
+        -fpermissive
+    )
+endif()
 
 # Add NanoVDB include directory if specified separately
 if(NANOVDB_INCLUDE_DIR)
@@ -417,10 +422,12 @@ target_compile_definitions(convert_derivates_bin_to_dense_vdb PRIVATE
 
 # Remove pedantic flag and allow permissive compilation for this target
 # to avoid conflicts with Cycles math functions and stdlib
-target_compile_options(convert_derivates_bin_to_dense_vdb PRIVATE
-    -Wno-pedantic
-    -fpermissive
-)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(convert_derivates_bin_to_dense_vdb PRIVATE
+        -Wno-pedantic
+        -fpermissive
+    )
+endif()
 
 # Add NanoVDB include directory if specified separately
 if(NANOVDB_INCLUDE_DIR)

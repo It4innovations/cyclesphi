@@ -15,6 +15,9 @@
 #  include "kernel/util/nanovdb.h"
 #  include <nanovdb/NanoVDB.h>
 #  endif
+#  ifdef WITH_ZFP_LOADER
+#  include <zfp/array3.hpp>
+#  endif
 #endif
 
 CCL_NAMESPACE_BEGIN
@@ -735,6 +738,49 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates_vec4(
 
 #endif /* WITH_NANOVDB */
 
+// ============================================================================
+// ZFP Compressed Format Support
+// ============================================================================
+
+#ifdef WITH_ZFP_LOADER
+
+#if defined(__KERNEL_METAL__)
+template<typename OutT, typename T>
+__attribute__((noinline)) OutT kernel_tex_image_interp_zfp(
+    const ccl_global KernelImageInfo &info,
+    const float x, const float y, const float z,
+    const uint /*interpolation*/)
+#else
+template<typename OutT, typename T>
+ccl_device_noinline OutT kernel_tex_image_interp_zfp(
+    const ccl_global KernelImageInfo &info,
+    const float x, const float y, const float z,
+    const uint /*interpolation*/)
+#endif
+{
+  // Cast data to zfp::array3f pointer
+  zfp::array3f* array = (zfp::array3f*)info.data;
+  
+  // Compute integer voxel coordinates
+  const int ix = (int)floorf(x);
+  const int iy = (int)floorf(y);
+  const int iz = (int)floorf(z);
+  
+  // Bounds check
+  if (ix < 0 || iy < 0 || iz < 0 || 
+      ix >= (int)array->size_x() || 
+      iy >= (int)array->size_y() || 
+      iz >= (int)array->size_z()) {
+    return OutT(0.0f);
+  }
+  
+  // Access compressed array and return value
+  const float value = (*array)(ix, iy, iz);
+  return OutT(value);
+}
+
+#endif /* WITH_ZFP_LOADER */
+
 ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
                                          ccl_private ShaderData *sd,
                                          const int image_texture_id,
@@ -816,7 +862,13 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     size_t index = (size_t)(floorf(P.x)) + (size_t)(floorf(P.y) * w) + (size_t)(floorf(P.z) * w * h);
     const float3 f = data[index];
     return make_float4(f, 1.0f);
-  }  
+  }
+#ifdef WITH_ZFP_LOADER
+  if (data_type == IMAGE_DATA_TYPE_ZFP_FLOAT) {
+    const float f = kernel_tex_image_interp_zfp<float, float>(info, P.x, P.y, P.z, (uint)interpolation);
+    return make_float4(f, f, f, 1.0f);
+  }
+#endif
 #else
   (void)kg;
   (void)sd;

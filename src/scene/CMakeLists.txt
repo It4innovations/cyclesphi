@@ -112,6 +112,7 @@ set(LIB
   PRIVATE bf::dependencies::optional::pugixml
   PRIVATE bf::dependencies::optional::openvdb
   PRIVATE bf::dependencies::optional::nanovdb
+  PRIVATE bf::dependencies::optional::zfp
 )
 
 if(CYCLES_STANDALONE_REPOSITORY)

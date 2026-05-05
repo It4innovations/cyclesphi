@@ -51,8 +51,10 @@ static const char *name_from_type(ImageDataType type)
   case IMAGE_DATA_TYPE_RAW3D_FLOAT:
     return "raw3d_float";
   case IMAGE_DATA_TYPE_RAW3D_FLOAT3:
-    return "raw3d_float3";          
-    case IMAGE_DATA_NUM_TYPES:
+    return "raw3d_float3";
+  case IMAGE_DATA_TYPE_ZFP_FLOAT:
+    return "zfp_float";          
+  case IMAGE_DATA_NUM_TYPES:
       assert(!"System enumerator type, should never be used");
       return "";
   }
@@ -249,6 +251,7 @@ device_image::device_image(Device *device,
     case IMAGE_DATA_TYPE_NANOVDB_EMPTY:
     case IMAGE_DATA_TYPE_RAW3D_FLOAT:
     case IMAGE_DATA_TYPE_RAW3D_FLOAT3:
+    case IMAGE_DATA_TYPE_ZFP_FLOAT:
       data_type = TYPE_UCHAR;
       data_elements = 1;
       break;
