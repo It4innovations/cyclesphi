@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(nanovdb_multires_convert)
+project(cyclesphi_tools_nanovdb)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -69,23 +69,23 @@ link_directories(${OPENVDB_LIBRARY_DIR})
 set(NANOVDB_INCLUDE_DIR "" CACHE PATH "Path to NanoVDB include directory (if not with OpenVDB)")
 
 #####################################################################################
-##################nanovdb_multires_convert executable configuration##################
+##################convert_vdb_to_nanovdb_multires executable configuration##################
 # Create executable
-add_executable(nanovdb_multires_convert nanovdb_multires_convert.cpp)
+add_executable(convert_vdb_to_nanovdb_multires convert_vdb_to_nanovdb_multires.cpp)
 
 # Include directories
-target_include_directories(nanovdb_multires_convert PRIVATE
+target_include_directories(convert_vdb_to_nanovdb_multires PRIVATE
     ${OPENVDB_INCLUDE_DIRS}
     ${TBB_INCLUDE_DIRS}
 )
 
 # Add NanoVDB include directory if specified separately
 if(NANOVDB_INCLUDE_DIR)
-    target_include_directories(nanovdb_multires_convert PRIVATE ${NANOVDB_INCLUDE_DIR})
+    target_include_directories(convert_vdb_to_nanovdb_multires PRIVATE ${NANOVDB_INCLUDE_DIR})
 endif()
 
 # Link libraries
-target_link_libraries(nanovdb_multires_convert PRIVATE
+target_link_libraries(convert_vdb_to_nanovdb_multires PRIVATE
     ${OPENVDB_LIBRARY}
     ${TBB_LIBRARY}
 )
@@ -93,61 +93,61 @@ target_link_libraries(nanovdb_multires_convert PRIVATE
 # Platform-specific linking
 if(UNIX AND NOT APPLE)
     # Linux specific
-    target_link_libraries(nanovdb_multires_convert PRIVATE pthread dl)
+    target_link_libraries(convert_vdb_to_nanovdb_multires PRIVATE pthread dl)
 elseif(APPLE)
     # macOS specific
-    target_link_libraries(nanovdb_multires_convert PRIVATE pthread)
+    target_link_libraries(convert_vdb_to_nanovdb_multires PRIVATE pthread)
 endif()
 
 # Set output directory
-set_target_properties(nanovdb_multires_convert PROPERTIES
+set_target_properties(convert_vdb_to_nanovdb_multires PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
 # Installation
-install(TARGETS nanovdb_multires_convert
+install(TARGETS convert_vdb_to_nanovdb_multires
     RUNTIME DESTINATION bin
 )
 
 # Print configuration info
-message(STATUS "Building nanovdb_multires_convert")
+message(STATUS "Building convert_vdb_to_nanovdb_multires")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
 
 
 #####################################################################################
-##################nanovdb_derivates_convert executable configuration##################
+##################convert_vdb_to_nanovdb_derivates executable configuration##################
 # Create executable
-add_executable(nanovdb_derivates_convert nanovdb_derivates_convert.cpp)
+add_executable(convert_vdb_to_nanovdb_derivates convert_vdb_to_nanovdb_derivates.cpp)
 
 # Include directories
-target_include_directories(nanovdb_derivates_convert PRIVATE
+target_include_directories(convert_vdb_to_nanovdb_derivates PRIVATE
     ${OPENVDB_INCLUDE_DIRS}
     ${TBB_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src
 )
 
 # Define Cycles namespace macros needed by kernel headers
-target_compile_definitions(nanovdb_derivates_convert PRIVATE
+target_compile_definitions(convert_vdb_to_nanovdb_derivates PRIVATE
     CCL_NAMESPACE_BEGIN=
     CCL_NAMESPACE_END=
 )
 
 # Remove pedantic flag and allow permissive compilation for this target
 # to avoid conflicts with Cycles math functions and stdlib
-target_compile_options(nanovdb_derivates_convert PRIVATE
+target_compile_options(convert_vdb_to_nanovdb_derivates PRIVATE
     -Wno-pedantic
     -fpermissive
 )
 
 # Add NanoVDB include directory if specified separately
 if(NANOVDB_INCLUDE_DIR)
-    target_include_directories(nanovdb_derivates_convert PRIVATE ${NANOVDB_INCLUDE_DIR})
+    target_include_directories(convert_vdb_to_nanovdb_derivates PRIVATE ${NANOVDB_INCLUDE_DIR})
 endif()
 
 # Link libraries
-target_link_libraries(nanovdb_derivates_convert PRIVATE
+target_link_libraries(convert_vdb_to_nanovdb_derivates PRIVATE
     ${OPENVDB_LIBRARY}
     ${TBB_LIBRARY}
 )
@@ -155,60 +155,60 @@ target_link_libraries(nanovdb_derivates_convert PRIVATE
 # Platform-specific linking
 if(UNIX AND NOT APPLE)
     # Linux specific
-    target_link_libraries(nanovdb_derivates_convert PRIVATE pthread dl)
+    target_link_libraries(convert_vdb_to_nanovdb_derivates PRIVATE pthread dl)
 elseif(APPLE)
     # macOS specific
-    target_link_libraries(nanovdb_derivates_convert PRIVATE pthread)
+    target_link_libraries(convert_vdb_to_nanovdb_derivates PRIVATE pthread)
 endif()
 
 # Set output directory
-set_target_properties(nanovdb_derivates_convert PROPERTIES
+set_target_properties(convert_vdb_to_nanovdb_derivates PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
 # Installation
-install(TARGETS nanovdb_derivates_convert
+install(TARGETS convert_vdb_to_nanovdb_derivates
     RUNTIME DESTINATION bin
 )
 
 # Print configuration info
-message(STATUS "Building nanovdb_derivates_convert")
+message(STATUS "Building convert_vdb_to_nanovdb_derivates")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
 
 #####################################################################################
-##################nanovdb_derivates_convert_vec4 executable configuration##################
+##################convert_vdb_to_nanovdb_derivates_vec4 executable configuration##################
 # Create executable
-add_executable(nanovdb_derivates_convert_vec4 nanovdb_derivates_convert_vec4.cpp)
+add_executable(convert_vdb_to_nanovdb_derivates_vec4 convert_vdb_to_nanovdb_derivates_vec4.cpp)
 
 # Include directories
-target_include_directories(nanovdb_derivates_convert_vec4 PRIVATE
+target_include_directories(convert_vdb_to_nanovdb_derivates_vec4 PRIVATE
     ${OPENVDB_INCLUDE_DIRS}
     ${TBB_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src
 )
 
 # Define Cycles namespace macros needed by kernel headers
-target_compile_definitions(nanovdb_derivates_convert_vec4 PRIVATE
+target_compile_definitions(convert_vdb_to_nanovdb_derivates_vec4 PRIVATE
     CCL_NAMESPACE_BEGIN=
     CCL_NAMESPACE_END=
 )
 
 # Remove pedantic flag and allow permissive compilation for this target
 # to avoid conflicts with Cycles math functions and stdlib
-target_compile_options(nanovdb_derivates_convert_vec4 PRIVATE
+target_compile_options(convert_vdb_to_nanovdb_derivates_vec4 PRIVATE
     -Wno-pedantic
     -fpermissive
 )
 
 # Add NanoVDB include directory if specified separately
 if(NANOVDB_INCLUDE_DIR)
-    target_include_directories(nanovdb_derivates_convert_vec4 PRIVATE ${NANOVDB_INCLUDE_DIR})
+    target_include_directories(convert_vdb_to_nanovdb_derivates_vec4 PRIVATE ${NANOVDB_INCLUDE_DIR})
 endif()
 
 # Link libraries
-target_link_libraries(nanovdb_derivates_convert_vec4 PRIVATE
+target_link_libraries(convert_vdb_to_nanovdb_derivates_vec4 PRIVATE
     ${OPENVDB_LIBRARY}
     ${TBB_LIBRARY}
 )
@@ -216,83 +216,82 @@ target_link_libraries(nanovdb_derivates_convert_vec4 PRIVATE
 # Platform-specific linking
 if(UNIX AND NOT APPLE)
     # Linux specific
-    target_link_libraries(nanovdb_derivates_convert_vec4 PRIVATE pthread dl)
+    target_link_libraries(convert_vdb_to_nanovdb_derivates_vec4 PRIVATE pthread dl)
 elseif(APPLE)
     # macOS specific
-    target_link_libraries(nanovdb_derivates_convert_vec4 PRIVATE pthread)
+    target_link_libraries(convert_vdb_to_nanovdb_derivates_vec4 PRIVATE pthread)
 endif()
 
 # Set output directory
-set_target_properties(nanovdb_derivates_convert_vec4 PROPERTIES
+set_target_properties(convert_vdb_to_nanovdb_derivates_vec4 PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
 # Installation
-install(TARGETS nanovdb_derivates_convert_vec4
+install(TARGETS convert_vdb_to_nanovdb_derivates_vec4
     RUNTIME DESTINATION bin
 )
 
 # Print configuration info
-message(STATUS "Building nanovdb_derivates_convert_vec4")
+message(STATUS "Building convert_vdb_to_nanovdb_derivates_vec4")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
 
 
 #####################################################################################
-##################downsampled_vdb executable configuration##################
+##################downsample_vdb executable configuration##################
 # Create executable
-add_executable(downsampled_vdb downsampled_vdb.cpp)
+add_executable(downsample_vdb downsample_vdb.cpp)
 
 # Include directories
-target_include_directories(downsampled_vdb PRIVATE
+target_include_directories(downsample_vdb PRIVATE
     ${OPENVDB_INCLUDE_DIRS}
     ${TBB_INCLUDE_DIRS}
 )
 
 # Add NanoVDB include directory if specified separately
 if(NANOVDB_INCLUDE_DIR)
-    target_include_directories(downsampled_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
+    target_include_directories(downsample_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
 endif()
 
 # Enable OpenMP
 if(OpenMP_CXX_FOUND)
-    target_compile_options(downsampled_vdb PRIVATE ${OpenMP_CXX_FLAGS})
-    target_compile_definitions(downsampled_vdb PRIVATE _OPENMP)
+    target_compile_options(downsample_vdb PRIVATE ${OpenMP_CXX_FLAGS})
 endif()
 
 # Link libraries
-target_link_libraries(downsampled_vdb PRIVATE
+target_link_libraries(downsample_vdb PRIVATE
     ${OPENVDB_LIBRARY}
     ${TBB_LIBRARY}
 )
 
 # Link OpenMP
 if(OpenMP_CXX_FOUND)
-    target_link_libraries(downsampled_vdb PRIVATE OpenMP::OpenMP_CXX)
+    target_link_libraries(downsample_vdb PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
 # Platform-specific linking
 if(UNIX AND NOT APPLE)
     # Linux specific
-    target_link_libraries(downsampled_vdb PRIVATE pthread dl)
+    target_link_libraries(downsample_vdb PRIVATE pthread dl)
 elseif(APPLE)
     # macOS specific
-    target_link_libraries(downsampled_vdb PRIVATE pthread)
+    target_link_libraries(downsample_vdb PRIVATE pthread)
 endif()
 
 # Set output directory
-set_target_properties(downsampled_vdb PROPERTIES
+set_target_properties(downsample_vdb PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
 # Installation
-install(TARGETS downsampled_vdb
+install(TARGETS downsample_vdb
     RUNTIME DESTINATION bin
 )
 
 # Print configuration info
-message(STATUS "Building downsampled_vdb")
+message(STATUS "Building downsample_vdb")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
@@ -398,19 +397,19 @@ endif()
 
 
 #####################################################################################
-##################derivates_bin_to_dense_vdb executable configuration##################
+##################convert_derivates_bin_to_dense_vdb executable configuration##################
 # Create executable
-add_executable(derivates_bin_to_dense_vdb derivates_bin_to_dense_vdb.cpp)
+add_executable(convert_derivates_bin_to_dense_vdb convert_derivates_bin_to_dense_vdb.cpp)
 
 # Include directories
-target_include_directories(derivates_bin_to_dense_vdb PRIVATE
+target_include_directories(convert_derivates_bin_to_dense_vdb PRIVATE
     ${OPENVDB_INCLUDE_DIRS}
     ${TBB_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src
 )
 
 # Define Cycles namespace macros needed by kernel headers
-target_compile_definitions(derivates_bin_to_dense_vdb PRIVATE
+target_compile_definitions(convert_derivates_bin_to_dense_vdb PRIVATE
     CCL_NAMESPACE_BEGIN=
     CCL_NAMESPACE_END=
     USE_OPENMP
@@ -418,23 +417,23 @@ target_compile_definitions(derivates_bin_to_dense_vdb PRIVATE
 
 # Remove pedantic flag and allow permissive compilation for this target
 # to avoid conflicts with Cycles math functions and stdlib
-target_compile_options(derivates_bin_to_dense_vdb PRIVATE
+target_compile_options(convert_derivates_bin_to_dense_vdb PRIVATE
     -Wno-pedantic
     -fpermissive
 )
 
 # Add NanoVDB include directory if specified separately
 if(NANOVDB_INCLUDE_DIR)
-    target_include_directories(derivates_bin_to_dense_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
+    target_include_directories(convert_derivates_bin_to_dense_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
 endif()
 
 # Enable OpenMP
 if(OpenMP_CXX_FOUND)
-    target_compile_options(derivates_bin_to_dense_vdb PRIVATE ${OpenMP_CXX_FLAGS})
+    target_compile_options(convert_derivates_bin_to_dense_vdb PRIVATE ${OpenMP_CXX_FLAGS})
 endif()
 
 # Link libraries
-target_link_libraries(derivates_bin_to_dense_vdb PRIVATE
+target_link_libraries(convert_derivates_bin_to_dense_vdb PRIVATE
     ${OPENVDB_LIBRARY}
     ${TBB_LIBRARY}
     OpenMP::OpenMP_CXX
@@ -443,24 +442,24 @@ target_link_libraries(derivates_bin_to_dense_vdb PRIVATE
 # Platform-specific linking
 if(UNIX AND NOT APPLE)
     # Linux specific
-    target_link_libraries(derivates_bin_to_dense_vdb PRIVATE pthread dl)
+    target_link_libraries(convert_derivates_bin_to_dense_vdb PRIVATE pthread dl)
 elseif(APPLE)
     # macOS specific
-    target_link_libraries(derivates_bin_to_dense_vdb PRIVATE pthread)
+    target_link_libraries(convert_derivates_bin_to_dense_vdb PRIVATE pthread)
 endif()
 
 # Set output directory
-set_target_properties(derivates_bin_to_dense_vdb PROPERTIES
+set_target_properties(convert_derivates_bin_to_dense_vdb PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
 # Installation
-install(TARGETS derivates_bin_to_dense_vdb
+install(TARGETS convert_derivates_bin_to_dense_vdb
     RUNTIME DESTINATION bin
 )
 
 # Print configuration info
-message(STATUS "Building derivates_bin_to_dense_vdb")
+message(STATUS "Building convert_derivates_bin_to_dense_vdb")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
@@ -699,6 +698,64 @@ install(TARGETS raw_to_openvdb
 
 # Print configuration info
 message(STATUS "Building raw_to_openvdb")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+
+#####################################################################################
+##################merge_vdb executable configuration##################
+# Create executable
+add_executable(merge_vdb merge_vdb.cpp)
+
+# Include directories
+target_include_directories(merge_vdb PRIVATE
+    ${OPENVDB_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIRS}
+)
+
+# Add NanoVDB include directory if specified separately
+if(NANOVDB_INCLUDE_DIR)
+    target_include_directories(merge_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
+endif()
+
+# Enable OpenMP
+if(OpenMP_CXX_FOUND)
+    target_compile_options(merge_vdb PRIVATE ${OpenMP_CXX_FLAGS})
+endif()
+
+# Link libraries
+target_link_libraries(merge_vdb PRIVATE
+    ${OPENVDB_LIBRARY}
+    ${TBB_LIBRARY}
+)
+
+# Link OpenMP
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(merge_vdb PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
+# Platform-specific linking
+if(UNIX AND NOT APPLE)
+    # Linux specific
+    target_link_libraries(merge_vdb PRIVATE pthread dl)
+elseif(APPLE)
+    # macOS specific
+    target_link_libraries(merge_vdb PRIVATE pthread)
+endif()
+
+# Set output directory
+set_target_properties(merge_vdb PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Installation
+install(TARGETS merge_vdb
+    RUNTIME DESTINATION bin
+)
+
+# Print configuration info
+message(STATUS "Building merge_vdb")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
