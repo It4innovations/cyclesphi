@@ -255,11 +255,22 @@ if(NANOVDB_INCLUDE_DIR)
     target_include_directories(downsampled_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
 endif()
 
+# Enable OpenMP
+if(OpenMP_CXX_FOUND)
+    target_compile_options(downsampled_vdb PRIVATE ${OpenMP_CXX_FLAGS})
+    target_compile_definitions(downsampled_vdb PRIVATE _OPENMP)
+endif()
+
 # Link libraries
 target_link_libraries(downsampled_vdb PRIVATE
     ${OPENVDB_LIBRARY}
     ${TBB_LIBRARY}
 )
+
+# Link OpenMP
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(downsampled_vdb PRIVATE OpenMP::OpenMP_CXX)
+endif()
 
 # Platform-specific linking
 if(UNIX AND NOT APPLE)
@@ -336,24 +347,24 @@ message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
 
 
 #####################################################################################
-##################compressed_zfp_to_vdb executable configuration##################
+##################compression_zfp_to_vdb executable configuration##################
 if(WITH_ZFP)
     # Create executable
-    add_executable(compressed_zfp_to_vdb compressed_zfp_to_vdb.cpp)
+    add_executable(compression_zfp_to_vdb compression_zfp_to_vdb.cpp)
 
     # Include directories
-    target_include_directories(compressed_zfp_to_vdb PRIVATE
+    target_include_directories(compression_zfp_to_vdb PRIVATE
         ${OPENVDB_INCLUDE_DIRS}
         ${TBB_INCLUDE_DIRS}
     )
 
     # Add NanoVDB include directory if specified separately
     if(NANOVDB_INCLUDE_DIR)
-        target_include_directories(compressed_zfp_to_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
+        target_include_directories(compression_zfp_to_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
     endif()
 
     # Link libraries
-    target_link_libraries(compressed_zfp_to_vdb PRIVATE
+    target_link_libraries(compression_zfp_to_vdb PRIVATE
         ${OPENVDB_LIBRARY}
         ${TBB_LIBRARY}
         zfp::zfp
@@ -362,24 +373,24 @@ if(WITH_ZFP)
     # Platform-specific linking
     if(UNIX AND NOT APPLE)
         # Linux specific
-        target_link_libraries(compressed_zfp_to_vdb PRIVATE pthread dl)
+        target_link_libraries(compression_zfp_to_vdb PRIVATE pthread dl)
     elseif(APPLE)
         # macOS specific
-        target_link_libraries(compressed_zfp_to_vdb PRIVATE pthread)
+        target_link_libraries(compression_zfp_to_vdb PRIVATE pthread)
     endif()
 
     # Set output directory
-    set_target_properties(compressed_zfp_to_vdb PROPERTIES
+    set_target_properties(compression_zfp_to_vdb PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
 
     # Installation
-    install(TARGETS compressed_zfp_to_vdb
+    install(TARGETS compression_zfp_to_vdb
         RUNTIME DESTINATION bin
     )
 
     # Print configuration info
-    message(STATUS "Building compressed_zfp_to_vdb")
+    message(STATUS "Building compression_zfp_to_vdb")
     message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
     message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
     message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
@@ -456,23 +467,23 @@ message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
 
 
 #####################################################################################
-##################hierarchical_compression_vdb executable configuration##################
+##################compression_hierarchical_to_vdb executable configuration##################
 # Create executable
-add_executable(hierarchical_compression_vdb hierarchical_compression_vdb.cpp)
+add_executable(compression_hierarchical_to_vdb compression_hierarchical_to_vdb.cpp)
 
 # Include directories
-target_include_directories(hierarchical_compression_vdb PRIVATE
+target_include_directories(compression_hierarchical_to_vdb PRIVATE
     ${OPENVDB_INCLUDE_DIRS}
     ${TBB_INCLUDE_DIRS}
 )
 
 # Add NanoVDB include directory if specified separately
 if(NANOVDB_INCLUDE_DIR)
-    target_include_directories(hierarchical_compression_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
+    target_include_directories(compression_hierarchical_to_vdb PRIVATE ${NANOVDB_INCLUDE_DIR})
 endif()
 
 # Link libraries
-target_link_libraries(hierarchical_compression_vdb PRIVATE
+target_link_libraries(compression_hierarchical_to_vdb PRIVATE
     ${OPENVDB_LIBRARY}
     ${TBB_LIBRARY}
 )
@@ -480,24 +491,24 @@ target_link_libraries(hierarchical_compression_vdb PRIVATE
 # Platform-specific linking
 if(UNIX AND NOT APPLE)
     # Linux specific
-    target_link_libraries(hierarchical_compression_vdb PRIVATE pthread dl)
+    target_link_libraries(compression_hierarchical_to_vdb PRIVATE pthread dl)
 elseif(APPLE)
     # macOS specific
-    target_link_libraries(hierarchical_compression_vdb PRIVATE pthread)
+    target_link_libraries(compression_hierarchical_to_vdb PRIVATE pthread)
 endif()
 
 # Set output directory
-set_target_properties(hierarchical_compression_vdb PROPERTIES
+set_target_properties(compression_hierarchical_to_vdb PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
 # Installation
-install(TARGETS hierarchical_compression_vdb
+install(TARGETS compression_hierarchical_to_vdb
     RUNTIME DESTINATION bin
 )
 
 # Print configuration info
-message(STATUS "Building hierarchical_compression_vdb")
+message(STATUS "Building compression_hierarchical_to_vdb")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
