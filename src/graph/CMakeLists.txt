@@ -14,6 +14,7 @@ set(SRC
   node_type.cpp
   #node_xml.cpp
   node_xml_bin.cpp
+  node_xml_util.cpp
 )
 
 set(SRC_HEADERS

@@ -55,6 +55,7 @@ void register_all_nodes()
   (void)NormalNode::get_node_type();
   (void)MappingNode::get_node_type();
   (void)RGBToBWNode::get_node_type();
+  (void)ConvertNode::get_node_types();
   (void)MetallicBsdfNode::get_node_type();
   (void)GlossyBsdfNode::get_node_type();
   (void)GlassBsdfNode::get_node_type();
