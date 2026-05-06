@@ -459,14 +459,6 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates(
 
     const double wx = x, wy = y, wz = z;
 
-    // Get voxel size from level 0 (finest level) for consistent normalization
-    const DerivLevelHeader& level0Header = levelTable[0];
-    const DerivGridHeader& level0Grid0Header = gridTable[level0Header.firstGridIndex];
-    const ccl_global nanovdb::NanoGrid<T>* level0Grid0 = getDerivGridPtr<T>(base, level0Grid0Header);
-    const double level0_voxel_size0 = level0Grid0->voxelSize()[0];
-    const double level0_voxel_size1 = level0Grid0->voxelSize()[1];
-    const double level0_voxel_size2 = level0Grid0->voxelSize()[2];
-
     // Iterate through levels (coarsest to finest logic, or customize as needed)
     // Here we check each level for non-zero derivatives and reconstruct
     for (uint32_t levelIdx = 0; levelIdx < levelCount; ++levelIdx) {
@@ -492,15 +484,21 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates(
         const int32_t iz = (int32_t)floorf((float)ijk_d[2]);
         const nanovdb::Coord coord(ix, iy, iz);
 
+        // Get current level's voxel size for proper normalization
+        const double current_voxel_size0 = grid0->voxelSize()[0];
+        const double current_voxel_size1 = grid0->voxelSize()[1];
+        const double current_voxel_size2 = grid0->voxelSize()[2];
+
         // Local offset from voxel center for Taylor expansion
         // Calculate voxel center in index space
         const nanovdb::Vec3d voxel_center_idx(ix + 0.5, iy + 0.5, iz + 0.5);
         // Convert to world coordinates
         const nanovdb::Vec3d voxel_center_world = grid0->indexToWorld(voxel_center_idx);
-        // Calculate offset from voxel center in world space, normalized by level 0 voxel size
-        const double px = (wx - voxel_center_world[0]) / level0_voxel_size0;
-        const double py = (wy - voxel_center_world[1]) / level0_voxel_size1;
-        const double pz = (wz - voxel_center_world[2]) / level0_voxel_size2;
+        // Normalize by half the current level's voxel size to get [-1, 1] range
+        // Following formula: p = (coo - center) / (gridSize / 2)
+        const double px = (wx - voxel_center_world[0]) / (0.5 * current_voxel_size0);
+        const double py = (wy - voxel_center_world[1]) / (0.5 * current_voxel_size1);
+        const double pz = (wz - voxel_center_world[2]) / (0.5 * current_voxel_size2);
 
         // Accumulate Taylor polynomial reconstruction
         double result = 0.0;
@@ -616,17 +614,6 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates_vec4(
 
     const double wx = x, wy = y, wz = z;
 
-    // Get voxel size from level 0 (finest level) for consistent normalization
-    // Use first grid of level 0 to read transform (same for all grids in level)
-    const DerivLevelHeader& level0Header = levelTable[0];
-    const DerivGridHeader& level0Grid0Header = gridTable[level0Header.firstGridIndex];
-    const ccl_global nanovdb::NanoGrid<float>* level0Grid0 = 
-        reinterpret_cast<const ccl_global nanovdb::NanoGrid<float>*>(
-            base + level0Grid0Header.payloadOffset);
-    const double level0_voxel_size0 = level0Grid0->voxelSize()[0];
-    const double level0_voxel_size1 = level0Grid0->voxelSize()[1];
-    const double level0_voxel_size2 = level0Grid0->voxelSize()[2];
-
     // Iterate through levels
     for (uint32_t levelIdx = 0; levelIdx < levelCount; ++levelIdx) {
         const DerivLevelHeader& lh = levelTable[levelIdx];
@@ -652,12 +639,19 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates_vec4(
         const int32_t iz = (int32_t)floorf((float)ijk_d[2]);
         const nanovdb::Coord coord(ix, iy, iz);
 
+        // Get current level's voxel size for proper normalization
+        const double current_voxel_size0 = grid0->voxelSize()[0];
+        const double current_voxel_size1 = grid0->voxelSize()[1];
+        const double current_voxel_size2 = grid0->voxelSize()[2];
+
         // Local offset from voxel center for Taylor expansion
         const nanovdb::Vec3d voxel_center_idx(ix + 0.5, iy + 0.5, iz + 0.5);
         const nanovdb::Vec3d voxel_center_world = grid0->indexToWorld(voxel_center_idx);
-        const double px = (wx - voxel_center_world[0]) / level0_voxel_size0;
-        const double py = (wy - voxel_center_world[1]) / level0_voxel_size1;
-        const double pz = (wz - voxel_center_world[2]) / level0_voxel_size2;
+        // Normalize by half the current level's voxel size to get [-1, 1] range
+        // Following formula: p = (coo - center) / (gridSize / 2)
+        const double px = (wx - voxel_center_world[0]) / (0.5 * current_voxel_size0);
+        const double py = (wy - voxel_center_world[1]) / (0.5 * current_voxel_size1);
+        const double pz = (wz - voxel_center_world[2]) / (0.5 * current_voxel_size2);
 
         // Accumulate Taylor polynomial reconstruction
         double result = 0.0;
