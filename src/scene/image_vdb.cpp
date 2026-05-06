@@ -658,8 +658,21 @@ NanoVDBDerivatesImageLoader::NanoVDBDerivatesImageLoader(vector<char>& g)
             const DerivGridHeader& gh = grid_table[lh.firstGridIndex];
             uint32_t resolution = std::max({gh.dims[0], gh.dims[1], gh.dims[2]});
             
-            printf("  Level %u: %u derivatives, resolution %u\n", 
-                   (unsigned)lh.levelIndex, (unsigned)lh.derivativeCount, (unsigned)resolution);
+            // Calculate total size of all grids in this level
+            size_t level_total_size = 0;
+            for (uint32_t g = 0; g < lh.derivativeCount; ++g) {
+                uint32_t grid_idx = lh.firstGridIndex + g;
+                if (grid_idx < file_header.gridCount) {
+                    nanovdb::NanoGrid<float>* grid = get_grid(grid_idx);
+                    if (grid) {
+                        level_total_size += grid->memUsage();
+                    }
+                }
+            }
+            
+            printf("  Level %u: %u derivatives, resolution %u, total size %zu bytes (%.2f MB)\n", 
+                   (unsigned)lh.levelIndex, (unsigned)lh.derivativeCount, (unsigned)resolution,
+                   level_total_size, level_total_size / (1024.0 * 1024.0));
             
             if (resolution > max_resolution) {
                 max_resolution = resolution;
