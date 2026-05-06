@@ -224,76 +224,90 @@ OutT kernel_image_interp_nanovdb(const ccl_global KernelImageInfo &info,
 // Taylor polynomial basis functions
 // Maps derivative index to basis monomial for Taylor series reconstruction
 // Given local offset (px, py, pz) from voxel center, returns the basis value
-// Coefficients include factorial terms from Taylor expansion: f(x) = Σ (∂^n f / ∂x^n) * x^n / n!
-ccl_device_inline double derivBasisValue(int derivIdx, double px, double py, double pz)
+// Coefficients include factorial terms from Taylor expansion
+ccl_device_inline double derivBasisValue(int basis, double p_x, double p_y, double p_z)
 {
-    switch (derivIdx) {
-        // 0th order: constant term
-        case 0:  return 1.0;
-        
-        // 1st order: linear terms
-        case 1:  return px;
-        case 2:  return py;
-        case 3:  return pz;
-        
-        // 2nd order: pure quadratic terms
-        // Divided by 2! = 2
-        case 4:  return px * px * 0.5;
-        case 5:  return py * py * 0.5;
-        case 6:  return pz * pz * 0.5;
-        
-        // 2nd order: mixed terms
-        case 7:  return px * py;
-        case 8:  return px * pz;
-        case 9:  return py * pz;
-        
-        // 3rd order: pure cubic terms
-        // Divided by 3! = 6
-        case 10: return px * px * px * (1.0 / 6.0);
-        case 11: return py * py * py * (1.0 / 6.0);
-        case 12: return pz * pz * pz * (1.0 / 6.0);
-        
-        // 3rd order: mixed terms
-        // Divided by 2! for the squared term
-        case 13: return px * px * py * 0.5;
-        case 14: return px * px * pz * 0.5;
-        case 15: return py * py * px * 0.5;
-        case 16: return py * py * pz * 0.5;
-        case 17: return pz * pz * px * 0.5;
-        case 18: return pz * pz * py * 0.5;
-        
-        // 3rd order: fully mixed term
-        case 19: return px * py * pz;
-        
-        // 4th order: pure quartic terms
-        // Divided by 4! = 24
-        case 20: return px * px * px * px / 24.0;
-        case 21: return py * py * py * py / 24.0;
-        case 22: return pz * pz * pz * pz / 24.0;
-        
-        // 4th order: mixed cubic-linear terms
-        // Divided by 3! = 6 for the cubic term
-        case 23: return px * px * px * py / 6.0;
-        case 24: return px * px * px * pz / 6.0;
-        case 25: return px * py * py * px / 6.0;
-        case 26: return py * py * py * pz / 6.0;
-        case 27: return pz * pz * pz * px / 6.0;
-        case 28: return pz * pz * pz * py / 6.0;
-        
-        // 4th order: mixed quadratic-quadratic terms
-        // Divided by 2! * 2! = 4
-        case 29: return px * px * py * py / 4.0;
-        case 30: return px * px * pz * pz / 4.0;
-        case 31: return py * py * pz * pz / 4.0;
-        
-        // 4th order: mixed quadratic-linear-linear terms
-        // Divided by 2! = 2 for the squared term
-        case 32: return px * px * py * pz / 2.0;
-        case 33: return py * py * px * pz / 2.0;
-        case 34: return pz * pz * px * py / 2.0;
-        
-        default: return 0.0;
-    }
+  switch (basis) {
+    case 0:
+      return 1.;
+
+    // 1. derivation
+    case 1:
+      return p_x;
+    case 2:
+      return p_y;
+    case 3:
+      return p_z;
+
+    // 2. derivation
+    case 4:
+      return 0.5 * (3 * p_x * p_x - 1);
+    case 5:
+      return 0.5 * (3 * p_y * p_y - 1);
+    case 6:
+      return 0.5 * (3 * p_z * p_z - 1);
+    case 7:
+      return p_x * p_y;
+    case 8:
+      return p_x * p_z;
+    case 9:
+      return p_y * p_z;
+
+    // 3. derivation
+    case 10:
+      return 0.5 * (5 * p_x * p_x * p_x - 3 * p_x);
+    case 11:
+      return 0.5 * (5 * p_y * p_y * p_y - 3 * p_y);
+    case 12:
+      return 0.5 * (5 * p_z * p_z * p_z - 3 * p_z);
+    case 13:
+      return 0.5 * (3 * p_x * p_x - 1) * p_y;
+    case 14:
+      return 0.5 * (3 * p_x * p_x - 1) * p_z;
+    case 15:
+      return 0.5 * (3 * p_y * p_y - 1) * p_x;
+    case 16:
+      return 0.5 * (3 * p_y * p_y - 1) * p_z;
+    case 17:
+      return 0.5 * (3 * p_z * p_z - 1) * p_x;
+    case 18:
+      return 0.5 * (3 * p_z * p_z - 1) * p_y;
+    case 19:
+      return p_x * p_y * p_z;
+
+    // 4. derivation
+    case 20:
+      return (35 * p_x * p_x * p_x * p_x - 30 * p_x * p_x + 3) / 8.0;
+    case 21:
+      return (35 * p_y * p_y * p_y * p_y - 30 * p_y * p_y + 3) / 8.0;
+    case 22:
+      return (35 * p_z * p_z * p_z * p_z - 30 * p_z * p_z + 3) / 8.0;
+    case 23:
+      return 0.5 * (5 * p_x * p_x * p_x - 3 * p_x) * p_y;
+    case 24:
+      return 0.5 * (5 * p_x * p_x * p_x - 3 * p_x) * p_z;
+    case 25:
+      return 0.5 * (5 * p_y * p_y * p_y - 3 * p_y) * p_x;
+    case 26:
+      return 0.5 * (5 * p_y * p_y * p_y - 3 * p_y) * p_z;
+    case 27:
+      return 0.5 * (5 * p_z * p_z * p_z - 3 * p_z) * p_x;
+    case 28:
+      return 0.5 * (5 * p_z * p_z * p_z - 3 * p_z) * p_y;
+    case 29:
+      return 0.5 * (3 * p_x * p_x - 1) * 0.5 * (3 * p_y * p_y - 1);
+    case 30:
+      return 0.5 * (3 * p_x * p_x - 1) * 0.5 * (3 * p_z * p_z - 1);
+    case 31:
+      return 0.5 * (3 * p_y * p_y - 1) * 0.5 * (3 * p_z * p_z - 1);
+    case 32:
+      return 0.5 * (3 * p_x * p_x - 1) * p_y * p_z;
+    case 33:
+      return 0.5 * (3 * p_y * p_y - 1) * p_x * p_z;
+    case 34:
+      return 0.5 * (3 * p_z * p_z - 1) * p_x * p_y;
+  }
+  return 0;
 }
 
 // Get pointer to NanoVDB grid from GridHeader
