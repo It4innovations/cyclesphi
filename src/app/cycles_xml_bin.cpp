@@ -699,8 +699,12 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
       const xml_attribute attr_volume_type = node_attribute.attribute("volume_type");
       if (attr_volume_type) {
         ustring volume_type(attr_volume_type.value());
+
+        if (volume_type == "") {
+          fprintf(stderr, "Error: missing volume_type for attribute \"%s\".\n", name.c_str());
+        }
 #ifdef WITH_OPENVDB
-        if (volume_type == "openvdb") {
+        else if (volume_type == "openvdb") {
           // std::stringstream ss;
           // ss << attr_buffer;
           // std::string str = ss.str();
@@ -753,6 +757,9 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
 
           attr->data_voxel() = state.scene->image_manager->add_image(std::move(loader), params);
         }
+#endif
+
+#ifdef WITH_NANOVDB
         else if (volume_type == "nanovdb") {
           // nanovdb::NanoGrid<float>* nanogrid = nullptr;
           // size_t nanogrid_size = 0;
@@ -862,6 +869,9 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
         }
+#endif
+
+#ifdef WITH_ZFP_LOADER        
         else if (volume_type == "zfp") {
           vector<char> zfp_data;
           std::string filename = attr_buffer.value();
@@ -896,9 +906,8 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
         }
-        else
 #endif
-            if (volume_type == "raw")
+        else if (volume_type == "raw")
         {
           vector<char> raw_data;
           std::string filename = attr_buffer.value();
