@@ -32,9 +32,9 @@ class VDBImageLoader : public ImageLoader {
 #ifdef WITH_OPENVDB
   VDBImageLoader(openvdb::GridBase::ConstPtr grid_,
                  const string &grid_name,
-                 const float clipping = 0.001f);
+                 const float clipping = 0.f);
 #endif
-  VDBImageLoader(const string &grid_name, const float clipping = 0.001f);
+  VDBImageLoader(const string &grid_name, const float clipping = 0.f);
   ~VDBImageLoader() override;
 
   bool load_metadata(ImageMetaData &metadata) override;
@@ -75,7 +75,7 @@ class VDBImageLoader : public ImageLoader {
                               Transform transform_3d);
 
   string grid_name;
-  float clipping = 0.001f;
+  float clipping = 0.f;
 #ifdef WITH_OPENVDB
   openvdb::GridBase::ConstPtr grid;
   openvdb::CoordBBox bbox;

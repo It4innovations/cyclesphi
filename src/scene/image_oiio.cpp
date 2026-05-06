@@ -18,11 +18,21 @@ OIIOImageLoader::~OIIOImageLoader() = default;
 
 bool OIIOImageLoader::load_metadata(ImageMetaData &metadata)
 {
+  if (!data.empty()) {
+    metadata = custom_metadata;
+    return true;
+  }
+
   return metadata.oiio_load_metadata(filepath);
 }
 
 bool OIIOImageLoader::load_pixels(const ImageMetaData &metadata, void *pixels)
 {
+  if (!data.empty()) {
+    memcpy(pixels, data.data(), data.size());
+    return true;
+  }
+
   if (!metadata.oiio_load_pixels(filepath, pixels)) {
     return false;
   }

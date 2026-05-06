@@ -415,7 +415,9 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml
           attr.height = height;
           // READ_ATTR_ULL(depth, size_t);
           // attr.depth = depth;
-          READ_ATTR_I(type, int);
+          
+          READ_ATTR_ENUM(type, ImageDataType);
+          //READ_ATTR_I(type, int);
           attr.type = (ImageDataType)type;
 
           ///* Optional color space, defaults to raw. */
@@ -470,7 +472,7 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml
           // READ_ATTR_ULL(depth, size_t);
           // attr.depth = depth;
           READ_ATTR_ENUM(type, ImageDataType);
-          // attr.type = (ImageDataType)type;
+          attr.type = (ImageDataType)type;          
 
           ///* Optional color space, defaults to raw. */
           // ustring colorspace;
