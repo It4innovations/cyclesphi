@@ -669,11 +669,11 @@ NanoVDBDerivatesImageLoader::NanoVDBDerivatesImageLoader(vector<char>& g)
                     }
                 }
             }
-            
+#if 0           
             printf("  Level %u: %u derivatives, resolution %u, total size %zu bytes (%.2f MB)\n", 
                    (unsigned)lh.levelIndex, (unsigned)lh.derivativeCount, (unsigned)resolution,
                    level_total_size, level_total_size / (1024.0 * 1024.0));
-            
+#endif            
             if (resolution > max_resolution) {
                 max_resolution = resolution;
                 finest_level_id = i;

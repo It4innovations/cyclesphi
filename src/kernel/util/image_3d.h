@@ -808,11 +808,6 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
                                         (InterpolationType)info.interpolation :
                                         interp;
 
-#if 0
-  // TODO rewrite
-  interpolation = INTERPOLATION_CLOSEST;
-#endif
-
   if (stochastic) {
     float3 rand = lcg_step_float3(&sd->lcg_state);
     P = interp_stochastic(P, interpolation, rand);
