@@ -950,8 +950,9 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           cache_size_bytes = std::stoull(attr_cache_size.value());
 
           // TODO: using zfp read
+          //ZFPImageLoader(vector<char> & g, int3 d, float3 s, int3 bmin, int3 bmax, size_t cache_size_bytes);
           unique_ptr<ImageLoader> loader = make_unique<ZFPImageLoader>(
-              zfp_data, zfp_dim, zfp_scal, zfp_bbox, cache_size_bytes);
+              zfp_data, dim3, scal3, bbox_min, bbox_max, cache_size_bytes);
 
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);
