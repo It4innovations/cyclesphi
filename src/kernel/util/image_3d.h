@@ -850,19 +850,33 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
   }
   if (data_type == IMAGE_DATA_TYPE_RAW3D_FLOAT) {
     float* data = (float *)info.data;
-        float w = tex.transform_3d.x.x;
-        float h = tex.transform_3d.y.y;
-
-    size_t index = (size_t)(floorf(P.x)) + (size_t)(floorf(P.y) * w) + (size_t)(floorf(P.z) * w * h);
+    // Extract dimensions from transform translation (stored by RAWImageLoader)
+    const size_t dimx = (size_t)tex.transform_3d.x.w;
+    const size_t dimy = (size_t)tex.transform_3d.y.w;
+    const size_t dimz = (size_t)tex.transform_3d.z.w;
+    
+    // P is in index space after identity transform - compute array index
+    const size_t ix = (size_t)(floorf(P.x));
+    const size_t iy = (size_t)(floorf(P.y));
+    const size_t iz = (size_t)(floorf(P.z));
+    
+    const size_t index = ix + iy * dimx + iz * dimx * dimy;
     const float f = data[index];
     return make_float4(f, f, f, 1.0f);
   }
   if (data_type == IMAGE_DATA_TYPE_RAW3D_FLOAT3) {
     float3* data = (float3 *)info.data;
-        float w = tex.transform_3d.x.x;
-        float h = tex.transform_3d.y.y;
-
-    size_t index = (size_t)(floorf(P.x)) + (size_t)(floorf(P.y) * w) + (size_t)(floorf(P.z) * w * h);
+    // Extract dimensions from transform translation (stored by RAWImageLoader)
+    const size_t dimx = (size_t)tex.transform_3d.x.w;
+    const size_t dimy = (size_t)tex.transform_3d.y.w;
+    const size_t dimz = (size_t)tex.transform_3d.z.w;
+    
+    // P is in index space after identity transform - compute array index
+    const size_t ix = (size_t)(floorf(P.x));
+    const size_t iy = (size_t)(floorf(P.y));
+    const size_t iz = (size_t)(floorf(P.z));
+    
+    const size_t index = ix + iy * dimx + iz * dimx * dimy;
     const float3 f = data[index];
     return make_float4(f, 1.0f);
   }

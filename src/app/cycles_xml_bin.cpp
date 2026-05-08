@@ -835,7 +835,7 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
         }
-        else if (volume_type == "nanovdb_derivates") {
+        else if (volume_type == "nanovdb_derivates" || volume_type == "nanovdb_derivates_vec4") {
           vector<char> raw_data;
           std::string filename = attr_buffer.value();
 
