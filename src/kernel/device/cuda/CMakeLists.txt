@@ -61,7 +61,14 @@ function(cuda_add_common_flags cuda_version arch in_flags out_flags)
 
   if(WITH_GPU_CPUIMAGE)
       set(flags ${flags} -D WITH_GPU_CPUIMAGE)
-  endif()  
+  endif()
+  
+  if(WITH_ZFP_LOADER)
+    set(flags ${flags} -D WITH_ZFP_LOADER)
+    if(ZFP_INCLUDE_DIRS)
+      set(flags ${flags} -I "${ZFP_INCLUDE_DIRS}")
+    endif()
+  endif()
 
   if("${cuda_version}" GREATER_EQUAL 123 AND "${arch}" STREQUAL "sm_120")
     # Enable jump table generation for the SVM switch statement.

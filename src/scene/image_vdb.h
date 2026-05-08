@@ -18,6 +18,9 @@
 #endif
 #ifdef WITH_ZFP_LOADER
 #  include <zfp/array3.hpp>
+#  ifdef __CUDACC__
+#    include "kernel/util/zfp/array3_device.cuh"
+#  endif
 #endif
 
 #include "scene/image_loader.h"
@@ -249,7 +252,7 @@ protected:
 class ZFPImageLoader : public VDBImageLoader {
 public:
   ZFPImageLoader(
-      vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, size_t cache_size_bytes);
+     vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, size_t cache_size_bytes, bool use_gpu);
     ~ZFPImageLoader();
 
     virtual bool load_metadata(ImageMetaData& metadata) override;
@@ -278,6 +281,12 @@ protected:
     int3 bbox_min;
     int3 bbox_max;
     size_t cache_size;
+    bool use_gpu;
+    
+    // GPU support members
+    typedef unsigned long long Word;
+    Word* d_compressed_data;
+    void* dev_array_storage;  // Storage for DeviceArray3ViewNoCache
     
     void deserialize_zfp_array();
 };

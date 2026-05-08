@@ -12,11 +12,15 @@
 
 #if !defined(__KERNEL_METAL__) && !defined(__KERNEL_ONEAPI__)
 #  ifdef WITH_NANOVDB
-#  include "kernel/util/nanovdb.h"
-#  include <nanovdb/NanoVDB.h>
+#    include "kernel/util/nanovdb.h"
+#    include <nanovdb/NanoVDB.h>
 #  endif
 #  ifdef WITH_ZFP_LOADER
-#  include <zfp/array3.hpp>
+#    ifdef __CUDA_ARCH__
+#      include "kernel/util/zfp/array3_device.cuh"
+#    else
+#      include <zfp/array3.hpp>
+#    endif
 #  endif
 #endif
 
@@ -827,7 +831,7 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     // Extract dimensions from transform translation (stored by RAWImageLoader)
     const size_t dimx = (size_t)tex.transform_3d.x.x;
     const size_t dimy = (size_t)tex.transform_3d.y.y;
-    const size_t dimz = (size_t)tex.transform_3d.z.z;
+    //const size_t dimz = (size_t)tex.transform_3d.z.z;
     
     // P is in index space after identity transform - compute array index
     const size_t ix = (size_t)(floorf(px));
@@ -858,9 +862,9 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     }
 
     // Extract dimensions from transform translation (stored by RAWImageLoader)
-    const size_t dimx = (size_t)tex.transform_3d.x.x;
-    const size_t dimy = (size_t)tex.transform_3d.y.y;
-    const size_t dimz = (size_t)tex.transform_3d.z.z;
+    //const size_t dimx = (size_t)tex.transform_3d.x.x;
+    //const size_t dimy = (size_t)tex.transform_3d.y.y;
+    //const size_t dimz = (size_t)tex.transform_3d.z.z;
 
     // P is in index space after identity transform - compute array index
     const size_t ix = (size_t)(floorf(px));
@@ -870,11 +874,52 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     //const size_t index = ix + iy * dimx + iz * dimx * dimy;
     //const float f = data[index];
 
-    // Cast data to zfp::array3f pointer
+#ifdef __CUDA_ARCH__
+    // Device code: Decompress ZFP block on-demand from serialized format
+    // Overhead: ~10 assignments + 1 cache-line read (amortized by L1 cache hits)
+    // Dominant cost: block decompression (~100-1000 ops)
+    
+    struct SerializableZFPData {
+        size_t placeholder_ptr;
+        uint32_t dims_x, dims_y, dims_z;
+        uint32_t block_dims_x, block_dims_y, block_dims_z;
+        uint32_t maxbits;
+        size_t total_blocks;
+        uint32_t fixed_rate;
+    };
+    
+    const SerializableZFPData* __restrict__ header = 
+        (const SerializableZFPData*)info.data;
+    
+    typedef unsigned long long Word;
+    Word* compressed_data_ptr = (Word*)((char*)info.data + header->placeholder_ptr);
+    
+    // Populate store structure (optimized: compiler will likely keep in registers)
+    cuZFP::DeviceBlockStore3<float, 64> store;
+    store.d_compressed_data = compressed_data_ptr;
+    store.d_block_offsets = nullptr;
+    store.dims = make_uint3(header->dims_x, header->dims_y, header->dims_z);
+    store.block_dims = make_uint3(header->block_dims_x, header->block_dims_y, header->block_dims_z);
+    store.maxbits = header->maxbits;
+    store.total_blocks = header->total_blocks;
+    store.fixed_rate = (header->fixed_rate != 0);
+    
+    // Compute block index and local coordinates inline (reduces function call overhead)
+    const size_t bx = ix / 4;
+    const size_t by = iy / 4;
+    const size_t bz = iz / 4;
+    const size_t block_idx = bx + header->block_dims_x * (by + header->block_dims_y * bz);
+    
+    const uint local_idx = (ix & 3) + 4 * ((iy & 3) + 4 * (iz & 3));
+    
+    // Decompress the block containing our voxel (this is the expensive part)
+    cuZFP::NoCache<float, 64> cache;
+    const float f = cache.get(store, block_idx, local_idx);
+#else
+    // Host code: use standard ZFP library
     zfp::array3f *array = (zfp::array3f *)info.data;
-
-    // Access compressed array and return value
     const float f = (*array)(ix, iy, iz);
+#endif
     return make_float4(f, f, f, 1.0f);
   }
 #endif

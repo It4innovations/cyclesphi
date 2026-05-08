@@ -602,6 +602,15 @@ if(WITH_ZFP_LOADER)
 
   if(zfp_FOUND)
     message(STATUS "Found ZFP: ${zfp_DIR}")
+    
+    # Extract include directories from zfp::zfp target
+    if(TARGET zfp::zfp)
+      get_target_property(ZFP_INCLUDE_DIR zfp::zfp INTERFACE_INCLUDE_DIRECTORIES)
+      if(ZFP_INCLUDE_DIR)
+        set(ZFP_INCLUDE_DIRS ${ZFP_INCLUDE_DIR})
+      endif()
+    endif()
+    
     if(WIN32)
       add_bundled_libraries(zfp/bin)
     else()

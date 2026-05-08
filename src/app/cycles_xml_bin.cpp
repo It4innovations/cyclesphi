@@ -894,6 +894,12 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
             continue;
           }
 
+          bool use_gpu = false;
+          const xml_attribute attr_zfp_use_gpu = node_attribute.attribute("zfp_use_gpu");
+          if (attr_zfp_use_gpu) {
+            use_gpu = std::stoi(attr_zfp_use_gpu.value()) != 0;
+          }
+
           vector<int> zfp_dim;
           xml_read_int_array(zfp_dim, node_attribute, "zfp_dim");
           int3 dim3;
@@ -952,7 +958,7 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           // TODO: using zfp read
           //ZFPImageLoader(vector<char> & g, int3 d, float3 s, int3 bmin, int3 bmax, size_t cache_size_bytes);
           unique_ptr<ImageLoader> loader = make_unique<ZFPImageLoader>(
-              zfp_data, dim3, scal3, bbox_min, bbox_max, cache_size_bytes);
+              zfp_data, dim3, scal3, bbox_min, bbox_max, cache_size_bytes, use_gpu);
 
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);
