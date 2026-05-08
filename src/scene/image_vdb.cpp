@@ -1035,9 +1035,25 @@ bool RAWImageLoader::load_metadata(ImageMetaData& metadata)
         }
     }    
 
-    metadata.transform_3d = ccl::transform_scale(ccl::make_float3((float)dimx, (float)dimy, (float)dimz));
-    //metadata.transform_3d = ccl::transform_scale(ccl::make_float3(scal_x / (float)dimx, scal_y / (float)dimy, scal_z / (float)dimz));
-    metadata.use_transform_3d = false;
+    // Use identity transform like VDBImageLoader for consistent coordinate space
+    // Store dimensions in translation components for kernel access
+    metadata.transform_3d = ccl::transform_identity();
+    metadata.transform_3d.x.w = (float)dimx;
+    metadata.transform_3d.y.w = (float)dimy;
+    metadata.transform_3d.z.w = (float)dimz;
+    metadata.use_transform_3d = true;
+
+    printf("RAWImageLoader::load_metadata - Transform Matrix (dims: %d x %d x %d):\n", dimx, dimy, dimz);
+    printf("  metadata.transform_3d:\n");
+    printf("    [%9f %9f %9f %9f]\n", 
+           metadata.transform_3d.x.x, metadata.transform_3d.x.y, 
+           metadata.transform_3d.x.z, metadata.transform_3d.x.w);
+    printf("    [%9f %9f %9f %9f]\n", 
+           metadata.transform_3d.y.x, metadata.transform_3d.y.y, 
+           metadata.transform_3d.y.z, metadata.transform_3d.y.w);
+    printf("    [%9f %9f %9f %9f]\n", 
+           metadata.transform_3d.z.x, metadata.transform_3d.z.y, 
+           metadata.transform_3d.z.z, metadata.transform_3d.z.w);
 
     return true;
 }
