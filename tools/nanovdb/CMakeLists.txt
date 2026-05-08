@@ -711,6 +711,54 @@ message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
 
 
 #####################################################################################
+##################openvdb_to_raw executable configuration##################
+# Create executable
+add_executable(openvdb_to_raw openvdb_to_raw.cpp)
+
+# Include directories
+target_include_directories(openvdb_to_raw PRIVATE
+    ${OPENVDB_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIRS}
+)
+
+# Add NanoVDB include directory if specified separately
+if(NANOVDB_INCLUDE_DIR)
+    target_include_directories(openvdb_to_raw PRIVATE ${NANOVDB_INCLUDE_DIR})
+endif()
+
+# Link libraries
+target_link_libraries(openvdb_to_raw PRIVATE
+    ${OPENVDB_LIBRARY}
+    ${TBB_LIBRARY}
+)
+
+# Platform-specific linking
+if(UNIX AND NOT APPLE)
+    # Linux specific
+    target_link_libraries(openvdb_to_raw PRIVATE pthread dl)
+elseif(APPLE)
+    # macOS specific
+    target_link_libraries(openvdb_to_raw PRIVATE pthread)
+endif()
+
+# Set output directory
+set_target_properties(openvdb_to_raw PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Installation
+install(TARGETS openvdb_to_raw
+    RUNTIME DESTINATION bin
+)
+
+# Print configuration info
+message(STATUS "Building openvdb_to_raw")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID}")
+
+
+#####################################################################################
 ##################merge_vdb executable configuration##################
 # Create executable
 add_executable(merge_vdb merge_vdb.cpp)

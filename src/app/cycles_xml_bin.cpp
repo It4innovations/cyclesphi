@@ -897,8 +897,17 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
 
           file.close();
 
+          size_t cache_size_bytes = 0;
+          const xml_attribute attr_cache_size = node_attribute.attribute("cache_size");
+          if (!attr_cache_size) {
+            std::cerr << "Error: missing cache_size" << filename << std::endl;
+            continue;
+          }
+
+          cache_size_bytes = std::stoull(attr_cache_size.value());
+
           // TODO: using zfp read
-          unique_ptr<ImageLoader> loader = make_unique<ZFPImageLoader>(zfp_data);
+          unique_ptr<ImageLoader> loader = make_unique<ZFPImageLoader>(zfp_data, cache_size_bytes);
 
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);

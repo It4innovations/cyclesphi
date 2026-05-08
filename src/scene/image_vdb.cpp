@@ -116,6 +116,26 @@ bool VDBImageLoader::load_metadata(ImageMetaData &metadata)
   metadata.transform_3d = transform_inverse(index_to_object);
   metadata.use_transform_3d = true;
 
+  /* Print transform matrices */
+  printf("VDBImageLoader::load_metadata - Transform Matrices:\n");
+  printf("  index_to_object:\n");
+  printf("    [%9.6f %9.6f %9.6f %9.6f]\n", 
+         index_to_object[0][0], index_to_object[0][1], index_to_object[0][2], index_to_object[0][3]);
+  printf("    [%9.6f %9.6f %9.6f %9.6f]\n", 
+         index_to_object[1][0], index_to_object[1][1], index_to_object[1][2], index_to_object[1][3]);
+  printf("    [%9.6f %9.6f %9.6f %9.6f]\n", 
+         index_to_object[2][0], index_to_object[2][1], index_to_object[2][2], index_to_object[2][3]);
+  printf("  metadata.transform_3d:\n");
+  printf("    [%9.6f %9.6f %9.6f %9.6f]\n", 
+         metadata.transform_3d[0][0], metadata.transform_3d[0][1], 
+         metadata.transform_3d[0][2], metadata.transform_3d[0][3]);
+  printf("    [%9.6f %9.6f %9.6f %9.6f]\n", 
+         metadata.transform_3d[1][0], metadata.transform_3d[1][1], 
+         metadata.transform_3d[1][2], metadata.transform_3d[1][3]);
+  printf("    [%9.6f %9.6f %9.6f %9.6f]\n", 
+         metadata.transform_3d[2][0], metadata.transform_3d[2][1], 
+         metadata.transform_3d[2][2], metadata.transform_3d[2][3]);
+
   /* Only NanoGrid needed now, free OpenVDB grid. */
   grid.reset();
 
@@ -1015,9 +1035,9 @@ bool RAWImageLoader::load_metadata(ImageMetaData& metadata)
         }
     }    
 
-    metadata.transform_3d = ccl::transform_scale(ccl::make_float3(1.0f / (float)dimx, 1.0f / (float)dimy, 1.0f / (float)dimz));
+    metadata.transform_3d = ccl::transform_scale(ccl::make_float3((float)dimx, (float)dimy, (float)dimz));
     //metadata.transform_3d = ccl::transform_scale(ccl::make_float3(scal_x / (float)dimx, scal_y / (float)dimy, scal_z / (float)dimz));
-    metadata.use_transform_3d = true;
+    metadata.use_transform_3d = false;
 
     return true;
 }

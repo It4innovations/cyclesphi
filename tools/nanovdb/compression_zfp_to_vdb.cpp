@@ -105,26 +105,29 @@ std::vector<uchar> zfpCompressWithHeader(std::vector<float> &input)
 {
   // Create zfp::array3f with the data
   double rate = g_compressionRate * 8;  // Convert bytes to bits
-  size_t cache_size = 64 * 1024 * 1024;  // 64MB cache for compression
+  size_t cache_size = 1024;  // 64MB cache for compression
   
   std::cout << "Creating ZFP compressed array...\n";
   std::cout << "  Dimensions: " << g_dims.x << " x " << g_dims.y << " x " << g_dims.z << "\n";
   std::cout << "  Rate: " << rate << " bits/value\n";
   
   // Create array and populate it
-  zfp::array3f array(g_dims.x, g_dims.y, g_dims.z, rate, 0, cache_size);
-  
   std::cout << "Populating array...\n";
-  for (size_t z = 0; z < g_dims.z; ++z) {
-    for (size_t y = 0; y < g_dims.y; ++y) {
-      for (size_t x = 0; x < g_dims.x; ++x) {
-        array(x, y, z) = input[x + g_dims.x * (y + g_dims.y * z)];
-      }
-    }
-  }
+  zfp::array3f array(g_dims.x, g_dims.y, g_dims.z, rate, input.data(), cache_size);  
   
-  // Flush cache to compress all data
-  array.flush_cache();
+  //for (size_t z = 0; z < g_dims.z; ++z) {
+  //  for (size_t y = 0; y < g_dims.y; ++y) {
+  //    for (size_t x = 0; x < g_dims.x; ++x) {
+  //      array(x, y, z) = input[x + g_dims.x * (y + g_dims.y * z)];
+  //    }
+  //  }
+  //}
+  //
+  //// Flush cache to compress all data
+  //array.flush_cache();
+  //  Compress from contiguous row-major input:
+  // index = x + nx * (y + ny * z)
+  //array.set(input.data());
   
   // Get compressed data and size
   size_t compressed_size = array.compressed_size();
