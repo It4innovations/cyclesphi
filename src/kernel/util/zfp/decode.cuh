@@ -90,35 +90,36 @@ public:
 
 
   // note this assumes that n_bits is <= 64
-  inline __device__ 
+  inline __device__
   uint64 read_bits(const uint &n_bits)
   {
-    uint64 bits; 
+    uint64 bits;
     // rem bits will always be positive
     int rem_bits = sizeof(Word) * 8 - m_current_bit;
-     
-    int first_read = min(rem_bits, n_bits);
-    // first mask 
-    Word mask = ((Word)1<<((first_read)))-1;
+
+    int first_read = min(rem_bits, (int)n_bits);
+    // Build mask safely: (1 << 64) is UB on CPU and wraps to (1 << 0) on CUDA
+    // because CUDA masks shift amounts to 6 bits. Use the all-ones form instead.
+    Word mask = (first_read < (int)(sizeof(Word) * 8))
+                    ? (((Word)1 << first_read) - 1)
+                    : ~(Word)0;
     bits = m_buffer & mask;
     m_buffer >>= n_bits;
     m_current_bit += first_read;
     int next_read = 0;
-    if(n_bits >= rem_bits) 
+    if((int)n_bits >= rem_bits)
     {
       ++m_words;
       m_buffer = *m_words;
       m_current_bit = 0;
-      next_read = n_bits - first_read; 
+      next_read = n_bits - first_read;
     }
-   
-    // this is basically a no-op when first read contained 
-    // all the bits. TODO: if we have aligned reads, this could 
-    // be a conditional without divergence
+
+    // next_read is always < 64, so the shift is safe here
     mask = ((Word)1<<((next_read)))-1;
     bits += (m_buffer & mask) << first_read;
     m_buffer >>= next_read;
-    m_current_bit += next_read; 
+    m_current_bit += next_read;
     return bits;
   }
 

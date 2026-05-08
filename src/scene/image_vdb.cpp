@@ -1258,7 +1258,11 @@ void ZFPImageLoader::deserialize_zfp_array()
             zfp_data->dims_y = (uint32_t)dim.y;
             zfp_data->dims_z = (uint32_t)dim.z;
             
-            uint32_t maxbits_val = (uint32_t)(rate * 64 + 0.5);
+            // Use the actual rate from the array (ZFP rounds maxbits up to the next
+            // multiple of 64 for word-aligned random access when align=true).
+            // Using the raw file rate would give the wrong block offsets for any
+            // non-integer rate (e.g., 4.5 -> raw=288 bits, actual=320 bits/block).
+            uint32_t maxbits_val = (uint32_t)(zfp_array->rate() * 64 + 0.5);
             zfp_data->maxbits = maxbits_val;
             zfp_data->fixed_rate = 1;
             
