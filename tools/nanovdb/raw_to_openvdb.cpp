@@ -95,7 +95,7 @@ openvdb::FloatGrid::Ptr convertDenseArrayToVDB(const std::vector<float> &data,
     std::cout << "\nConverting dense array to OpenVDB..." << std::endl;
     
     // Create a dense grid accessor from the data
-    openvdb::tools::Dense<const float> dense(bbox, data.data());
+    openvdb::tools::Dense<const float, openvdb::tools::LayoutXYZ> dense(bbox, data.data());
     
     // Create an empty FloatGrid
     openvdb::FloatGrid::Ptr grid = openvdb::FloatGrid::create();

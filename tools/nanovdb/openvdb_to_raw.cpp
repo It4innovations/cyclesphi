@@ -8,6 +8,10 @@
 #include <sstream>
 #include <algorithm>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 /**
  * Generates output filename with dimensions and type.
  * Format: volume_gridname_dimX_dimY_dimZ_float.raw
@@ -82,7 +86,7 @@ bool saveRawData(const std::string &filename, const std::vector<float> &data)
 }
 
 /**
- * Converts an OpenVDB FloatGrid to a dense array.
+ * Converts an OpenVDB FloatGrid to a dense array using copyToDense.
  * 
  * @param grid The input FloatGrid
  * @param data Output vector that will contain the dense data
@@ -117,11 +121,93 @@ bool convertVDBGridToDenseArray(openvdb::FloatGrid::Ptr grid,
     data.resize(numElements);
     
     // Create a dense grid accessor
-    openvdb::tools::Dense<float> dense(bbox, data.data());
+    openvdb::tools::Dense<float, openvdb::tools::LayoutXYZ> dense(bbox, data.data());
     
     // Copy VDB grid to dense array
     std::cout << "Copying from sparse VDB to dense array..." << std::endl;
     openvdb::tools::copyToDense(*grid, dense);
+    
+    // Print some statistics
+    float minVal = data[0], maxVal = data[0];
+    double sum = 0.0;
+    size_t nonZeroCount = 0;
+    
+    for (size_t i = 0; i < numElements; ++i) {
+        float val = data[i];
+        if (val < minVal) minVal = val;
+        if (val > maxVal) maxVal = val;
+        sum += val;
+        if (val != 0.0f) nonZeroCount++;
+    }
+    double avg = sum / numElements;
+    
+    std::cout << "\nData statistics:" << std::endl;
+    std::cout << "  Min: " << minVal << std::endl;
+    std::cout << "  Max: " << maxVal << std::endl;
+    std::cout << "  Avg: " << avg << std::endl;
+    std::cout << "  Non-zero voxels: " << nonZeroCount << " (" 
+              << (100.0 * nonZeroCount / numElements) << "%)" << std::endl;
+    
+    return true;
+}
+
+/**
+ * Converts an OpenVDB FloatGrid to a dense array using manual loops and getValue().
+ * 
+ * @param grid The input FloatGrid
+ * @param data Output vector that will contain the dense data
+ * @param bbox Output bounding box of the active region
+ * @return true if successful, false otherwise
+ */
+bool convertVDBGridToDenseArrayManual(openvdb::FloatGrid::Ptr grid,
+                                      std::vector<float> &data,
+                                      openvdb::CoordBBox &bbox)
+{
+    std::cout << "\nConverting OpenVDB grid to dense array (manual method)..." << std::endl;
+    
+    // Get the active voxel bounding box
+    bbox = grid->evalActiveVoxelBoundingBox();
+    
+    if (bbox.empty()) {
+        std::cerr << "Error: Grid has no active voxels!" << std::endl;
+        return false;
+    }
+    
+    std::cout << "Bounding box: min=" << bbox.min() << ", max=" << bbox.max() << std::endl;
+    
+    // Calculate dimensions
+    openvdb::Coord dims = bbox.extents();
+    size_t numElements = dims.x() * dims.y() * dims.z();
+    
+    std::cout << "Dimensions: " << dims.x() << " x " << dims.y() << " x " << dims.z() << std::endl;
+    std::cout << "Total voxels: " << numElements << std::endl;
+    std::cout << "Active voxels: " << grid->activeVoxelCount() << std::endl;
+    
+    // Allocate output buffer
+    data.resize(numElements);
+    
+    // Get accessor for faster lookups
+    auto accessor = grid->getAccessor();
+    
+    // Copy VDB grid to dense array using manual loops
+    std::cout << "Copying from sparse VDB to dense array using getValue()..." << std::endl;
+    
+#ifdef _OPENMP
+    std::cout << "Using OpenMP with " << omp_get_max_threads() << " threads" << std::endl;
+#endif
+    
+    openvdb::Coord minCoord = bbox.min();
+    
+#pragma omp parallel for collapse(3)
+    for (int z = 0; z < dims.z(); ++z) {
+        for (int y = 0; y < dims.y(); ++y) {
+            for (int x = 0; x < dims.x(); ++x) {
+                openvdb::Coord coord(minCoord.x() + x, minCoord.y() + y, minCoord.z() + z);
+                size_t index = z * (dims.y() * dims.x()) + y * dims.x() + x;
+                data[index] = accessor.getValue(coord);
+            }
+        }
+    }
     
     // Print some statistics
     float minVal = data[0], maxVal = data[0];
@@ -231,16 +317,17 @@ openvdb::FloatGrid::Ptr loadVDBGrid(const std::string &filename, const std::stri
 /**
  * Main function - converts OpenVDB format to raw binary float data.
  * 
- * Usage: openvdb_to_raw <input.vdb> <output_base> [grid_name]
+ * Usage: openvdb_to_raw <input.vdb> <output_base> [grid_name] [method]
  */
 int main(int argc, char* argv[])
 {
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <input.vdb> <output_base> [grid_name]\n";
+        std::cerr << "Usage: " << argv[0] << " <input.vdb> <output_base> [grid_name] [method]\n";
         std::cerr << "\n";
         std::cerr << "  input.vdb   - Input OpenVDB file\n";
         std::cerr << "  output_base - Output base name (dimensions and type will be appended)\n";
         std::cerr << "  grid_name   - Optional: specific grid name to export (default: first FloatGrid)\n";
+        std::cerr << "  method      - Optional: 'dense' (default, fast) or 'manual' (slower, uses getValue())\n";
         std::cerr << "\n";
         std::cerr << "Output filename format: output_base_gridname_dimX_dimY_dimZ_float.raw\n";
         std::cerr << "\n";
@@ -248,14 +335,15 @@ int main(int argc, char* argv[])
         std::cerr << "  " << argv[0] << " data.vdb volume\n";
         std::cerr << "  Output: volume_density_512_512_512_float.raw\n";
         std::cerr << "\n";
-        std::cerr << "  " << argv[0] << " data.vdb volume density\n";
-        std::cerr << "  Output: volume_density_512_512_512_float.raw\n";
+        std::cerr << "  " << argv[0] << " data.vdb volume density manual\n";
+        std::cerr << "  Output: volume_density_512_512_512_float.raw (using manual method)\n";
         return EXIT_FAILURE;
     }
 
     const std::string inputFile = argv[1];
     const std::string outputBase = argv[2];
     const std::string gridName = (argc >= 4) ? argv[3] : "";
+    const std::string method = (argc >= 5) ? argv[4] : "dense";
     
     std::cout << "============================================\n";
     std::cout << "OpenVDB to Raw Converter\n";
@@ -265,6 +353,7 @@ int main(int argc, char* argv[])
     if (!gridName.empty()) {
         std::cout << "Grid:   " << gridName << "\n";
     }
+    std::cout << "Method: " << method << "\n";
     std::cout << "============================================\n\n";
 
     try {
@@ -280,7 +369,15 @@ int main(int argc, char* argv[])
         // Convert to dense array
         std::vector<float> data;
         openvdb::CoordBBox bbox;
-        if (!convertVDBGridToDenseArray(grid, data, bbox)) {
+        bool success;
+        
+        if (method == "manual") {
+            success = convertVDBGridToDenseArrayManual(grid, data, bbox);
+        } else {
+            success = convertVDBGridToDenseArray(grid, data, bbox);
+        }
+        
+        if (!success) {
             return EXIT_FAILURE;
         }
         

@@ -876,6 +876,49 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           vector<char> zfp_data;
           std::string filename = attr_buffer.value();
 
+          const xml_attribute attr_zfp_dim = node_attribute.attribute("zfp_dim");
+          if (!attr_zfp_dim) {
+            std::cerr << "Error: missing zfp_dim" << filename << std::endl;
+            continue;
+          }
+
+          const xml_attribute attr_zfp_scal = node_attribute.attribute("zfp_scal");
+          if (!attr_zfp_scal) {
+            std::cerr << "Error: missing zfp_scal" << filename << std::endl;
+            continue;
+          }
+
+          const xml_attribute attr_zfp_bbox = node_attribute.attribute("zfp_bbox");
+          if (!attr_zfp_bbox) {
+            std::cerr << "Error: missing zfp_bbox" << filename << std::endl;
+            continue;
+          }
+
+          vector<int> zfp_dim;
+          xml_read_int_array(zfp_dim, node_attribute, "zfp_dim");
+          int3 dim3;
+          dim3.x = zfp_dim[0];
+          dim3.y = zfp_dim[1];
+          dim3.z = zfp_dim[2];
+
+          vector<float> zfp_scal;
+          xml_read_float_array(zfp_scal, node_attribute, "zfp_scal");
+          float3 scal3;
+          scal3.x = zfp_scal[0];
+          scal3.y = zfp_scal[1];
+          scal3.z = zfp_scal[2];
+
+          vector<int> zfp_bbox;
+          xml_read_int_array(zfp_bbox, node_attribute, "zfp_bbox");
+          int3 bbox_min;
+          bbox_min.x = zfp_bbox[0];
+          bbox_min.y = zfp_bbox[1];
+          bbox_min.z = zfp_bbox[2];
+          int3 bbox_max;
+          bbox_max.x = zfp_bbox[3];
+          bbox_max.y = zfp_bbox[4];
+          bbox_max.z = zfp_bbox[5];
+
           // Open file in binary mode and move pointer to end to get file size
           std::ifstream file(filename, std::ios::binary | std::ios::ate);
 
@@ -907,7 +950,8 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           cache_size_bytes = std::stoull(attr_cache_size.value());
 
           // TODO: using zfp read
-          unique_ptr<ImageLoader> loader = make_unique<ZFPImageLoader>(zfp_data, cache_size_bytes);
+          unique_ptr<ImageLoader> loader = make_unique<ZFPImageLoader>(
+              zfp_data, zfp_dim, zfp_scal, zfp_bbox, cache_size_bytes);
 
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);
@@ -921,39 +965,21 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           vector<char> raw_data;
           std::string filename = attr_buffer.value();
 
-          const xml_attribute attr_raw_width = node_attribute.attribute("raw_dx");
-          if (!attr_raw_width) {
-            std::cerr << "Error: missing raw_dx" << filename << std::endl;
+          const xml_attribute attr_raw_dim = node_attribute.attribute("raw_dim");
+          if (!attr_raw_dim) {
+            std::cerr << "Error: missing raw_dim" << filename << std::endl;
             continue;
           }
 
-          const xml_attribute attr_raw_height = node_attribute.attribute("raw_dy");
-          if (!attr_raw_height) {
-            std::cerr << "Error: missing raw_dy" << filename << std::endl;
+          const xml_attribute attr_raw_scal = node_attribute.attribute("raw_scal");
+          if (!attr_raw_scal) {
+            std::cerr << "Error: missing raw_scal" << filename << std::endl;
             continue;
           }
 
-          const xml_attribute attr_raw_depth = node_attribute.attribute("raw_dz");
-          if (!attr_raw_depth) {
-            std::cerr << "Error: missing raw_dz" << filename << std::endl;
-            continue;
-          }
-
-          const xml_attribute attr_raw_scal_x = node_attribute.attribute("scal_x");
-          if (!attr_raw_scal_x) {
-            std::cerr << "Error: missing scal_x" << filename << std::endl;
-            continue;
-          }
-
-          const xml_attribute attr_raw_scal_y = node_attribute.attribute("scal_y");
-          if (!attr_raw_scal_y) {
-            std::cerr << "Error: missing scal_y" << filename << std::endl;
-            continue;
-          }
-
-          const xml_attribute attr_raw_scal_z = node_attribute.attribute("scal_z");
-          if (!attr_raw_scal_z) {
-            std::cerr << "Error: missing scal_z" << filename << std::endl;
+          const xml_attribute attr_raw_bbox = node_attribute.attribute("raw_bbox");
+          if (!attr_raw_bbox) {
+            std::cerr << "Error: missing raw_bbox" << filename << std::endl;
             continue;
           }
 
@@ -969,13 +995,30 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
             continue;
           }
 
-          int width = std::stoi(attr_raw_width.value());
-          int height = std::stoi(attr_raw_height.value());
-          int depth = std::stoi(attr_raw_depth.value());
+          vector<int> raw_dim;          
+          xml_read_int_array(raw_dim, node_attribute, "raw_dim");
+          int3 dim3;
+          dim3.x = raw_dim[0];
+          dim3.y = raw_dim[1];
+          dim3.z = raw_dim[2];
 
-          float scal_x = std::stof(attr_raw_scal_x.value());
-          float scal_y = std::stof(attr_raw_scal_y.value());
-          float scal_z = std::stof(attr_raw_scal_z.value());
+          vector<float> raw_scal;
+          xml_read_float_array(raw_scal, node_attribute, "raw_scal");
+          float3 scal3;
+          scal3.x = raw_scal[0];
+          scal3.y = raw_scal[1];
+          scal3.z = raw_scal[2];
+
+          vector<int> raw_bbox;
+          xml_read_int_array(raw_bbox, node_attribute, "raw_bbox");
+          int3 bbox_min;
+          bbox_min.x = raw_bbox[0];
+          bbox_min.y = raw_bbox[1];
+          bbox_min.z = raw_bbox[2];
+          int3 bbox_max;
+          bbox_max.x = raw_bbox[3];
+          bbox_max.y = raw_bbox[4];
+          bbox_max.z = raw_bbox[5];
 
           std::string sraw_type(attr_raw_type.value());
           int channels = std::stoi(attr_raw_channels.value());
@@ -1015,8 +1058,8 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
             file.close();
           }
 
-          unique_ptr<ImageLoader> loader = make_unique<RAWImageLoader>(
-              raw_data, width, height, depth, scal_x, scal_y, scal_z, type, channels);
+          //vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, RAWImageLoaderType t, int c
+          unique_ptr<ImageLoader> loader = make_unique<RAWImageLoader>(raw_data, dim3, scal3, bbox_min, bbox_max, type, channels);
 
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);

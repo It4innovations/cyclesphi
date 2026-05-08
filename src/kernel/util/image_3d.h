@@ -749,46 +749,6 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates_vec4(
 // ============================================================================
 // ZFP Compressed Format Support
 // ============================================================================
-
-#ifdef WITH_ZFP_LOADER
-
-#if defined(__KERNEL_METAL__)
-template<typename OutT, typename T>
-__attribute__((noinline)) OutT kernel_tex_image_interp_zfp(
-    const ccl_global KernelImageInfo &info,
-    const float x, const float y, const float z,
-    const uint /*interpolation*/)
-#else
-template<typename OutT, typename T>
-ccl_device_noinline OutT kernel_tex_image_interp_zfp(
-    const ccl_global KernelImageInfo &info,
-    const float x, const float y, const float z,
-    const uint /*interpolation*/)
-#endif
-{
-  // Cast data to zfp::array3f pointer
-  zfp::array3f* array = (zfp::array3f*)info.data;
-  
-  // Compute integer voxel coordinates
-  const int ix = (int)floorf(x);
-  const int iy = (int)floorf(y);
-  const int iz = (int)floorf(z);
-  
-  // Bounds check
-  if (ix < 0 || iy < 0 || iz < 0 || 
-      ix >= (int)array->size_x() || 
-      iy >= (int)array->size_y() || 
-      iz >= (int)array->size_z()) {
-    return OutT(0.0f);
-  }
-  
-  // Access compressed array and return value
-  const float value = (*array)(ix, iy, iz);
-  return OutT(value);
-}
-
-#endif /* WITH_ZFP_LOADER */
-
 ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
                                          ccl_private ShaderData *sd,
                                          const int image_texture_id,
@@ -849,40 +809,72 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     return zero_float4();
   }
   if (data_type == IMAGE_DATA_TYPE_RAW3D_FLOAT) {
+    float px = P.x - tex.transform_3d.x.w;
+    float py = P.y - tex.transform_3d.y.w;
+    float pz = P.z - tex.transform_3d.z.w;
+
+    if (px < 0.0f || py < 0.0f || pz < 0.0f)
+      return zero_float4();
+
+    if (floorf(px) >= tex.transform_3d.x.x || 
+        floorf(py) >= tex.transform_3d.y.y || 
+        floorf(pz) >= tex.transform_3d.z.z) {
+      return zero_float4();
+    }
+
     float* data = (float *)info.data;
+
     // Extract dimensions from transform translation (stored by RAWImageLoader)
-    const size_t dimx = (size_t)tex.transform_3d.x.w;
-    const size_t dimy = (size_t)tex.transform_3d.y.w;
-    const size_t dimz = (size_t)tex.transform_3d.z.w;
+    const size_t dimx = (size_t)tex.transform_3d.x.x;
+    const size_t dimy = (size_t)tex.transform_3d.y.y;
+    const size_t dimz = (size_t)tex.transform_3d.z.z;
     
     // P is in index space after identity transform - compute array index
-    const size_t ix = (size_t)(floorf(P.x));
-    const size_t iy = (size_t)(floorf(P.y));
-    const size_t iz = (size_t)(floorf(P.z));
+    const size_t ix = (size_t)(floorf(px));
+    const size_t iy = (size_t)(floorf(py));
+    const size_t iz = (size_t)(floorf(pz));
     
     const size_t index = ix + iy * dimx + iz * dimx * dimy;
     const float f = data[index];
     return make_float4(f, f, f, 1.0f);
   }
   if (data_type == IMAGE_DATA_TYPE_RAW3D_FLOAT3) {
-    float3* data = (float3 *)info.data;
-    // Extract dimensions from transform translation (stored by RAWImageLoader)
-    const size_t dimx = (size_t)tex.transform_3d.x.w;
-    const size_t dimy = (size_t)tex.transform_3d.y.w;
-    const size_t dimz = (size_t)tex.transform_3d.z.w;
-    
-    // P is in index space after identity transform - compute array index
-    const size_t ix = (size_t)(floorf(P.x));
-    const size_t iy = (size_t)(floorf(P.y));
-    const size_t iz = (size_t)(floorf(P.z));
-    
-    const size_t index = ix + iy * dimx + iz * dimx * dimy;
-    const float3 f = data[index];
-    return make_float4(f, 1.0f);
+    //TODO
+    return zero_float4();
   }
 #ifdef WITH_ZFP_LOADER
   if (data_type == IMAGE_DATA_TYPE_ZFP_FLOAT) {
-    const float f = kernel_tex_image_interp_zfp<float, float>(info, P.x, P.y, P.z, (uint)interpolation);
+    float px = P.x - tex.transform_3d.x.w;
+    float py = P.y - tex.transform_3d.y.w;
+    float pz = P.z - tex.transform_3d.z.w;
+
+    if (px < 0.0f || py < 0.0f || pz < 0.0f)
+      return zero_float4();
+
+    if (floorf(px) >= tex.transform_3d.x.x || floorf(py) >= tex.transform_3d.y.y ||
+        floorf(pz) >= tex.transform_3d.z.z)
+    {
+      return zero_float4();
+    }
+
+    // Extract dimensions from transform translation (stored by RAWImageLoader)
+    const size_t dimx = (size_t)tex.transform_3d.x.x;
+    const size_t dimy = (size_t)tex.transform_3d.y.y;
+    const size_t dimz = (size_t)tex.transform_3d.z.z;
+
+    // P is in index space after identity transform - compute array index
+    const size_t ix = (size_t)(floorf(px));
+    const size_t iy = (size_t)(floorf(py));
+    const size_t iz = (size_t)(floorf(pz));
+
+    //const size_t index = ix + iy * dimx + iz * dimx * dimy;
+    //const float f = data[index];
+
+    // Cast data to zfp::array3f pointer
+    zfp::array3f *array = (zfp::array3f *)info.data;
+
+    // Access compressed array and return value
+    const float f = (*array)(ix, iy, iz);
     return make_float4(f, f, f, 1.0f);
   }
 #endif

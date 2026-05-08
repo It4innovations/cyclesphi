@@ -207,7 +207,7 @@ bool convertVDBToDenseArray(openvdb::FloatGrid::Ptr grid, std::vector<float> &ou
     outData.resize(totalVoxels);
     
     // Create a dense grid accessor
-    openvdb::tools::Dense<float> dense(bbox, outData.data());
+    openvdb::tools::Dense<float, openvdb::tools::LayoutXYZ> dense(bbox, outData.data());
     
     // Copy VDB sparse data to dense array
     std::cout << "Converting VDB to dense array..." << std::endl;
@@ -229,7 +229,7 @@ openvdb::FloatGrid::Ptr convertDenseArrayToVDB(const std::vector<float> &data,
     std::cout << "Converting dense array back to VDB..." << std::endl;
     
     // Create a dense grid accessor from the data
-    openvdb::tools::Dense<const float> dense(bbox, data.data());
+    openvdb::tools::Dense<const float, openvdb::tools::LayoutXYZ> dense(bbox, data.data());
     
     // Create an empty FloatGrid
     openvdb::FloatGrid::Ptr grid = openvdb::FloatGrid::create();

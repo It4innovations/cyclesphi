@@ -74,7 +74,7 @@ openvdb::FloatGrid::Ptr downsampleGrid(openvdb::FloatGrid::Ptr inputGrid,
     
     // Step 1: Copy input grid to dense array
     std::cout << "Copying input grid to dense array..." << std::endl;
-    openvdb::tools::Dense<float> inputDense(bbox, inputGrid->background());
+    openvdb::tools::Dense<float, openvdb::tools::LayoutXYZ> inputDense(bbox, inputGrid->background());
     openvdb::tools::copyToDense(*inputGrid, inputDense);
     
     // Get pointer to input dense data
@@ -84,7 +84,7 @@ openvdb::FloatGrid::Ptr downsampleGrid(openvdb::FloatGrid::Ptr inputGrid,
     std::cout << "Creating downsampled dense array..." << std::endl;
     openvdb::CoordBBox outputBBox(openvdb::Coord(0, 0, 0), 
                                    openvdb::Coord(newDimX - 1, newDimY - 1, newDimZ - 1));
-    openvdb::tools::Dense<float> outputDense(outputBBox, inputGrid->background());
+    openvdb::tools::Dense<float, openvdb::tools::LayoutXYZ> outputDense(outputBBox, inputGrid->background());
     float* outputData = outputDense.data();
     
     // Step 3: Downsample using OpenMP
@@ -192,7 +192,7 @@ openvdb::FloatGrid::Ptr cutGrid(openvdb::FloatGrid::Ptr inputGrid,
     
     // Create dense grid to hold the cut region
     std::cout << "Copying region to dense grid..." << std::endl;
-    openvdb::tools::Dense<float> dense(bbox, inputGrid->background());
+    openvdb::tools::Dense<float, openvdb::tools::LayoutXYZ> dense(bbox, inputGrid->background());
     openvdb::tools::copyToDense(*inputGrid, dense);
     
     std::cout << "Creating output grid from dense data..." << std::endl;

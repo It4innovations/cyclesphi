@@ -205,7 +205,16 @@ bool VDBImageLoader::is_simple_mesh() const
 void VDBImageLoader::get_bbox(int3& min_bbox, int3& max_bbox)
 {
 #ifdef WITH_OPENVDB  
-    auto bbox = grid->evalActiveVoxelBoundingBox();
+    //auto bbox = grid->evalActiveVoxelBoundingBox();
+  
+    //auto grid_bbox_min = bbox.min();
+    //auto grid_bbox_max = bbox.max();
+
+    //min_bbox = make_int3(grid_bbox_min.x(), grid_bbox_min.y(), grid_bbox_min.z());
+    //max_bbox = make_int3(grid_bbox_max.x(), grid_bbox_max.y(), grid_bbox_max.z());
+    const nanovdb::NanoGrid<float> *grid = nanogrid.grid<float>();
+    auto bbox = grid->indexBBox();
+
     auto grid_bbox_min = bbox.min();
     auto grid_bbox_max = bbox.max();
 
@@ -217,8 +226,12 @@ void VDBImageLoader::get_bbox(int3& min_bbox, int3& max_bbox)
 float3 VDBImageLoader::index_to_world(float3 in)
 {
 #ifdef WITH_OPENVDB  
-    openvdb::Vec3d p = grid->indexToWorld(openvdb::Vec3d(in[0], in[1], in[2]));
-    return make_float3((float)p[0], (float)p[1], (float)p[2]);
+    //openvdb::Vec3d p = grid->indexToWorld(openvdb::Vec3d(in[0], in[1], in[2]));
+    //return make_float3((float)p[0], (float)p[1], (float)p[2]);
+
+    const nanovdb::NanoGrid<float> *grid = nanogrid.grid<float>();
+    nanovdb::Vec3d p = grid->indexToWorld(nanovdb::Vec3d(in[0], in[1], in[2]));
+      return make_float3((float)p[0], (float)p[1], (float)p[2]);
 #else
     return make_float3(0, 0, 0);
 #endif    
@@ -1001,8 +1014,9 @@ float3 NanoVDBDerivatesImageLoader::index_to_world(float3 in)
 
 #endif
 
-RAWImageLoader::RAWImageLoader(vector<char> &g, int dx, int dy, int dz, float sx, float sy, float sz, RAWImageLoaderType t, int c)
-    : grid(std::move(g)), dimx(dx), dimy(dy), dimz(dz), scal_x(sx), scal_y(sy), scal_z(sz), raw_type(t), channels(c), VDBImageLoader("")
+//RAWImageLoader(vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, RAWImageLoaderType t, int c);
+RAWImageLoader::RAWImageLoader(vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, RAWImageLoaderType t, int c)
+    : grid(std::move(g)), dim(d), scale(s), bbox_min(bmin), bbox_max(bmax), raw_type(t), channels(c), VDBImageLoader("")
 {
     printf("RAWImageLoader: size in bytes: %lld\n", grid.size());
 }
@@ -1014,9 +1028,9 @@ RAWImageLoader::~RAWImageLoader()
 bool RAWImageLoader::load_metadata(ImageMetaData& metadata)
 {
     metadata.channels = channels;
-    metadata.width = dimx;
-    metadata.height = dimy;
-    //metadata.depth = dimz;
+    metadata.width = dim.x;
+    metadata.height = dim.y;
+    //metadata.depth = dim.z;
 
     metadata.nanovdb_byte_size = grid.size();
 
@@ -1037,13 +1051,20 @@ bool RAWImageLoader::load_metadata(ImageMetaData& metadata)
 
     // Use identity transform like VDBImageLoader for consistent coordinate space
     // Store dimensions in translation components for kernel access
+    //ccl::Transform transform = transform_scale(1.0f / dimx, 1.0f / dimy, 1.0f / dimz);
+    //transform_inverse(transform);
     metadata.transform_3d = ccl::transform_identity();
-    metadata.transform_3d.x.w = (float)dimx;
-    metadata.transform_3d.y.w = (float)dimy;
-    metadata.transform_3d.z.w = (float)dimz;
-    metadata.use_transform_3d = true;
+    
+    metadata.transform_3d.x.x = (float)dim.x;
+    metadata.transform_3d.y.y = (float)dim.y;
+    metadata.transform_3d.z.z = (float)dim.z;
 
-    printf("RAWImageLoader::load_metadata - Transform Matrix (dims: %d x %d x %d):\n", dimx, dimy, dimz);
+    metadata.transform_3d.x.w = (float)bbox_min.x;
+    metadata.transform_3d.y.w = (float)bbox_min.y;
+    metadata.transform_3d.z.w = (float)bbox_min.z;
+    
+    metadata.use_transform_3d = false;
+
     printf("  metadata.transform_3d:\n");
     printf("    [%9f %9f %9f %9f]\n", 
            metadata.transform_3d.x.x, metadata.transform_3d.x.y, 
@@ -1076,7 +1097,7 @@ bool RAWImageLoader::equals(const ImageLoader& other) const
 {
     const RAWImageLoader& other_loader = (const RAWImageLoader&)other;
 
-    if (dimx != other_loader.dimx || dimy != other_loader.dimy || dimz != other_loader.dimz)
+    if (dim.x != other_loader.dim.x || dim.y != other_loader.dim.y || dim.z != other_loader.dim.z)
         return false;
 
     if (channels != other_loader.channels || raw_type != other_loader.raw_type)
@@ -1102,13 +1123,10 @@ bool RAWImageLoader::is_simple_mesh() const
     return true;
 }
 
-void RAWImageLoader::get_bbox(int3& min_bbox, int3& max_bbox)
+void RAWImageLoader::get_bbox(int3& bmin, int3& bmax)
 {
-    min_bbox = make_int3(0, 0, 0);
-    max_bbox = make_int3(dimx - 1, dimy - 1, dimz - 1);
-
-    //min_bbox = make_int3(-dimx / 2, -dimy / 2, -dimz / 2);
-    //max_bbox = make_int3(dimx / 2 - 1, dimy / 2 - 1, dimz / 2 - 1);
+    bmin = bbox_min;
+    bmax = bbox_max;
 }
 
 float3 RAWImageLoader::index_to_world(float3 in)
@@ -1117,9 +1135,11 @@ float3 RAWImageLoader::index_to_world(float3 in)
 }
 
 #ifdef WITH_ZFP_LOADER
-ZFPImageLoader::ZFPImageLoader(vector<char> &g, size_t cache_size_bytes)
-    : zfp_data(std::move(g)), VDBImageLoader(""), zfp_array(nullptr), nx(0), ny(0), nz(0),
-      cache_size(cache_size_bytes), spacing_x(1.0f), spacing_y(1.0f), spacing_z(1.0f)
+//ZFPImageLoader(vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, size_t cache_size_bytes);
+ZFPImageLoader::ZFPImageLoader(
+    vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, size_t cache_size_bytes)
+    : zfp_data(std::move(g)), VDBImageLoader(""), zfp_array(nullptr), dim(d), scale(s), bbox_min(bmin), bbox_max(bmax),
+      cache_size(cache_size_bytes)
 {
     printf("ZFPImageLoader: size in bytes: %lld\n", zfp_data.size());
     printf("ZFPImageLoader: cache size: %zu bytes\n", cache_size);
@@ -1153,16 +1173,24 @@ void ZFPImageLoader::deserialize_zfp_array()
     }
     
     const size_t* header = reinterpret_cast<const size_t*>(zfp_data.data());
-    nx = header[0];
-    ny = header[1];
-    nz = header[2];
+
+    if (header[0] != dim.x || header[1] != dim.y || header[2] != dim.z) {
+        printf("ZFPImageLoader: Dimension mismatch: header (%zu, %zu, %zu) vs expected (%d, %d, %d)\n", 
+          header[0],
+          header[1],
+          header[2],
+          dim.x,
+          dim.y,
+          dim.z);
+        return;
+    }
     
     double rate;
     std::memcpy(&rate, &header[3], sizeof(double));
     
     size_t compressed_size = header[4];
     
-    printf("  Dimensions: %zu x %zu x %zu\n", nx, ny, nz);
+    printf("  Dimensions: %d x %d x %d\n", dim.x, dim.y, dim.z);
     printf("  Rate: %.2f bits/value\n", rate);
     printf("  Compressed data size: %zu bytes\n", compressed_size);
     
@@ -1175,7 +1203,7 @@ void ZFPImageLoader::deserialize_zfp_array()
     try {
         // Create array with dimensions and rate (no initial data)
         // This allocates the compressed storage
-        zfp_array = new zfp::array3f(nx, ny, nz, rate, nullptr, cache_size);
+        zfp_array = new zfp::array3f(dim.x, dim.y, dim.z, rate, nullptr, cache_size);
         
         // Copy compressed data directly into the array's compressed storage
         void* array_compressed_data = zfp_array->compressed_data();
@@ -1213,19 +1241,41 @@ bool ZFPImageLoader::load_metadata(ImageMetaData& metadata)
     metadata.channels = 1; // ZFP array3f stores float values
 
     /* Set dimensions. */
-    metadata.width = nx;
-    metadata.height = ny;
+    metadata.width = dim.x;
+    metadata.height = dim.y;
 
     metadata.nanovdb_byte_size = zfp_data.size();
     metadata.type = IMAGE_DATA_TYPE_ZFP_FLOAT;
 
-    /* Set transform from object space to voxel index. */
-    // Simple uniform scaling based on dimensions
-    Transform index_to_object = transform_scale(
-        make_float3(spacing_x, spacing_y, spacing_z));
+    /* Set transform_3d. */
+    metadata.transform_3d = ccl::transform_identity();
 
-    metadata.transform_3d = transform_inverse(index_to_object);
-    metadata.use_transform_3d = true;
+    metadata.transform_3d.x.x = (float)dim.x;
+    metadata.transform_3d.y.y = (float)dim.y;
+    metadata.transform_3d.z.z = (float)dim.z;
+
+    metadata.transform_3d.x.w = (float)bbox_min.x;
+    metadata.transform_3d.y.w = (float)bbox_min.y;
+    metadata.transform_3d.z.w = (float)bbox_min.z;
+
+    metadata.use_transform_3d = false;
+
+    printf("  metadata.transform_3d:\n");
+    printf("    [%9f %9f %9f %9f]\n",
+           metadata.transform_3d.x.x,
+           metadata.transform_3d.x.y,
+           metadata.transform_3d.x.z,
+           metadata.transform_3d.x.w);
+    printf("    [%9f %9f %9f %9f]\n",
+           metadata.transform_3d.y.x,
+           metadata.transform_3d.y.y,
+           metadata.transform_3d.y.z,
+           metadata.transform_3d.y.w);
+    printf("    [%9f %9f %9f %9f]\n",
+           metadata.transform_3d.z.x,
+           metadata.transform_3d.z.y,
+           metadata.transform_3d.z.z,
+           metadata.transform_3d.z.w);
 
     return true;
 }
@@ -1254,7 +1304,7 @@ bool ZFPImageLoader::equals(const ImageLoader& other) const
         return false;
     }
     
-    if (nx != other_loader.nx || ny != other_loader.ny || nz != other_loader.nz) {
+    if (dim.x != other_loader.dim.x || dim.y != other_loader.dim.y || dim.z != other_loader.dim.z) {
         return false;
     }
     
@@ -1274,15 +1324,15 @@ bool ZFPImageLoader::is_simple_mesh() const
     return true;
 }
 
-void ZFPImageLoader::get_bbox(int3 &min_bbox, int3 &max_bbox)
+void ZFPImageLoader::get_bbox(int3 &bmin, int3 &bmax)
 {
-    min_bbox = make_int3(0, 0, 0);
-    max_bbox = make_int3(nx - 1, ny - 1, nz - 1);
+  bmin = bbox_min;
+  bmax = bbox_max;
 }
 
 float3 ZFPImageLoader::index_to_world(float3 in)
 {
-    return make_float3(in.x * spacing_x, in.y * spacing_y, in.z * spacing_z);
+  return make_float3((float)in[0], (float)in[1], (float)in[2]);
 }
 #endif
 

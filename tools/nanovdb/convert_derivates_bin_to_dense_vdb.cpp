@@ -621,7 +621,7 @@ int main(int argc, char* argv[])
         );
         
         // Wrap dense array in OpenVDB Dense wrapper
-        openvdb::tools::Dense<const float, openvdb::tools::LayoutXYZ> dense(denseBBox, denseData.data());
+        openvdb::tools::Dense<float, openvdb::tools::LayoutXYZ> dense(denseBBox, denseData.data());
         
         // Copy from dense array to grid, shifting by bmin offset
         // We need to create a temporary grid at origin, then copy with offset

@@ -214,7 +214,7 @@ public:
     };
 
 public:
-    RAWImageLoader(vector<char> &g, int dx, int dy, int dz, float sx, float sy, float sz, RAWImageLoaderType t, int c);
+    RAWImageLoader(vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, RAWImageLoaderType t, int c);
     ~RAWImageLoader();
 
     virtual bool load_metadata(ImageMetaData& metadata) override;
@@ -236,8 +236,10 @@ public:
     virtual float3 index_to_world(float3 in) override;
 
 protected:
-    int dimx, dimy, dimz;
-    float scal_x, scal_y, scal_z;
+    int3 dim;
+    float3 scale;
+    int3 bbox_min;
+    int3 bbox_max;
     int channels;
     RAWImageLoaderType raw_type;
     vector<char> grid;
@@ -246,7 +248,8 @@ protected:
 #ifdef WITH_ZFP_LOADER
 class ZFPImageLoader : public VDBImageLoader {
 public:
-    ZFPImageLoader(vector<char> &g, size_t cache_size_bytes = 4096);
+  ZFPImageLoader(
+      vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, size_t cache_size_bytes);
     ~ZFPImageLoader();
 
     virtual bool load_metadata(ImageMetaData& metadata) override;
@@ -270,9 +273,11 @@ public:
 protected:
     vector<char> zfp_data;
     zfp::array3f* zfp_array;
-    size_t nx, ny, nz;
+    int3 dim;
+    float3 scale;
+    int3 bbox_min;
+    int3 bbox_max;
     size_t cache_size;
-    float spacing_x, spacing_y, spacing_z;
     
     void deserialize_zfp_array();
 };

@@ -726,11 +726,21 @@ if(NANOVDB_INCLUDE_DIR)
     target_include_directories(openvdb_to_raw PRIVATE ${NANOVDB_INCLUDE_DIR})
 endif()
 
+# Enable OpenMP
+if(OpenMP_CXX_FOUND)
+    target_compile_options(openvdb_to_raw PRIVATE ${OpenMP_CXX_FLAGS})
+endif()
+
 # Link libraries
 target_link_libraries(openvdb_to_raw PRIVATE
     ${OPENVDB_LIBRARY}
     ${TBB_LIBRARY}
 )
+
+# Link OpenMP
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(openvdb_to_raw PRIVATE OpenMP::OpenMP_CXX)
+endif()
 
 # Platform-specific linking
 if(UNIX AND NOT APPLE)
