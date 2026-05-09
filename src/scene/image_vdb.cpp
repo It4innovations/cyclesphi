@@ -1015,8 +1015,17 @@ float3 NanoVDBDerivatesImageLoader::index_to_world(float3 in)
 #endif
 
 //RAWImageLoader(vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, RAWImageLoaderType t, int c);
-RAWImageLoader::RAWImageLoader(vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, RAWImageLoaderType t, int c)
-    : grid(std::move(g)), dim(d), scale(s), bbox_min(bmin), bbox_max(bmax), raw_type(t), channels(c), VDBImageLoader("")
+RAWImageLoader::RAWImageLoader(
+    vector<char> &g, int3 d, float3 s, float3 tr, int3 bmin, int3 bmax, RAWImageLoaderType type, int c)
+    : grid(std::move(g)),
+      dim(d),
+      scale(s),
+      trans(tr),
+      bbox_min(bmin),
+      bbox_max(bmax),
+      raw_type(type),
+      channels(c),
+      VDBImageLoader("")
 {
     printf("RAWImageLoader: size in bytes: %lld\n", grid.size());
 }
@@ -1056,8 +1065,16 @@ bool RAWImageLoader::load_metadata(ImageMetaData& metadata)
     metadata.transform_3d = ccl::transform_identity();
     
     metadata.transform_3d.x.x = (float)dim.x;
-    metadata.transform_3d.y.y = (float)dim.y;
-    metadata.transform_3d.z.z = (float)dim.z;
+    metadata.transform_3d.y.x = (float)dim.y;
+    metadata.transform_3d.z.x = (float)dim.z;
+
+    metadata.transform_3d.x.y = (float)scale.x;
+    metadata.transform_3d.y.y = (float)scale.y;
+    metadata.transform_3d.z.y = (float)scale.z;
+
+    metadata.transform_3d.x.z = (float)trans.x;
+    metadata.transform_3d.y.z = (float)trans.y;
+    metadata.transform_3d.z.z = (float)trans.z;
 
     metadata.transform_3d.x.w = (float)bbox_min.x;
     metadata.transform_3d.y.w = (float)bbox_min.y;
@@ -1131,14 +1148,14 @@ void RAWImageLoader::get_bbox(int3& bmin, int3& bmax)
 
 float3 RAWImageLoader::index_to_world(float3 in)
 {    
-    return make_float3((float)in[0], (float)in[1], (float)in[2]);
+    return make_float3((float)in[0] * scale.x + trans.x, (float)in[1] * scale.y + trans.y, (float)in[2] * scale.z + trans.z);
 }
 
 #ifdef WITH_ZFP_LOADER
 //ZFPImageLoader(vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, size_t cache_size_bytes);
 ZFPImageLoader::ZFPImageLoader(
-    vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, size_t cache_size_bytes, bool _gpu)
-    : zfp_data(std::move(g)), VDBImageLoader(""), zfp_array(nullptr), dim(d), scale(s), bbox_min(bmin), bbox_max(bmax),
+    vector<char> &g, int3 d, float3 s, float3 t, int3 bmin, int3 bmax, size_t cache_size_bytes, bool _gpu)
+    : zfp_data(std::move(g)), VDBImageLoader(""), zfp_array(nullptr), dim(d), scale(s), trans(t), bbox_min(bmin), bbox_max(bmax),
       cache_size(cache_size_bytes),
       use_gpu(_gpu),
       d_compressed_data(nullptr),
@@ -1351,8 +1368,16 @@ bool ZFPImageLoader::load_metadata(ImageMetaData& metadata)
     metadata.transform_3d = ccl::transform_identity();
 
     metadata.transform_3d.x.x = (float)dim.x;
-    metadata.transform_3d.y.y = (float)dim.y;
-    metadata.transform_3d.z.z = (float)dim.z;
+    metadata.transform_3d.y.x = (float)dim.y;
+    metadata.transform_3d.z.x = (float)dim.z;
+
+    metadata.transform_3d.x.y = (float)scale.x;
+    metadata.transform_3d.y.y = (float)scale.y;
+    metadata.transform_3d.z.y = (float)scale.z;
+
+    metadata.transform_3d.x.z = (float)trans.x;
+    metadata.transform_3d.y.z = (float)trans.y;
+    metadata.transform_3d.z.z = (float)trans.z;
 
     metadata.transform_3d.x.w = (float)bbox_min.x;
     metadata.transform_3d.y.w = (float)bbox_min.y;
@@ -1442,7 +1467,9 @@ void ZFPImageLoader::get_bbox(int3 &bmin, int3 &bmax)
 
 float3 ZFPImageLoader::index_to_world(float3 in)
 {
-  return make_float3((float)in[0], (float)in[1], (float)in[2]);
+  return make_float3((float)in[0] * scale.x + trans.x,
+                     (float)in[1] * scale.y + trans.y,
+                     (float)in[2] * scale.z + trans.z);
 }
 #endif
 

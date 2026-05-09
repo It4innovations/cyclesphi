@@ -813,25 +813,37 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     return zero_float4();
   }
   if (data_type == IMAGE_DATA_TYPE_RAW3D_FLOAT) {
-    float px = P.x - tex.transform_3d.x.w;
-    float py = P.y - tex.transform_3d.y.w;
-    float pz = P.z - tex.transform_3d.z.w;
+
+    const size_t dimx = (size_t)tex.transform_3d.x.x;
+    const size_t dimy = (size_t)tex.transform_3d.y.x;
+    const size_t dimz = (size_t)tex.transform_3d.z.x;
+
+    float scale_x = tex.transform_3d.x.y;
+    float scale_y = tex.transform_3d.y.y;
+    float scale_z = tex.transform_3d.z.y;
+
+    float trans_x = tex.transform_3d.x.z;
+    float trans_y = tex.transform_3d.y.z;
+    float trans_z = tex.transform_3d.z.z;
+
+    float bbox_min_x = tex.transform_3d.x.w;
+    float bbox_min_y = tex.transform_3d.y.w;
+    float bbox_min_z = tex.transform_3d.z.w;
+
+    float px = (P.x - bbox_min_x - trans_x) / scale_x;
+    float py = (P.y - bbox_min_y - trans_y) / scale_y;
+    float pz = (P.z - bbox_min_z - trans_z) / scale_z;
 
     if (px < 0.0f || py < 0.0f || pz < 0.0f)
       return zero_float4();
 
-    if (floorf(px) >= tex.transform_3d.x.x || 
-        floorf(py) >= tex.transform_3d.y.y || 
-        floorf(pz) >= tex.transform_3d.z.z) {
+    if (floorf(px) >= dimx || 
+        floorf(py) >= dimy || 
+        floorf(pz) >= dimz) {
       return zero_float4();
     }
 
     float* data = (float *)info.data;
-
-    // Extract dimensions from transform translation (stored by RAWImageLoader)
-    const size_t dimx = (size_t)tex.transform_3d.x.x;
-    const size_t dimy = (size_t)tex.transform_3d.y.y;
-    //const size_t dimz = (size_t)tex.transform_3d.z.z;
     
     // P is in index space after identity transform - compute array index
     const size_t ix = (size_t)(floorf(px));
@@ -848,31 +860,39 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
   }
 #ifdef WITH_ZFP_LOADER
   if (data_type == IMAGE_DATA_TYPE_ZFP_FLOAT) {
-    float px = P.x - tex.transform_3d.x.w;
-    float py = P.y - tex.transform_3d.y.w;
-    float pz = P.z - tex.transform_3d.z.w;
+    const size_t dimx = (size_t)tex.transform_3d.x.x;
+    const size_t dimy = (size_t)tex.transform_3d.y.x;
+    const size_t dimz = (size_t)tex.transform_3d.z.x;
+
+    float scale_x = tex.transform_3d.x.y;
+    float scale_y = tex.transform_3d.y.y;
+    float scale_z = tex.transform_3d.z.y;
+
+    float trans_x = tex.transform_3d.x.z;
+    float trans_y = tex.transform_3d.y.z;
+    float trans_z = tex.transform_3d.z.z;
+
+    float bbox_min_x = tex.transform_3d.x.w;
+    float bbox_min_y = tex.transform_3d.y.w;
+    float bbox_min_z = tex.transform_3d.z.w;
+
+    float px = (P.x - bbox_min_x - trans_x) / scale_x;
+    float py = (P.y - bbox_min_y - trans_y) / scale_y;
+    float pz = (P.z - bbox_min_z - trans_z) / scale_z;
 
     if (px < 0.0f || py < 0.0f || pz < 0.0f)
       return zero_float4();
 
-    if (floorf(px) >= tex.transform_3d.x.x || floorf(py) >= tex.transform_3d.y.y ||
-        floorf(pz) >= tex.transform_3d.z.z)
-    {
+    if (floorf(px) >= dimx || floorf(py) >= dimy || floorf(pz) >= dimz) {
       return zero_float4();
     }
 
-    // Extract dimensions from transform translation (stored by RAWImageLoader)
-    //const size_t dimx = (size_t)tex.transform_3d.x.x;
-    //const size_t dimy = (size_t)tex.transform_3d.y.y;
-    //const size_t dimz = (size_t)tex.transform_3d.z.z;
+    float *data = (float *)info.data;
 
     // P is in index space after identity transform - compute array index
     const size_t ix = (size_t)(floorf(px));
     const size_t iy = (size_t)(floorf(py));
     const size_t iz = (size_t)(floorf(pz));
-
-    //const size_t index = ix + iy * dimx + iz * dimx * dimy;
-    //const float f = data[index];
 
 #ifdef __CUDA_ARCH__
     // Device code: Decompress ZFP block on-demand from serialized format

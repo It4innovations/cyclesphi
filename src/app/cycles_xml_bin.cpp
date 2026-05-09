@@ -888,6 +888,12 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
             continue;
           }
 
+          const xml_attribute attr_zfp_trans = node_attribute.attribute("zfp_trans");
+          if (!attr_zfp_trans) {
+            std::cerr << "Error: missing zfp_trans" << filename << std::endl;
+            continue;
+          }
+
           const xml_attribute attr_zfp_bbox = node_attribute.attribute("zfp_bbox");
           if (!attr_zfp_bbox) {
             std::cerr << "Error: missing zfp_bbox" << filename << std::endl;
@@ -913,6 +919,13 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           scal3.x = zfp_scal[0];
           scal3.y = zfp_scal[1];
           scal3.z = zfp_scal[2];
+
+          vector<float> zfp_trans;
+          xml_read_float_array(zfp_trans, node_attribute, "zfp_trans");
+          float3 trans3;
+          trans3.x = zfp_trans[0];
+          trans3.y = zfp_trans[1];
+          trans3.z = zfp_trans[2];
 
           vector<int> zfp_bbox;
           xml_read_int_array(zfp_bbox, node_attribute, "zfp_bbox");
@@ -956,9 +969,9 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           cache_size_bytes = std::stoull(attr_cache_size.value());
 
           // TODO: using zfp read
-          //ZFPImageLoader(vector<char> & g, int3 d, float3 s, int3 bmin, int3 bmax, size_t cache_size_bytes);
+          //ZFPImageLoader(vector<char> & g, int3 d, float3 s, float3 t, int3 bmin, int3 bmax, size_t cache_size_bytes, bool use_gpu);
           unique_ptr<ImageLoader> loader = make_unique<ZFPImageLoader>(
-              zfp_data, dim3, scal3, bbox_min, bbox_max, cache_size_bytes, use_gpu);
+              zfp_data, dim3, scal3, trans3, bbox_min, bbox_max, cache_size_bytes, use_gpu);
 
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);
@@ -981,6 +994,12 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           const xml_attribute attr_raw_scal = node_attribute.attribute("raw_scal");
           if (!attr_raw_scal) {
             std::cerr << "Error: missing raw_scal" << filename << std::endl;
+            continue;
+          }
+
+          const xml_attribute attr_raw_trans = node_attribute.attribute("raw_trans");
+          if (!attr_raw_trans) {
+            std::cerr << "Error: missing raw_trans" << filename << std::endl;
             continue;
           }
 
@@ -1015,6 +1034,13 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           scal3.x = raw_scal[0];
           scal3.y = raw_scal[1];
           scal3.z = raw_scal[2];
+
+          vector<float> raw_trans;
+          xml_read_float_array(raw_trans, node_attribute, "raw_trans");
+          float3 trans3;
+          trans3.x = raw_trans[0];
+          trans3.y = raw_trans[1];
+          trans3.z = raw_trans[2];
 
           vector<int> raw_bbox;
           xml_read_int_array(raw_bbox, node_attribute, "raw_bbox");
@@ -1066,7 +1092,8 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           }
 
           //vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, RAWImageLoaderType t, int c
-          unique_ptr<ImageLoader> loader = make_unique<RAWImageLoader>(raw_data, dim3, scal3, bbox_min, bbox_max, type, channels);
+          unique_ptr<ImageLoader> loader = make_unique<RAWImageLoader>(
+              raw_data, dim3, scal3, trans3, bbox_min, bbox_max, type, channels);
 
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);

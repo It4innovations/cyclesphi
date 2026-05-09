@@ -217,7 +217,7 @@ public:
     };
 
 public:
-    RAWImageLoader(vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, RAWImageLoaderType t, int c);
+    RAWImageLoader(vector<char> &g, int3 d, float3 s, float3 tr, int3 bmin, int3 bmax, RAWImageLoaderType type, int c);
     ~RAWImageLoader();
 
     virtual bool load_metadata(ImageMetaData& metadata) override;
@@ -241,6 +241,7 @@ public:
 protected:
     int3 dim;
     float3 scale;
+    float3 trans;
     int3 bbox_min;
     int3 bbox_max;
     int channels;
@@ -251,8 +252,14 @@ protected:
 #ifdef WITH_ZFP_LOADER
 class ZFPImageLoader : public VDBImageLoader {
 public:
-  ZFPImageLoader(
-     vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, size_t cache_size_bytes, bool use_gpu);
+  ZFPImageLoader(vector<char> &g,
+                int3 d,
+                float3 s,
+                float3 t,
+                int3 bmin,
+                int3 bmax,
+                size_t cache_size_bytes,
+                bool use_gpu);
     ~ZFPImageLoader();
 
     virtual bool load_metadata(ImageMetaData& metadata) override;
@@ -278,6 +285,7 @@ protected:
     zfp::array3f* zfp_array;
     int3 dim;
     float3 scale;
+    float3 trans;
     int3 bbox_min;
     int3 bbox_max;
     size_t cache_size;
