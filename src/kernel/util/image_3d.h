@@ -968,7 +968,7 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
       return zero_float4();
     }
 
-    const SerializableZFPData* __restrict__ header = (const SerializableZFPData*)info.data;
+    const SerializableZFPData* header = (const SerializableZFPData*)info.data;
 
     typedef unsigned long long Word;
     Word* compressed_data_ptr = (Word*)((char*)info.data + header->placeholder_ptr);

@@ -191,7 +191,7 @@ struct LevelInfo {
 // Main Export Function
 // ============================================================================
 
-bool writeNanoVdbBundle(const std::string& outputPath, const std::vector<GridInput>& grids) {
+bool writeNanoVdbBundle(const std::string& outputPath, const std::vector<GridInput>& grids, bool switchOrderLevels = false) {
     if (grids.empty()) {
         std::cerr << "Error: No grids provided\n";
         return false;
@@ -377,12 +377,24 @@ bool writeNanoVdbBundle(const std::string& outputPath, const std::vector<GridInp
     writePadding(out, sizeof(DerivFileHeader), PAYLOAD_ALIGNMENT);
     
     // Write DerivLevelHeader array
-    for (const auto& level : levels) {
-        DerivLevelHeader lh = {};
-        lh.levelIndex = level.levelIndex;
-        lh.derivativeCount = level.derivativeCount;
-        lh.firstGridIndex = level.firstGridIndex;
-        out.write(reinterpret_cast<const char*>(&lh), sizeof(DerivLevelHeader));
+    if (switchOrderLevels) {
+        // Write levels in reverse order
+        for (auto it = levels.rbegin(); it != levels.rend(); ++it) {
+            DerivLevelHeader lh = {};
+            lh.levelIndex = it->levelIndex;
+            lh.derivativeCount = it->derivativeCount;
+            lh.firstGridIndex = it->firstGridIndex;
+            out.write(reinterpret_cast<const char*>(&lh), sizeof(DerivLevelHeader));
+        }
+    } else {
+        // Write levels in normal order
+        for (const auto& level : levels) {
+            DerivLevelHeader lh = {};
+            lh.levelIndex = level.levelIndex;
+            lh.derivativeCount = level.derivativeCount;
+            lh.firstGridIndex = level.firstGridIndex;
+            out.write(reinterpret_cast<const char*>(&lh), sizeof(DerivLevelHeader));
+        }
     }
     
     // Write DerivGridHeader array
@@ -448,9 +460,12 @@ bool writeNanoVdbBundle(const std::string& outputPath, const std::vector<GridInp
 int main(int argc, char* argv[])
 {
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <input.vdb> <output.bin>\n";
+        std::cerr << "Usage: " << argv[0] << " <input.vdb> <output.bin> [--switch-order-levels]\n";
         std::cerr << "  Reads OpenVDB file containing derivative grids and exports them\n";
         std::cerr << "  to a binary NanoVDB bundle with hierarchical headers.\n";
+        std::cerr << "\n";
+        std::cerr << "Options:\n";
+        std::cerr << "  --switch-order-levels  Reverse the order of levels when writing\n";
         std::cerr << "\n";
         std::cerr << "Grid naming convention: L-{totalLevels}-{levelIdx}-D-{derivCount}-{derivIdx}\n";
         std::cerr << "  Example: L-05-04-D-20-19\n";
@@ -459,6 +474,14 @@ int main(int argc, char* argv[])
 
     const std::string inputFile = argv[1];
     const std::string outputFile = argv[2];
+    bool switchOrderLevels = false;
+
+    // Parse optional arguments
+    for (int i = 3; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--switch-order-levels") == 0) {
+            switchOrderLevels = true;
+        }
+    }
 
     try {
         // Initialize OpenVDB
@@ -548,7 +571,7 @@ int main(int argc, char* argv[])
         std::cout << "============================================\n";
 
         // Write the bundle using the new format
-        if (!writeNanoVdbBundle(outputFile, gridInputs)) {
+        if (!writeNanoVdbBundle(outputFile, gridInputs, switchOrderLevels)) {
             std::cerr << "Error: Failed to write NanoVDB bundle\n";
             return EXIT_FAILURE;
         }
