@@ -1152,18 +1152,14 @@ float3 RAWImageLoader::index_to_world(float3 in)
 }
 
 #ifdef WITH_ZFP_LOADER
-//ZFPImageLoader(vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, size_t cache_size_bytes);
 ZFPImageLoader::ZFPImageLoader(
-    vector<char> &g, int3 d, float3 s, float3 t, int3 bmin, int3 bmax, size_t cache_size_bytes, bool _gpu)
+    vector<char> &g, int3 d, float3 s, float3 t, int3 bmin, int3 bmax, size_t cache_size_bytes)
     : zfp_data(std::move(g)), VDBImageLoader(""), zfp_array(nullptr), dim(d), scale(s), trans(t), bbox_min(bmin), bbox_max(bmax),
       cache_size(cache_size_bytes),
-      use_gpu(_gpu),
-      d_compressed_data(nullptr),
       dev_array_storage(nullptr)
 {
     printf("ZFPImageLoader: size in bytes: %lld\n", zfp_data.size());
     printf("ZFPImageLoader: cache size: %zu bytes\n", cache_size);
-    printf("ZFPImageLoader: use_gpu: %s\n", use_gpu ? "true" : "false");
     deserialize_zfp_array();
 }
 
@@ -1173,13 +1169,11 @@ ZFPImageLoader::~ZFPImageLoader()
         delete zfp_array;
         zfp_array = nullptr;
     }
-    
+
     if (dev_array_storage) {
         free(dev_array_storage);
         dev_array_storage = nullptr;
     }
-    
-    d_compressed_data = nullptr;  // Just a placeholder, no deallocation needed
 }
 
 void ZFPImageLoader::deserialize_zfp_array()
@@ -1241,65 +1235,41 @@ void ZFPImageLoader::deserialize_zfp_array()
         
         printf("ZFPImageLoader: Successfully loaded compressed array\n");
         printf("  Array compressed size: %zu bytes\n", zfp_array->compressed_size());
-        
-        // If GPU usage is enabled, prepare serializable device array structure
-        if (use_gpu) {
-            printf("ZFPImageLoader: Preparing GPU array structure\n");
-            
-            // Calculate size needed: structure + compressed data
-            // Using a simple POD structure that will be serialized
-            struct SerializableZFPData {
-                // DeviceBlockStore3 data
-                size_t placeholder_ptr;  // Will be fixed up to point after this structure
-                uint32_t dims_x, dims_y, dims_z;
-                uint32_t block_dims_x, block_dims_y, block_dims_z;
-                uint32_t maxbits;
-                size_t total_blocks;
-                uint32_t fixed_rate;
-                // Compressed data follows immediately after this structure
-            };
-            
-            const size_t header_size = sizeof(SerializableZFPData);
-            const size_t total_size = header_size + compressed_size;
-            
-            // Allocate storage for structure + data
+
+        {
+            printf("ZFPImageLoader: Preparing serialized array structure\n");
+
+            const size_t struct_size = sizeof(SerializableZFPData);
+            const size_t total_size = struct_size + compressed_size;
+
             dev_array_storage = malloc(total_size);
             if (!dev_array_storage) {
                 throw std::runtime_error("Failed to allocate device array storage");
             }
-            
-            // Initialize the structure
-            SerializableZFPData* zfp_data = static_cast<SerializableZFPData*>(dev_array_storage);
-            zfp_data->placeholder_ptr = header_size;  // Offset to compressed data
-            zfp_data->dims_x = (uint32_t)dim.x;
-            zfp_data->dims_y = (uint32_t)dim.y;
-            zfp_data->dims_z = (uint32_t)dim.z;
-            
-            // Use the actual rate from the array (ZFP rounds maxbits up to the next
-            // multiple of 64 for word-aligned random access when align=true).
-            // Using the raw file rate would give the wrong block offsets for any
-            // non-integer rate (e.g., 4.5 -> raw=288 bits, actual=320 bits/block).
+
+            SerializableZFPData* zfp_header = static_cast<SerializableZFPData*>(dev_array_storage);
+            zfp_header->placeholder_ptr = struct_size;
+            zfp_header->dims_x = (uint32_t)dim.x;
+            zfp_header->dims_y = (uint32_t)dim.y;
+            zfp_header->dims_z = (uint32_t)dim.z;
+
+            // Use actual rate from array: ZFP rounds maxbits up to 64-bit word boundary.
             uint32_t maxbits_val = (uint32_t)(zfp_array->rate() * 64 + 0.5);
-            zfp_data->maxbits = maxbits_val;
-            zfp_data->fixed_rate = 1;
-            
-            // Calculate block dimensions
-            zfp_data->block_dims_x = (dim.x + 3) / 4;
-            zfp_data->block_dims_y = (dim.y + 3) / 4;
-            zfp_data->block_dims_z = (dim.z + 3) / 4;
-            zfp_data->total_blocks = zfp_data->block_dims_x * zfp_data->block_dims_y * zfp_data->block_dims_z;
-            
-            // Copy compressed data immediately after the structure
-            void* data_section = static_cast<char*>(dev_array_storage) + header_size;
+            zfp_header->maxbits = maxbits_val;
+            zfp_header->fixed_rate = 1;
+
+            zfp_header->block_dims_x = (dim.x + 3) / 4;
+            zfp_header->block_dims_y = (dim.y + 3) / 4;
+            zfp_header->block_dims_z = (dim.z + 3) / 4;
+            zfp_header->total_blocks = zfp_header->block_dims_x * zfp_header->block_dims_y * zfp_header->block_dims_z;
+
+            void* data_section = static_cast<char*>(dev_array_storage) + struct_size;
             std::memcpy(data_section, file_compressed_data, compressed_size);
-            
-            printf("  GPU array structure prepared\n");
-            printf("  Dimensions: %ux%ux%u\n", zfp_data->dims_x, zfp_data->dims_y, zfp_data->dims_z);
-            printf("  Block dimensions: %ux%ux%u\n", zfp_data->block_dims_x, zfp_data->block_dims_y, zfp_data->block_dims_z);
-            printf("  Total blocks: %zu\n", zfp_data->total_blocks);
-            printf("  Maxbits: %u\n", zfp_data->maxbits);
-            printf("  Structure size: %zu bytes\n", header_size);
-            printf("  Compressed data size: %zu bytes\n", compressed_size);
+
+            printf("  Dimensions: %ux%ux%u\n", zfp_header->dims_x, zfp_header->dims_y, zfp_header->dims_z);
+            printf("  Block dimensions: %ux%ux%u\n", zfp_header->block_dims_x, zfp_header->block_dims_y, zfp_header->block_dims_z);
+            printf("  Total blocks: %zu\n", zfp_header->total_blocks);
+            printf("  Maxbits: %u\n", zfp_header->maxbits);
             printf("  Total serialized size: %zu bytes (%.2f MB)\n", total_size, total_size / (1024.0 * 1024.0));
         }
         
@@ -1314,7 +1284,6 @@ void ZFPImageLoader::deserialize_zfp_array()
             free(dev_array_storage);
             dev_array_storage = nullptr;
         }
-        d_compressed_data = nullptr;
     }
     catch (...) {
         printf("ZFPImageLoader: Unknown exception during deserialization\n");
@@ -1326,7 +1295,6 @@ void ZFPImageLoader::deserialize_zfp_array()
             free(dev_array_storage);
             dev_array_storage = nullptr;
         }
-        d_compressed_data = nullptr;
     }
 }
 
@@ -1343,23 +1311,9 @@ bool ZFPImageLoader::load_metadata(ImageMetaData& metadata)
     metadata.width = dim.x;
     metadata.height = dim.y;
 
-    // Set byte size based on whether we're using GPU or CPU
-    if (use_gpu && dev_array_storage) {
-        // GPU mode: report size of serialized structure + compressed data
-        struct SerializableZFPData {
-            size_t placeholder_ptr;
-            uint32_t dims_x, dims_y, dims_z;
-            uint32_t block_dims_x, block_dims_y, block_dims_z;
-            uint32_t maxbits;
-            size_t total_blocks;
-            uint32_t fixed_rate;
-        };
-        size_t header_size = sizeof(SerializableZFPData);
-        size_t compressed_size = zfp_data.size() - 5 * sizeof(size_t);  // Minus file header
-        metadata.nanovdb_byte_size = header_size + compressed_size;
-    } else {
-        // CPU mode: report size of zfp::array3f structure
-        metadata.nanovdb_byte_size = sizeof(zfp::array3f);
+    {
+        const size_t compressed_size = zfp_data.size() - 5 * sizeof(size_t);
+        metadata.nanovdb_byte_size = sizeof(SerializableZFPData) + compressed_size;
     }
     
     metadata.type = IMAGE_DATA_TYPE_ZFP_FLOAT;
@@ -1407,20 +1361,9 @@ bool ZFPImageLoader::load_metadata(ImageMetaData& metadata)
 
 bool ZFPImageLoader::load_pixels(const ImageMetaData& metadata, void* pixels)
 {
-    if (zfp_data.size() > 0) {
-        if (use_gpu && dev_array_storage) {
-            // Copy the serialized structure + compressed data for GPU access
-            // The size is stored in metadata.nanovdb_byte_size
-            memcpy(pixels, dev_array_storage, metadata.nanovdb_byte_size);
-            printf("ZFPImageLoader: Copied GPU serialized ZFP data (%zu bytes)\n", metadata.nanovdb_byte_size);
-            return true;
-        }
-        
-        // Copy the host zfp::array3f object for CPU access
-        if (zfp_array) {
-            memcpy(pixels, zfp_array, sizeof(zfp::array3f));
-            printf("ZFPImageLoader: Copied host array (%zu bytes)\n", sizeof(zfp::array3f));
-        }
+    if (dev_array_storage) {
+        memcpy(pixels, dev_array_storage, metadata.nanovdb_byte_size);
+        printf("ZFPImageLoader: Copied serialized ZFP data (%zu bytes)\n", metadata.nanovdb_byte_size);
     }
 
     return true;

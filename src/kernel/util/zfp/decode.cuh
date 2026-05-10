@@ -9,7 +9,7 @@ namespace cuZFP
 #if ZFP_ROUNDING_MODE == ZFP_ROUND_LAST
 // bias values such that truncation is equivalent to round to nearest
 template <typename UInt, uint BlockSize>
-__device__
+__host__ __device__
 static void
 inv_round(UInt* ublock, uint m, uint prec)
 {
@@ -24,13 +24,13 @@ inv_round(UInt* ublock, uint m, uint prec)
 #endif
 
 // map two's complement signed integer to negabinary unsigned integer
-inline __device__
+inline __host__ __device__
 long long int uint2int(unsigned long long int x)
 {
   return (x ^ 0xaaaaaaaaaaaaaaaaull) - 0xaaaaaaaaaaaaaaaaull;
 }
 
-inline __device__
+inline __host__ __device__
 int uint2int(unsigned int x)
 {
   return (x ^ 0xaaaaaaaau) - 0xaaaaaaaau;
@@ -40,57 +40,57 @@ template<int block_size>
 class BlockReader
 {
 private:
-  const int m_maxbits; 
+  const int m_maxbits;
   int m_current_bit;
   Word *m_words;
   Word m_buffer;
   bool m_valid_block;
   int m_block_idx;
 
-  __device__ BlockReader()
+  __host__ __device__ BlockReader()
     : m_maxbits(0)
   {
   }
 
 public:
-  __device__ BlockReader(Word *b, const int &maxbits, const int &block_idx, const int &num_blocks)
+  __host__ __device__ BlockReader(Word *b, const int &maxbits, const int &block_idx, const int &num_blocks)
     :  m_maxbits(maxbits), m_valid_block(true)
   {
     if(block_idx >= num_blocks) m_valid_block = false;
-    size_t word_index = ((size_t)block_idx * maxbits)  / (sizeof(Word) * 8); 
+    size_t word_index = ((size_t)block_idx * maxbits)  / (sizeof(Word) * 8);
     m_words = b + word_index;
     m_buffer = *m_words;
-    m_current_bit = ((size_t)block_idx * maxbits) % (sizeof(Word) * 8); 
+    m_current_bit = ((size_t)block_idx * maxbits) % (sizeof(Word) * 8);
 
     m_buffer >>= m_current_bit;
     m_block_idx = block_idx;
-   
+
   }
-  inline __device__
+  inline __host__ __device__
   void print()
   {
     print_bits(m_buffer);
   }
 
-  inline __device__ 
+  inline __host__ __device__
   uint read_bit()
   {
     uint bit = m_buffer & 1;
     ++m_current_bit;
     m_buffer >>= 1;
     // handle moving into next word
-    if(m_current_bit >= sizeof(Word) * 8) 
+    if(m_current_bit >= sizeof(Word) * 8)
     {
       m_current_bit = 0;
       ++m_words;
       m_buffer = *m_words;
     }
-    return bit; 
+    return bit;
   }
 
 
   // note this assumes that n_bits is <= 64
-  inline __device__
+  inline __host__ __device__
   uint64 read_bits(const uint &n_bits)
   {
     uint64 bits;
@@ -126,7 +126,7 @@ public:
 }; // block reader
 
 template <typename Scalar, uint size, typename UInt>
-inline __device__
+inline __host__ __device__
 void decode_ints(BlockReader<size> &reader, uint maxbits, UInt *data)
 {
   const int intprec = get_precision<Scalar>();
@@ -164,10 +164,8 @@ void decode_ints(BlockReader<size> &reader, uint maxbits, UInt *data)
       }
     }
     // step 3: deposit bit plane from x
-#if (CUDART_VERSION < 8000)
+#ifdef __CUDACC__
     #pragma unroll
-#else
-    #pragma unroll size
 #endif
     for (uint i = 0; i < size; i++, x >>= 1)
       data[i] += (UInt)(x & 1u) << k;
@@ -186,7 +184,7 @@ template<>
 struct inv_transform<64>
 {
   template<typename Int>
-  __device__ void inv_xform(Int *p)
+  __host__ __device__ void inv_xform(Int *p)
   {
     // transform along z
     for (uint y = 0; y < 4; y++)
@@ -199,7 +197,7 @@ struct inv_transform<64>
     // transform along x
     for (uint z = 0; z < 4; z++)
       for (uint y = 0; y < 4; y++)
-        inv_lift<Int, 1>(p + 4 * y + 16 * z); 
+        inv_lift<Int, 1>(p + 4 * y + 16 * z);
   }
 };
 
@@ -207,7 +205,7 @@ template<>
 struct inv_transform<16>
 {
   template<typename Int>
-  __device__ void inv_xform(Int *p)
+  __host__ __device__ void inv_xform(Int *p)
   {
     for (uint x = 0; x < 4; ++x)
       inv_lift<Int, 4>(p + 1 * x);
@@ -220,14 +218,14 @@ template<>
 struct inv_transform<4>
 {
   template<typename Int>
-  __device__ void inv_xform(Int *p)
+  __host__ __device__ void inv_xform(Int *p)
   {
     inv_lift<Int, 1>(p);
   }
 };
 
 template<typename Scalar, int BlockSize>
-__device__ void zfp_decode(BlockReader<BlockSize> &reader, Scalar *fblock, uint maxbits)
+__host__ __device__ void zfp_decode(BlockReader<BlockSize> &reader, Scalar *fblock, uint maxbits)
 {
   typedef typename zfp_traits<Scalar>::UInt UInt;
   typedef typename zfp_traits<Scalar>::Int Int;
@@ -265,23 +263,19 @@ __device__ void zfp_decode(BlockReader<BlockSize> &reader, Scalar *fblock, uint 
 
     Int iblock[BlockSize];
     const unsigned char *perm = get_perm<BlockSize>();
-#if (CUDART_VERSION < 8000)
-    #pragma unroll 
-#else
-    #pragma unroll BlockSize
+#ifdef __CUDACC__
+    #pragma unroll
 #endif
     for (int i = 0; i < BlockSize; ++i)
       iblock[perm[i]] = uint2int(ublock[i]);
-    
+
     inv_transform<BlockSize> trans;
     trans.inv_xform(iblock);
 
     Scalar inv_w = dequantize<Int, Scalar>(1, emax);
 
-#if (CUDART_VERSION < 8000)
-    #pragma unroll 
-#else
-    #pragma unroll BlockSize
+#ifdef __CUDACC__
+    #pragma unroll
 #endif
     for (int i = 0; i < BlockSize; ++i)
       fblock[i] = inv_w * (Scalar)iblock[i];

@@ -258,8 +258,7 @@ public:
                 float3 t,
                 int3 bmin,
                 int3 bmax,
-                size_t cache_size_bytes,
-                bool use_gpu);
+                size_t cache_size_bytes);
     ~ZFPImageLoader();
 
     virtual bool load_metadata(ImageMetaData& metadata) override;
@@ -289,13 +288,8 @@ protected:
     int3 bbox_min;
     int3 bbox_max;
     size_t cache_size;
-    bool use_gpu;
-    
-    // GPU support members
-    typedef unsigned long long Word;
-    Word* d_compressed_data;
-    void* dev_array_storage;  // Storage for DeviceArray3ViewNoCache
-    
+    void* dev_array_storage;
+
     void deserialize_zfp_array();
 };
 #endif

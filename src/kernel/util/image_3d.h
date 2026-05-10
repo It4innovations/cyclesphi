@@ -16,11 +16,7 @@
 #    include <nanovdb/NanoVDB.h>
 #  endif
 #  ifdef WITH_ZFP_LOADER
-#    ifdef __CUDA_ARCH__
-#      include "kernel/util/zfp/array3_device.cuh"
-#    else
-#      include <zfp/array3.hpp>
-#    endif
+#    include "kernel/util/zfp/array3_device.cuh"
 #  endif
 #endif
 
@@ -887,34 +883,17 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
       return zero_float4();
     }
 
-    float *data = (float *)info.data;
-
     // P is in index space after identity transform - compute array index
     const size_t ix = (size_t)(floorf(px));
     const size_t iy = (size_t)(floorf(py));
     const size_t iz = (size_t)(floorf(pz));
 
-#ifdef __CUDA_ARCH__
-    // Device code: Decompress ZFP block on-demand from serialized format
-    // Overhead: ~10 assignments + 1 cache-line read (amortized by L1 cache hits)
-    // Dominant cost: block decompression (~100-1000 ops)
-    
-    struct SerializableZFPData {
-        size_t placeholder_ptr;
-        uint32_t dims_x, dims_y, dims_z;
-        uint32_t block_dims_x, block_dims_y, block_dims_z;
-        uint32_t maxbits;
-        size_t total_blocks;
-        uint32_t fixed_rate;
-    };
-    
-    const SerializableZFPData* __restrict__ header = 
+    const SerializableZFPData* __restrict__ header =
         (const SerializableZFPData*)info.data;
-    
+
     typedef unsigned long long Word;
     Word* compressed_data_ptr = (Word*)((char*)info.data + header->placeholder_ptr);
-    
-    // Populate store structure (optimized: compiler will likely keep in registers)
+
     cuZFP::DeviceBlockStore3<float, 64> store;
     store.d_compressed_data = compressed_data_ptr;
     store.d_block_offsets = nullptr;
@@ -923,23 +902,15 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     store.maxbits = header->maxbits;
     store.total_blocks = header->total_blocks;
     store.fixed_rate = (header->fixed_rate != 0);
-    
-    // Compute block index and local coordinates inline (reduces function call overhead)
+
     const size_t bx = ix / 4;
     const size_t by = iy / 4;
     const size_t bz = iz / 4;
     const size_t block_idx = bx + header->block_dims_x * (by + header->block_dims_y * bz);
-    
     const uint local_idx = (ix & 3) + 4 * ((iy & 3) + 4 * (iz & 3));
-    
-    // Decompress the block containing our voxel (this is the expensive part)
+
     cuZFP::NoCache<float, 64> cache;
     const float f = cache.get(store, block_idx, local_idx);
-#else
-    // Host code: use standard ZFP library
-    zfp::array3f *array = (zfp::array3f *)info.data;
-    const float f = (*array)(ix, iy, iz);
-#endif
     return make_float4(f, f, f, 1.0f);
   }
 #endif

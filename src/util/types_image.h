@@ -58,6 +58,17 @@ enum ImageDataType {
   IMAGE_DATA_NUM_TYPES
 };
 
+#ifdef WITH_ZFP_LOADER
+struct SerializableZFPData {
+  size_t placeholder_ptr;
+  uint32_t dims_x, dims_y, dims_z;
+  uint32_t block_dims_x, block_dims_y, block_dims_z;
+  uint32_t maxbits;
+  size_t total_blocks;
+  uint32_t fixed_rate;
+};
+#endif
+
 ccl_device_inline bool is_nanovdb_type(int type)
 {
   return (type >= IMAGE_DATA_TYPE_NANOVDB_FLOAT && type <= IMAGE_DATA_TYPE_ZFP_FLOAT);

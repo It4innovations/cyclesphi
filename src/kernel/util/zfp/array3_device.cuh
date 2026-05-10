@@ -1,6 +1,14 @@
 #ifndef CUDA_ZFP_ARRAY3_DEVICE_CUH
 #define CUDA_ZFP_ARRAY3_DEVICE_CUH
 
+/* Allow compilation on non-CUDA platforms (CPU kernel path). */
+#ifndef __CUDACC__
+#  ifndef __device__
+#    define __device__
+#    define __host__
+#  endif
+#endif
+
 #include "shared.h"
 #include "decode.cuh"
 #include "type_info.cuh"
@@ -93,7 +101,7 @@ public:
 template <typename Scalar, int BlockSize = 64>
 class NoCache {
 public:
-    __device__ inline
+    __host__ __device__ inline
     Scalar get(DeviceBlockStore3<Scalar, BlockSize>& store,
                size_t block_idx,
                uint local_idx) {
