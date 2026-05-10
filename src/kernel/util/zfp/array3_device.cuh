@@ -13,6 +13,8 @@
 #include "decode.cuh"
 #include "type_info.cuh"
 
+CCL_NAMESPACE_BEGIN
+
 namespace cuZFP {
 
 /**
@@ -269,5 +271,7 @@ template <typename Scalar, int CacheLines = 4>
 using DeviceArray3ViewCached = DeviceArray3View<Scalar, 64, WarpCache<Scalar, 64, CacheLines>>;
 
 } // namespace cuZFP
+
+CCL_NAMESPACE_END
 
 #endif // CUDA_ZFP_ARRAY3_DEVICE_CUH

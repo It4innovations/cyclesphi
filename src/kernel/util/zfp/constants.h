@@ -1,6 +1,8 @@
 #ifndef cuZFP_CONSTANTS_H
 #define cuZFP_CONSTANTS_H
 
+CCL_NAMESPACE_BEGIN
+
 namespace cuZFP {
 
 #define index_3d(x, y, z) ((x) + 4 * ((y) + 4 * (z)))
@@ -133,4 +135,7 @@ __device__ static const unsigned char perm_2[16] = {
 #undef index
 
 } // namespace cuZFP
+
+CCL_NAMESPACE_END
+
 #endif

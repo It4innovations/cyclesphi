@@ -3,6 +3,8 @@
 
 #include <cfloat>
 
+CCL_NAMESPACE_BEGIN
+
 namespace cuZFP {
 
 template<typename T> inline __host__ __device__ int get_ebias();
@@ -101,5 +103,7 @@ template<> struct block_traits<2>
 #endif
 
 } // namespace cuZFP
+CCL_NAMESPACE_END
+
 
 #endif

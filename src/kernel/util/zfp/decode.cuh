@@ -3,6 +3,8 @@
 
 #include "shared.h"
 
+CCL_NAMESPACE_BEGIN
+
 namespace cuZFP
 {
 
@@ -284,4 +286,7 @@ __host__ __device__ void zfp_decode(BlockReader<BlockSize> &reader, Scalar *fblo
 
 
 }  // namespace cuZFP
+
+CCL_NAMESPACE_END
+
 #endif

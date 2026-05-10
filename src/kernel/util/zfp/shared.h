@@ -23,8 +23,11 @@ typedef unsigned long long Word;
 #define bitsize(x) ((uint)(CHAR_BIT * sizeof(x)))
 
 #define LDEXP(x, e) ldexp(x, e)
+#define LDEXPF(x, e) ldexpf(x, e)
 
 #define NBMASK 0xaaaaaaaaaaaaaaaaull
+
+CCL_NAMESPACE_BEGIN
 
 namespace cuZFP
 {
@@ -191,12 +194,12 @@ unsigned int int2uint(const int x)
 
 
 template<typename Int, typename Scalar>
-__host__ __device__
+__host__ __device__ inline
 Scalar
 dequantize(const Int &x, const int &e);
 
 template<>
-__host__ __device__
+__host__ __device__ inline
 double
 dequantize<long long int, double>(const long long int &x, const int &e)
 {
@@ -204,15 +207,15 @@ dequantize<long long int, double>(const long long int &x, const int &e)
 }
 
 template<>
-__host__ __device__
+__host__ __device__ inline
 float
 dequantize<int, float>(const int &x, const int &e)
 {
-	return LDEXP((float)x, e - ((int)(CHAR_BIT * scalar_sizeof<float>()) - 2));
+	return LDEXPF((float)x, e - ((int)(CHAR_BIT * scalar_sizeof<float>()) - 2));
 }
 
 template<>
-__host__ __device__
+__host__ __device__ inline
 int
 dequantize<int, int>(const int &x, const int &e)
 {
@@ -220,7 +223,7 @@ dequantize<int, int>(const int &x, const int &e)
 }
 
 template<>
-__host__ __device__
+__host__ __device__ inline
 long long int
 dequantize<long long int, long long int>(const long long int &x, const int &e)
 {
@@ -279,4 +282,7 @@ const unsigned char* get_perm<4>()
 
 
 } // namespace cuZFP
+
+CCL_NAMESPACE_END
+
 #endif
