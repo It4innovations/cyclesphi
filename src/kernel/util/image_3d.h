@@ -747,6 +747,45 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates_vec4(
 #endif /* WITH_NANOVDB */
 
 // ============================================================================
+// Helpers for RAW3D / ZFP interpolation
+// ============================================================================
+
+#ifdef WITH_NANOVDB
+ccl_device_forceinline float raw3d_fetch(const float *data,
+                                          size_t dimx,
+                                          size_t dimy,
+                                          size_t dimz,
+                                          int ix,
+                                          int iy,
+                                          int iz)
+{
+  if (ix < 0 || iy < 0 || iz < 0 || (size_t)ix >= dimx || (size_t)iy >= dimy ||
+      (size_t)iz >= dimz)
+    return 0.0f;
+  return data[(size_t)ix + (size_t)iy * dimx + (size_t)iz * dimx * dimy];
+}
+
+#  ifdef WITH_ZFP_LOADER
+ccl_device_forceinline float zfp_fetch(cuZFP::DeviceBlockStore3<float, 64> &store,
+                                        size_t dimx,
+                                        size_t dimy,
+                                        size_t dimz,
+                                        int ix,
+                                        int iy,
+                                        int iz)
+{
+  if (ix < 0 || iy < 0 || iz < 0 || (size_t)ix >= dimx || (size_t)iy >= dimy ||
+      (size_t)iz >= dimz)
+    return 0.0f;
+  const size_t block_idx = store.get_block_index((size_t)ix, (size_t)iy, (size_t)iz);
+  const uint local_idx = ((uint)ix & 3u) + 4u * (((uint)iy & 3u) + 4u * ((uint)iz & 3u));
+  cuZFP::NoCache<float, 64> cache;
+  return cache.get(store, block_idx, local_idx);
+}
+#  endif /* WITH_ZFP_LOADER */
+#endif /* WITH_NANOVDB */
+
+// ============================================================================
 // ZFP Compressed Format Support
 // ============================================================================
 ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
@@ -840,12 +879,58 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     }
 
     float* data = (float *)info.data;
-    
-    // P is in index space after identity transform - compute array index
+
+    if (interpolation == INTERPOLATION_LINEAR) {
+      const int ix0 = (int)floorf(px), iy0 = (int)floorf(py), iz0 = (int)floorf(pz);
+      const float tx = px - (float)ix0, ty = py - (float)iy0, tz = pz - (float)iz0;
+      const int ix1 = ix0 + 1, iy1 = iy0 + 1, iz1 = iz0 + 1;
+      const float f = mix(
+          mix(mix(raw3d_fetch(data, dimx, dimy, dimz, ix0, iy0, iz0),
+                  raw3d_fetch(data, dimx, dimy, dimz, ix0, iy0, iz1),
+                  tz),
+              mix(raw3d_fetch(data, dimx, dimy, dimz, ix0, iy1, iz1),
+                  raw3d_fetch(data, dimx, dimy, dimz, ix0, iy1, iz0),
+                  1.0f - tz),
+              ty),
+          mix(mix(raw3d_fetch(data, dimx, dimy, dimz, ix1, iy1, iz0),
+                  raw3d_fetch(data, dimx, dimy, dimz, ix1, iy1, iz1),
+                  tz),
+              mix(raw3d_fetch(data, dimx, dimy, dimz, ix1, iy0, iz1),
+                  raw3d_fetch(data, dimx, dimy, dimz, ix1, iy0, iz0),
+                  1.0f - tz),
+              1.0f - ty),
+          tx);
+      return make_float4(f, f, f, 1.0f);
+    }
+
+    if (interpolation == INTERPOLATION_CUBIC) {
+      const float3 fp = make_float3(floorf(px), floorf(py), floorf(pz));
+      const float3 t = make_float3(px, py, pz) - fp;
+      const int3 idx = make_int3((int)fp.x - 1, (int)fp.y - 1, (int)fp.z - 1);
+
+      float3 w[4];
+      fill_cubic_weights(w, t);
+
+      float result = 0.0f;
+      for (int k = 0; k < 4; k++) {
+        float col_acc = 0.0f;
+        for (int j = 0; j < 4; j++) {
+          col_acc +=
+              w[j].y *
+              (w[0].x * raw3d_fetch(data, dimx, dimy, dimz, idx.x + 0, idx.y + j, idx.z + k) +
+               w[1].x * raw3d_fetch(data, dimx, dimy, dimz, idx.x + 1, idx.y + j, idx.z + k) +
+               w[2].x * raw3d_fetch(data, dimx, dimy, dimz, idx.x + 2, idx.y + j, idx.z + k) +
+               w[3].x * raw3d_fetch(data, dimx, dimy, dimz, idx.x + 3, idx.y + j, idx.z + k));
+        }
+        result += w[k].z * col_acc;
+      }
+      return make_float4(result, result, result, 1.0f);
+    }
+
+    /* INTERPOLATION_CLOSEST */
     const size_t ix = (size_t)(floorf(px));
     const size_t iy = (size_t)(floorf(py));
     const size_t iz = (size_t)(floorf(pz));
-    
     const size_t index = ix + iy * dimx + iz * dimx * dimy;
     const float f = data[index];
     return make_float4(f, f, f, 1.0f);
@@ -883,13 +968,7 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
       return zero_float4();
     }
 
-    // P is in index space after identity transform - compute array index
-    const size_t ix = (size_t)(floorf(px));
-    const size_t iy = (size_t)(floorf(py));
-    const size_t iz = (size_t)(floorf(pz));
-
-    const SerializableZFPData* __restrict__ header =
-        (const SerializableZFPData*)info.data;
+    const SerializableZFPData* __restrict__ header = (const SerializableZFPData*)info.data;
 
     typedef unsigned long long Word;
     Word* compressed_data_ptr = (Word*)((char*)info.data + header->placeholder_ptr);
@@ -903,12 +982,59 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     store.total_blocks = header->total_blocks;
     store.fixed_rate = (header->fixed_rate != 0);
 
-    const size_t bx = ix / 4;
-    const size_t by = iy / 4;
-    const size_t bz = iz / 4;
-    const size_t block_idx = bx + header->block_dims_x * (by + header->block_dims_y * bz);
-    const uint local_idx = (ix & 3) + 4 * ((iy & 3) + 4 * (iz & 3));
+    if (interpolation == INTERPOLATION_LINEAR) {
+      const int ix0 = (int)floorf(px), iy0 = (int)floorf(py), iz0 = (int)floorf(pz);
+      const float tx = px - (float)ix0, ty = py - (float)iy0, tz = pz - (float)iz0;
+      const int ix1 = ix0 + 1, iy1 = iy0 + 1, iz1 = iz0 + 1;
+      const float f = mix(
+          mix(mix(zfp_fetch(store, dimx, dimy, dimz, ix0, iy0, iz0),
+                  zfp_fetch(store, dimx, dimy, dimz, ix0, iy0, iz1),
+                  tz),
+              mix(zfp_fetch(store, dimx, dimy, dimz, ix0, iy1, iz1),
+                  zfp_fetch(store, dimx, dimy, dimz, ix0, iy1, iz0),
+                  1.0f - tz),
+              ty),
+          mix(mix(zfp_fetch(store, dimx, dimy, dimz, ix1, iy1, iz0),
+                  zfp_fetch(store, dimx, dimy, dimz, ix1, iy1, iz1),
+                  tz),
+              mix(zfp_fetch(store, dimx, dimy, dimz, ix1, iy0, iz1),
+                  zfp_fetch(store, dimx, dimy, dimz, ix1, iy0, iz0),
+                  1.0f - tz),
+              1.0f - ty),
+          tx);
+      return make_float4(f, f, f, 1.0f);
+    }
 
+    if (interpolation == INTERPOLATION_CUBIC) {
+      const float3 fp = make_float3(floorf(px), floorf(py), floorf(pz));
+      const float3 t = make_float3(px, py, pz) - fp;
+      const int3 idx = make_int3((int)fp.x - 1, (int)fp.y - 1, (int)fp.z - 1);
+
+      float3 w[4];
+      fill_cubic_weights(w, t);
+
+      float result = 0.0f;
+      for (int k = 0; k < 4; k++) {
+        float col_acc = 0.0f;
+        for (int j = 0; j < 4; j++) {
+          col_acc +=
+              w[j].y *
+              (w[0].x * zfp_fetch(store, dimx, dimy, dimz, idx.x + 0, idx.y + j, idx.z + k) +
+               w[1].x * zfp_fetch(store, dimx, dimy, dimz, idx.x + 1, idx.y + j, idx.z + k) +
+               w[2].x * zfp_fetch(store, dimx, dimy, dimz, idx.x + 2, idx.y + j, idx.z + k) +
+               w[3].x * zfp_fetch(store, dimx, dimy, dimz, idx.x + 3, idx.y + j, idx.z + k));
+        }
+        result += w[k].z * col_acc;
+      }
+      return make_float4(result, result, result, 1.0f);
+    }
+
+    /* INTERPOLATION_CLOSEST */
+    const size_t ix = (size_t)(floorf(px));
+    const size_t iy = (size_t)(floorf(py));
+    const size_t iz = (size_t)(floorf(pz));
+    const size_t block_idx = store.get_block_index(ix, iy, iz);
+    const uint local_idx = (ix & 3) + 4 * ((iy & 3) + 4 * (iz & 3));
     cuZFP::NoCache<float, 64> cache;
     const float f = cache.get(store, block_idx, local_idx);
     return make_float4(f, f, f, 1.0f);
