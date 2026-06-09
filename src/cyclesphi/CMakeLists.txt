@@ -191,45 +191,46 @@ if(WITH_CYCLES_STANDALONE)
 endif()
 ###############cyclesphi_space############################
 if(WITH_CYCLES_STANDALONE)
+  if(WITH_SPACE_CONVERTER)
 
-  # Application build targets
-  set(SRC
-      cyclesphi_space.cpp
-      
-      cyclesphi_common.cpp
-      cyclesphi_common.h    
-      
-      #frame_output_driver.cpp
-      #frame_output_driver.h
-      
-      frame_display_driver.cpp
-      frame_display_driver.h
+    # Application build targets
+    set(SRC
+        cyclesphi_space.cpp
+        
+        cyclesphi_common.cpp
+        cyclesphi_common.h    
+        
+        #frame_output_driver.cpp
+        #frame_output_driver.h
+        
+        frame_display_driver.cpp
+        frame_display_driver.h
 
-      #../../lib/braas-hpc-renderengine/src/renderengine_tcp.cpp
-      #../../lib/braas-hpc-renderengine/src/renderengine_tcp.h
+        #../../lib/braas-hpc-renderengine/src/renderengine_tcp.cpp
+        #../../lib/braas-hpc-renderengine/src/renderengine_tcp.h
 
-      ../app/cycles_xml_bin.cpp
-      ../app/cycles_xml_bin.h
+        ../app/cycles_xml_bin.cpp
+        ../app/cycles_xml_bin.h
 
-      ../app/cycles_xml_nodes.cpp
-      ../app/cycles_xml_nodes.h      
+        ../app/cycles_xml_nodes.cpp
+        ../app/cycles_xml_nodes.h      
 
-  )
+    )
 
-  add_executable(cyclesphi_space ${SRC} ${INC} ${INC_SYS})
-  unset(SRC)
+    add_executable(cyclesphi_space ${SRC} ${INC} ${INC_SYS})
+    unset(SRC)
 
-  target_link_libraries(cyclesphi_space PRIVATE ${LIB})
+    target_link_libraries(cyclesphi_space PRIVATE ${LIB})
 
-  if(OpenMP_FOUND)
-    target_link_libraries(cyclesphi_space PRIVATE OpenMP::OpenMP_CXX)
-    target_compile_options(cyclesphi_space PRIVATE ${OpenMP_CXX_FLAGS})
+    if(OpenMP_FOUND)
+      target_link_libraries(cyclesphi_space PRIVATE OpenMP::OpenMP_CXX)
+      target_compile_options(cyclesphi_space PRIVATE ${OpenMP_CXX_FLAGS})
+    endif()
+
+    install(
+    TARGETS cyclesphi_space
+    DESTINATION ${CMAKE_INSTALL_PREFIX})
   endif()
-
-  install(
-  TARGETS cyclesphi_space
-  DESTINATION ${CMAKE_INSTALL_PREFIX})
-
 endif()
 ###############cyclesphi_mpi############################
 if(WITH_CYCLES_STANDALONE)

@@ -142,6 +142,9 @@ option(WITH_CLIENT_GPUJPEG "Enable GPUJPEG" OFF)
 option(WITH_MULTIRES_COUNTER "Enable multires counter" OFF)
 option(WITH_ZFP_LOADER "Enable ZFP loader" OFF)
 
+# SpaceConverter Features
+option(WITH_SPACE_CONVERTER "Enable SpaceConverter features" OFF)
+
 # NVIDIA CUDA & OptiX
 if(NOT APPLE AND NOT (WIN32 AND CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64"))
   option(WITH_CYCLES_DEVICE_CUDA "Enable Cycles NVIDIA CUDA compute support" ON)
