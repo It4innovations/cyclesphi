@@ -72,6 +72,13 @@ ccl_device_inline int cub_find_voxel(const uint64_t* keys, int count, uint64_t s
     }
   }
   
+  
+  //for (int i= 0; i < count; i++) {
+  //  if (keys[i] == search_key) {
+  //    return i;
+  //  }
+  //}
+
   return -1; /* Not found */
 }
 
@@ -1112,6 +1119,10 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
   if (data_type == IMAGE_DATA_TYPE_CUB_FLOAT) {
     // CUB now uses transform from header similar to NanoVDB
     const SerializableCUBData* header = (const SerializableCUBData*)info.data;
+    //  float bbox[6];           // min_x, min_y, min_z, max_x, max_y, max_z
+    //  float transform[12];     // 3x4 transformation matrix (row-major)
+    //  int32_t voxel_count;     // Number of voxels
+    size_t header_size = 6 * sizeof(float) + 12 * sizeof(float) + sizeof(int32_t);
     const int voxel_count = header->voxel_count;
     
     // Extract bbox from header
@@ -1128,11 +1139,11 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     
     // Apply inverse transform to get from world space to index space
     // transform_3d already contains the inverse in metadata
-    float3 P_transformed = transform_point(&tex.transform_3d, P);
+    //float3 P_transformed = transform_point(&tex.transform_3d, P);
     
-    float px = P_transformed.x;
-    float py = P_transformed.y;
-    float pz = P_transformed.z;
+    float px = P.x;
+    float py = P.y;
+    float pz = P.z;
 
     if (px < 0.0f || py < 0.0f || pz < 0.0f)
       return zero_float4();
@@ -1141,9 +1152,10 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
       return zero_float4();
     }
     
-    const uint64_t* keys = (const uint64_t*)((char*)info.data + sizeof(SerializableCUBData));
-    const float* values = (const float*)((char*)info.data + sizeof(SerializableCUBData) + 
-                                         voxel_count * sizeof(uint64_t));
+    const ccl_global uint64_t *keys = (const ccl_global uint64_t *)((char *)info.data +
+                                                                    header_size);
+    const ccl_global float *values = (const ccl_global float *)((char *)info.data + header_size +
+                                                                  voxel_count * sizeof(uint64_t));
 
     if (interpolation == INTERPOLATION_LINEAR) {
       const int ix0 = (int)floorf(px), iy0 = (int)floorf(py), iz0 = (int)floorf(pz);

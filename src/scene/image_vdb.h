@@ -319,14 +319,17 @@ public:
 
 protected:
     vector<char> cub_data;
-    void* dev_array_storage;
+    //void* dev_array_storage;
 
     void deserialize_cub_array();
     
     // Helper to get header from storage
-    const SerializableCUBData* get_header() const {
-        return static_cast<const SerializableCUBData*>(dev_array_storage);
-    }
+    //SerializableCUBData* get_header(){
+    //  if (cub_data.empty()) {
+    //    return nullptr;
+    //  }
+    //  return (SerializableCUBData *)cub_data.data();
+    //}
 };
 
 CCL_NAMESPACE_END
