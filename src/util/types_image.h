@@ -70,13 +70,14 @@ struct SerializableZFPData {
 };
 #endif
 
-#ifdef WITH_GPU_CUDA
 struct SerializableCUBData {
-  size_t placeholder_ptr;  // Offset to the keys data
+  // Header (read from file):
+  float bbox[6];           // min_x, min_y, min_z, max_x, max_y, max_z
+  float transform[12];     // 3x4 transformation matrix (row-major)
   int32_t voxel_count;     // Number of voxels
+  int32_t padding;         // Alignment padding
   // Followed by: uint64_t keys[voxel_count], float values[voxel_count]
 };
-#endif
 
 ccl_device_inline bool is_nanovdb_type(int type)
 {

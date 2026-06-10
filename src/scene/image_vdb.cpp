@@ -1416,11 +1416,8 @@ float3 ZFPImageLoader::index_to_world(float3 in)
 }
 #endif
 
-#ifdef WITH_GPU_CUDA
-CUBImageLoader::CUBImageLoader(
-    vector<char> &g, int3 d, float3 s, float3 t, int3 bmin, int3 bmax)
-    : cub_data(std::move(g)), VDBImageLoader(""), dim(d), scale(s), trans(t), 
-      bbox_min(bmin), bbox_max(bmax), dev_array_storage(nullptr)
+CUBImageLoader::CUBImageLoader(vector<char> &g)
+    : cub_data(std::move(g)), VDBImageLoader(""), dev_array_storage(nullptr)
 {
     printf("CUBImageLoader: size in bytes: %lld\n", cub_data.size());
     deserialize_cub_array();
@@ -1441,25 +1438,37 @@ void CUBImageLoader::deserialize_cub_array()
         return;
     }
 
-    printf("CUBImageLoader: Deserializing CUB sparse voxel array\n");
+    printf("CUBImageLoader: Deserializing CUB sparse voxel array with header\n");
     printf("  Input data size: %lld bytes\n", cub_data.size());
     
-    // Read the voxel count from the beginning of the data
-    if (cub_data.size() < sizeof(int32_t)) {
-        printf("CUBImageLoader: Data too small for header\n");
+    // Header format: 6 floats (bbox) + 12 floats (transform) + int32_t (voxel_count) + padding
+    constexpr size_t HEADER_SIZE = 6 * sizeof(float) + 12 * sizeof(float) + sizeof(int32_t);//+sizeof(int32_t);
+    
+    if (cub_data.size() < HEADER_SIZE) {
+        printf("CUBImageLoader: Data too small for header (expected at least %zu bytes)\n", HEADER_SIZE);
         return;
     }
     
-    const int32_t* voxel_count_ptr = reinterpret_cast<const int32_t*>(cub_data.data());
+    // Read header from file data
+    const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(cub_data.data());
+    const float* bbox_ptr = reinterpret_cast<const float*>(src_ptr);
+    const float* transform_ptr = reinterpret_cast<const float*>(src_ptr + 6 * sizeof(float));
+    const int32_t* voxel_count_ptr = reinterpret_cast<const int32_t*>(src_ptr + 18 * sizeof(float));
     int32_t voxel_count = *voxel_count_ptr;
     
     printf("  Voxel count: %d\n", voxel_count);
-    printf("  Dimensions: %d x %d x %d\n", dim.x, dim.y, dim.z);
+    printf("  BBox: [%.2f, %.2f, %.2f] to [%.2f, %.2f, %.2f]\n",
+           bbox_ptr[0], bbox_ptr[1], bbox_ptr[2],
+           bbox_ptr[3], bbox_ptr[4], bbox_ptr[5]);
+    printf("  Transform matrix:\n");
+    printf("    [%.4f %.4f %.4f %.4f]\n", transform_ptr[0], transform_ptr[1], transform_ptr[2], transform_ptr[3]);
+    printf("    [%.4f %.4f %.4f %.4f]\n", transform_ptr[4], transform_ptr[5], transform_ptr[6], transform_ptr[7]);
+    printf("    [%.4f %.4f %.4f %.4f]\n", transform_ptr[8], transform_ptr[9], transform_ptr[10], transform_ptr[11]);
     
-    // Calculate expected data size: sizeof(int) + voxel_count * (sizeof(uint64_t) + sizeof(float))
-    size_t expected_size = sizeof(int32_t) + 
-                          voxel_count * sizeof(uint64_t) + 
-                          voxel_count * sizeof(float);
+    // Calculate expected data size
+    size_t keys_size = voxel_count * sizeof(uint64_t);
+    size_t values_size = voxel_count * sizeof(float);
+    size_t expected_size = HEADER_SIZE + keys_size + values_size;
     
     if (cub_data.size() < expected_size) {
         printf("CUBImageLoader: Data size mismatch. Expected %zu, got %lld\n", 
@@ -1468,10 +1477,8 @@ void CUBImageLoader::deserialize_cub_array()
     }
     
     try {
-        // Allocate storage for SerializableCUBData header + keys + values
+        // Allocate storage for SerializableCUBData + keys + values
         size_t struct_size = sizeof(SerializableCUBData);
-        size_t keys_size = voxel_count * sizeof(uint64_t);
-        size_t values_size = voxel_count * sizeof(float);
         size_t total_size = struct_size + keys_size + values_size;
         
         dev_array_storage = malloc(total_size);
@@ -1480,15 +1487,24 @@ void CUBImageLoader::deserialize_cub_array()
             return;
         }
         
-        // Fill in the header
+        // Fill in the header structure
         SerializableCUBData* cub_header = static_cast<SerializableCUBData*>(dev_array_storage);
-        cub_header->placeholder_ptr = struct_size;
+        
+        // Copy bbox
+        for (int i = 0; i < 6; i++) {
+            cub_header->bbox[i] = bbox_ptr[i];
+        }
+        
+        // Copy transform
+        for (int i = 0; i < 12; i++) {
+            cub_header->transform[i] = transform_ptr[i];
+        }
+        
         cub_header->voxel_count = voxel_count;
+        cub_header->padding = 0;
         
-        // Copy keys and values from cub_data
-        const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(cub_data.data());
-        src_ptr += sizeof(int32_t); // Skip voxel count
-        
+        // Copy keys and values from file data (after header)
+        src_ptr += HEADER_SIZE;
         uint8_t* dst_ptr = static_cast<uint8_t*>(dev_array_storage) + struct_size;
         
         // Copy keys
@@ -1525,56 +1541,54 @@ bool CUBImageLoader::load_metadata(ImageMetaData& metadata)
         return false;
     }
 
+    const SerializableCUBData* header = get_header();
+    
     metadata.channels = 1; // CUB stores float values
 
-    /* Set dimensions. */
+    /* Calculate dimensions from bbox */
+    int3 bbox_min = make_int3((int)header->bbox[0], (int)header->bbox[1], (int)header->bbox[2]);
+    int3 bbox_max = make_int3((int)header->bbox[3], (int)header->bbox[4], (int)header->bbox[5]);
+    int3 dim = make_int3(bbox_max.x - bbox_min.x + 1, 
+                         bbox_max.y - bbox_min.y + 1, 
+                         bbox_max.z - bbox_min.z + 1);
+    
     metadata.width = dim.x;
     metadata.height = dim.y;
 
-    const SerializableCUBData* header = static_cast<const SerializableCUBData*>(dev_array_storage);
     size_t keys_size = header->voxel_count * sizeof(uint64_t);
     size_t values_size = header->voxel_count * sizeof(float);
     metadata.nanovdb_byte_size = sizeof(SerializableCUBData) + keys_size + values_size;
     
     metadata.type = IMAGE_DATA_TYPE_CUB_FLOAT;
 
-    /* Set transform_3d. */
-    metadata.transform_3d = ccl::transform_identity();
+    /* Set transform from the header - convert row-major 3x4 to our Transform */
+    // The transform in header is index_to_world, similar to NanoVDB
+    Transform index_to_object;
+    for (int row = 0; row < 3; row++) {
+        index_to_object[row].x = header->transform[row * 4 + 0];
+        index_to_object[row].y = header->transform[row * 4 + 1];
+        index_to_object[row].z = header->transform[row * 4 + 2];
+        index_to_object[row].w = header->transform[row * 4 + 3];
+    }
 
-    metadata.transform_3d.x.x = (float)dim.x;
-    metadata.transform_3d.y.x = (float)dim.y;
-    metadata.transform_3d.z.x = (float)dim.z;
+    metadata.transform_3d = transform_inverse(index_to_object);
+    metadata.use_transform_3d = true;
 
-    metadata.transform_3d.x.y = (float)scale.x;
-    metadata.transform_3d.y.y = (float)scale.y;
-    metadata.transform_3d.z.y = (float)scale.z;
-
-    metadata.transform_3d.x.z = (float)trans.x;
-    metadata.transform_3d.y.z = (float)trans.y;
-    metadata.transform_3d.z.z = (float)trans.z;
-
-    metadata.transform_3d.x.w = (float)bbox_min.x;
-    metadata.transform_3d.y.w = (float)bbox_min.y;
-    metadata.transform_3d.z.w = (float)bbox_min.z;
-
-    metadata.use_transform_3d = false;
-
-    printf("  metadata.transform_3d:\n");
-    printf("    [%9f %9f %9f %9f]\n",
-           metadata.transform_3d.x.x,
-           metadata.transform_3d.x.y,
-           metadata.transform_3d.x.z,
-           metadata.transform_3d.x.w);
-    printf("    [%9f %9f %9f %9f]\n",
-           metadata.transform_3d.y.x,
-           metadata.transform_3d.y.y,
-           metadata.transform_3d.y.z,
-           metadata.transform_3d.y.w);
-    printf("    [%9f %9f %9f %9f]\n",
-           metadata.transform_3d.z.x,
-           metadata.transform_3d.z.y,
-           metadata.transform_3d.z.z,
-           metadata.transform_3d.z.w);
+    printf("  CUB metadata:\n");
+    printf("    Dimensions: %d x %d x %d\n", dim.x, dim.y, dim.z);
+    printf("    BBox: [%d, %d, %d] to [%d, %d, %d]\n",
+           bbox_min.x, bbox_min.y, bbox_min.z,
+           bbox_max.x, bbox_max.y, bbox_max.z);
+    printf("    metadata.transform_3d (inverse of index_to_object):\n");
+    printf("      [%9f %9f %9f %9f]\n",
+           metadata.transform_3d.x.x, metadata.transform_3d.x.y,
+           metadata.transform_3d.x.z, metadata.transform_3d.x.w);
+    printf("      [%9f %9f %9f %9f]\n",
+           metadata.transform_3d.y.x, metadata.transform_3d.y.y,
+           metadata.transform_3d.y.z, metadata.transform_3d.y.w);
+    printf("      [%9f %9f %9f %9f]\n",
+           metadata.transform_3d.z.x, metadata.transform_3d.z.y,
+           metadata.transform_3d.z.z, metadata.transform_3d.z.w);
 
     return true;
 }
@@ -1603,10 +1617,6 @@ bool CUBImageLoader::equals(const ImageLoader& other) const
         return false;
     }
     
-    if (dim.x != other_loader.dim.x || dim.y != other_loader.dim.y || dim.z != other_loader.dim.z) {
-        return false;
-    }
-    
     return !memcmp(cub_data.data(), other_loader.cub_data.data(), cub_data.size());
 }
 
@@ -1626,16 +1636,32 @@ bool CUBImageLoader::is_simple_mesh() const
 
 void CUBImageLoader::get_bbox(int3 &bmin, int3 &bmax)
 {
-    bmin = bbox_min;
-    bmax = bbox_max;
+    if (!dev_array_storage) {
+        bmin = make_int3(0, 0, 0);
+        bmax = make_int3(0, 0, 0);
+        return;
+    }
+    
+    const SerializableCUBData* header = get_header();
+    bmin = make_int3((int)header->bbox[0], (int)header->bbox[1], (int)header->bbox[2]);
+    bmax = make_int3((int)header->bbox[3], (int)header->bbox[4], (int)header->bbox[5]);
 }
 
 float3 CUBImageLoader::index_to_world(float3 in)
 {
-    return make_float3((float)in[0] * scale.x + trans.x,
-                       (float)in[1] * scale.y + trans.y,
-                       (float)in[2] * scale.z + trans.z);
+    if (!dev_array_storage) {
+        return make_float3(0.0f, 0.0f, 0.0f);
+    }
+    
+    const SerializableCUBData* header = get_header();
+    // Apply the transformation matrix (row-major 3x4)
+    float x = header->transform[0] * in.x + header->transform[1] * in.y + 
+              header->transform[2] * in.z + header->transform[3];
+    float y = header->transform[4] * in.x + header->transform[5] * in.y + 
+              header->transform[6] * in.z + header->transform[7];
+    float z = header->transform[8] * in.x + header->transform[9] * in.y + 
+              header->transform[10] * in.z + header->transform[11];
+    return make_float3(x, y, z);
 }
-#endif
 
 CCL_NAMESPACE_END

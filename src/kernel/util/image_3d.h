@@ -28,7 +28,6 @@ CCL_NAMESPACE_BEGIN
 namespace {
 #endif
 
-#ifdef WITH_GPU_CUDA
 /* CUB sparse voxel helper functions */
 #define CUB_COORD_BITS 21
 #define CUB_COORD_BIAS (1 << (CUB_COORD_BITS - 1))
@@ -97,7 +96,6 @@ ccl_device_inline float cub_fetch(const uint64_t* keys,
   
   return 0.0f; /* Default value for empty voxels */
 }
-#endif
 
 #ifdef WITH_NANOVDB
 
@@ -1111,27 +1109,30 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     return make_float4(f, f, f, 1.0f);
   }
 #endif
-#ifdef WITH_GPU_CUDA
   if (data_type == IMAGE_DATA_TYPE_CUB_FLOAT) {
-    const size_t dimx = (size_t)tex.transform_3d.x.x;
-    const size_t dimy = (size_t)tex.transform_3d.y.x;
-    const size_t dimz = (size_t)tex.transform_3d.z.x;
-
-    float scale_x = tex.transform_3d.x.y;
-    float scale_y = tex.transform_3d.y.y;
-    float scale_z = tex.transform_3d.z.y;
-
-    float trans_x = tex.transform_3d.x.z;
-    float trans_y = tex.transform_3d.y.z;
-    float trans_z = tex.transform_3d.z.z;
-
-    float bbox_min_x = tex.transform_3d.x.w;
-    float bbox_min_y = tex.transform_3d.y.w;
-    float bbox_min_z = tex.transform_3d.z.w;
-
-    float px = (P.x - bbox_min_x - trans_x) / scale_x;
-    float py = (P.y - bbox_min_y - trans_y) / scale_y;
-    float pz = (P.z - bbox_min_z - trans_z) / scale_z;
+    // CUB now uses transform from header similar to NanoVDB
+    const SerializableCUBData* header = (const SerializableCUBData*)info.data;
+    const int voxel_count = header->voxel_count;
+    
+    // Extract bbox from header
+    const float bbox_min_x = header->bbox[0];
+    const float bbox_min_y = header->bbox[1];
+    const float bbox_min_z = header->bbox[2];
+    const float bbox_max_x = header->bbox[3];
+    const float bbox_max_y = header->bbox[4];
+    const float bbox_max_z = header->bbox[5];
+    
+    const int dimx = (int)(bbox_max_x - bbox_min_x) + 1;
+    const int dimy = (int)(bbox_max_y - bbox_min_y) + 1;
+    const int dimz = (int)(bbox_max_z - bbox_min_z) + 1;
+    
+    // Apply inverse transform to get from world space to index space
+    // transform_3d already contains the inverse in metadata
+    float3 P_transformed = transform_point(&tex.transform_3d, P);
+    
+    float px = P_transformed.x;
+    float py = P_transformed.y;
+    float pz = P_transformed.z;
 
     if (px < 0.0f || py < 0.0f || pz < 0.0f)
       return zero_float4();
@@ -1139,12 +1140,9 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     if (floorf(px) >= dimx || floorf(py) >= dimy || floorf(pz) >= dimz) {
       return zero_float4();
     }
-
-    const SerializableCUBData* header = (const SerializableCUBData*)info.data;
-    const int voxel_count = header->voxel_count;
     
-    const uint64_t* keys = (const uint64_t*)((char*)info.data + header->placeholder_ptr);
-    const float* values = (const float*)((char*)info.data + header->placeholder_ptr + 
+    const uint64_t* keys = (const uint64_t*)((char*)info.data + sizeof(SerializableCUBData));
+    const float* values = (const float*)((char*)info.data + sizeof(SerializableCUBData) + 
                                          voxel_count * sizeof(uint64_t));
 
     if (interpolation == INTERPOLATION_LINEAR) {
@@ -1201,7 +1199,6 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     const float f = cub_fetch(keys, values, voxel_count, ix, iy, iz, dimx, dimy, dimz);
     return make_float4(f, f, f, 1.0f);
   }
-#endif
 #else
   (void)kg;
   (void)sd;

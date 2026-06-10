@@ -294,15 +294,9 @@ protected:
 };
 #endif
 
-#ifdef WITH_GPU_CUDA
 class CUBImageLoader : public VDBImageLoader {
 public:
-    CUBImageLoader(vector<char> &g,
-                   int3 d,
-                   float3 s,
-                   float3 t,
-                   int3 bmin,
-                   int3 bmax);
+    CUBImageLoader(vector<char> &g);
     ~CUBImageLoader();
 
     virtual bool load_metadata(ImageMetaData& metadata) override;
@@ -325,15 +319,14 @@ public:
 
 protected:
     vector<char> cub_data;
-    int3 dim;
-    float3 scale;
-    float3 trans;
-    int3 bbox_min;
-    int3 bbox_max;
     void* dev_array_storage;
 
     void deserialize_cub_array();
+    
+    // Helper to get header from storage
+    const SerializableCUBData* get_header() const {
+        return static_cast<const SerializableCUBData*>(dev_array_storage);
+    }
 };
-#endif
 
 CCL_NAMESPACE_END
