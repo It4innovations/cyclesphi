@@ -620,6 +620,27 @@ if(WITH_ZFP_LOADER)
 endif()
 
 ###########################################################################
+# Space Converter
+###########################################################################
+
+if(WITH_SPACE_CONVERTER)
+  find_package(space_converter CONFIG)
+  set_and_warn_library_found("Space Converter" space_converter_FOUND WITH_SPACE_CONVERTER)
+
+  if(space_converter_FOUND)
+    message(STATUS "Found Space Converter: ${space_converter_DIR}")
+    
+    # Extract include directories from space_converter::space_common target
+    if(TARGET space_converter::space_common)
+      get_target_property(SPACE_CONVERTER_INCLUDE_DIR space_converter::space_common INTERFACE_INCLUDE_DIRECTORIES)
+      if(SPACE_CONVERTER_INCLUDE_DIR)
+        set(SPACE_CONVERTER_INCLUDE_DIRS ${SPACE_CONVERTER_INCLUDE_DIR})
+      endif()
+    endif()
+  endif()
+endif()
+
+###########################################################################
 # OpenImageDenoise
 ###########################################################################
 

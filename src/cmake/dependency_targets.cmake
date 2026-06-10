@@ -371,6 +371,19 @@ if(WITH_ZFP_LOADER)
 endif()
 
 # -----------------------------------------------------------------------------
+# Configure Space Converter
+
+add_library(bf_deps_optional_space_converter INTERFACE)
+add_library(bf::dependencies::optional::space_converter ALIAS bf_deps_optional_space_converter)
+
+if(WITH_SPACE_CONVERTER)
+  target_compile_definitions(bf_deps_optional_space_converter INTERFACE WITH_SPACE_CONVERTER)
+  if(TARGET space_converter::space_common)
+    target_link_libraries(bf_deps_optional_space_converter INTERFACE space_converter::space_common)
+  endif()
+endif()
+
+# -----------------------------------------------------------------------------
 # Configure Epoxy
 
 add_library(bf_deps_epoxy INTERFACE)

@@ -38,6 +38,16 @@ set(INC_SYS
    ${MPI_CXX_HEADER_DIR}
 )
 
+if(WITH_SPACE_CONVERTER)
+  if(SPACE_CONVERTER_INCLUDE_DIRS)
+    list(APPEND INC_SYS ${SPACE_CONVERTER_INCLUDE_DIRS})
+  elseif(space_converter_DIR)
+    # Derive include directory from space_converter installation
+    get_filename_component(SPACE_CONVERTER_ROOT "${space_converter_DIR}/../../.." ABSOLUTE)
+    list(APPEND INC_SYS "${SPACE_CONVERTER_ROOT}/include")
+  endif()
+endif()
+
 set(LIB
   cycles_device
   cycles_kernel
@@ -50,6 +60,12 @@ set(LIB
   braas_hpc_renderengine::braas_hpc_renderengine
   #${braas_hpc_renderengine_LIBRARIES}
 )
+
+if(WITH_SPACE_CONVERTER)
+    list(APPEND LIB
+    space_converter::space_common
+  )
+endif()
 
 #find_package(CUDA REQUIRED)
 
@@ -118,6 +134,12 @@ endif()
 if(WITH_ZFP_LOADER)
   list(APPEND LIB
     bf::dependencies::optional::zfp
+  )
+endif()
+
+if(WITH_SPACE_CONVERTER)
+  list(APPEND LIB
+    bf::dependencies::optional::space_converter
   )
 endif()
 
@@ -226,6 +248,10 @@ if(WITH_CYCLES_STANDALONE)
       target_link_libraries(cyclesphi_space PRIVATE OpenMP::OpenMP_CXX)
       target_compile_options(cyclesphi_space PRIVATE ${OpenMP_CXX_FLAGS})
     endif()
+
+    if(WITH_SPACE_CONVERTER)
+      target_compile_definitions(cyclesphi_space PRIVATE -DWITH_SPACE_CONVERTER)
+    endif()    
 
     install(
     TARGETS cyclesphi_space

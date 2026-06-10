@@ -20,6 +20,10 @@
 #include "cycles_xml_bin.h"
 #include "cyclesphi_common.h"
 
+#ifdef WITH_SPACE_CONVERTER
+#  include <data_common.h>
+#endif
+
 class FromCLSpace : public FromCL {
  public:
   FromCLSpace() : FromCL(), space_port(6000), space_server("localhost"), space_server_port(5005) {}
@@ -148,6 +152,7 @@ Semaphore sem_bspace(0);
 // file_type_items
 
 // SpaceData class stores and manages configuration and metadata for spatial data conversions.
+#if 0
 class SpaceData {
  public:
   // Enumeration for message types used in communication or processing.
@@ -198,7 +203,7 @@ class SpaceData {
   float min_value_reduced;  // Reduced minimum value after processing.
   float max_value_reduced;  // Reduced maximum value after processing.
 
-  float particle_fix_size;  // Flag indicating whether particle length is used.
+  float particle_radius_multiplier;  // Flag indicating whether particle length is used.
   float filter_min;         // Minimum filter value.
   float filter_max;         // Maximum filter value.
 
@@ -251,7 +256,7 @@ class SpaceData {
     min_value_reduced = 0.0f;
     max_value_reduced = 1.0f;
 
-    particle_fix_size = 0.0f;
+    particle_radius_multiplier = 0.0f;
     filter_min = -FLT_MAX;
     filter_max = FLT_MAX;
 
@@ -284,7 +289,9 @@ class SpaceData {
     anim_task_counter = 0;
   }
 };
-SpaceData spaceData;
+#endif
+
+common::SpaceData spaceData;
 int file_type = FTI_NONE;
 ////////////////////////
 ccl::vector<char> grid_handle_final;
@@ -374,7 +381,7 @@ void bspace_loop(FromCLSpace &fromCL)
         bSpaceClientTcp.recv_data_data((char *)&spaceData.dense_type, sizeof(int), false);
         bSpaceClientTcp.recv_data_data((char *)&spaceData.dense_norm, sizeof(int), false);
         bSpaceClientTcp.recv_data_data((char *)&spaceData.object_size, sizeof(float), false);
-        bSpaceClientTcp.recv_data_data((char *)&spaceData.particle_fix_size, sizeof(float), false);
+        bSpaceClientTcp.recv_data_data((char *)&spaceData.particle_radius_multiplier, sizeof(float), false);
         bSpaceClientTcp.recv_data_data((char *)&spaceData.filter_min, sizeof(float), false);
         bSpaceClientTcp.recv_data_data((char *)&spaceData.filter_max, sizeof(float), false);
         bSpaceClientTcp.recv_data_data((char *)&spaceData.frame, sizeof(int), false);
@@ -401,7 +408,7 @@ void bspace_loop(FromCLSpace &fromCL)
         spaceConverterServerTcp.send_data_data(
             (char *)&spaceData.object_size, sizeof(float), false);
         spaceConverterServerTcp.send_data_data(
-            (char *)&spaceData.particle_fix_size, sizeof(float), false);
+            (char *)&spaceData.particle_radius_multiplier, sizeof(float), false);
         spaceConverterServerTcp.send_data_data(
             (char *)&spaceData.filter_min, sizeof(float), false);
         spaceConverterServerTcp.send_data_data(
@@ -436,6 +443,12 @@ void bspace_loop(FromCLSpace &fromCL)
         // bSpaceClientTcp.send_data_data((char*)grid_handle_final.data(), size, false);
 
         // resend vdb info
+        spaceConverterServerTcp.recv_data_data((char*)&spaceData.min_value, sizeof(spaceData.min_value), false);
+        bSpaceClientTcp.send_data_data((char*)&spaceData.min_value, sizeof(spaceData.min_value), false);
+
+        spaceConverterServerTcp.recv_data_data((char*)&spaceData.max_value, sizeof(spaceData.max_value), false);
+        bSpaceClientTcp.send_data_data((char*)&spaceData.max_value, sizeof(spaceData.max_value), false);
+
         spaceConverterServerTcp.recv_data_data(
             (char *)&spaceData.min_value_reduced, sizeof(spaceData.min_value_reduced), false);
         bSpaceClientTcp.send_data_data(

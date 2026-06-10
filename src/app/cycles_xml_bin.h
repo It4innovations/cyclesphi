@@ -22,9 +22,11 @@ void xml_set_material_to_shader2(Scene* scene, Shader* shader, const char* file_
 #define RAD2DEGF(_rad) ((_rad) * (float)(180.0 / M_PI))
 #define DEG2RADF(_deg) ((_deg) * (float)(M_PI / 180.0))
 
+#if 0
 #define	FTI_NONE 0
 #define	FTI_OPENVDB 1
 #define	FTI_NANOVDB 2
 #define	FTI_PATH 3
+#endif
 
 CCL_NAMESPACE_END

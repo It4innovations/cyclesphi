@@ -46,6 +46,10 @@
 // #	include <nanovdb/util/IO.h>
 #endif
 
+#ifdef WITH_SPACE_CONVERTER
+#  include <data_common.h>
+#endif
+
 #include "graph/node_xml_util.h"
 #include "scene/image_oiio.h"
 
@@ -1352,7 +1356,7 @@ void xml_set_volume_to_attr(Scene *scene,
 
           unique_ptr<ImageLoader> loader = nullptr;
 
-#  ifdef WITH_OPENVDB
+#  if defined (WITH_SPACE_CONVERTER) && defined (WITH_OPENVDB)
           openvdb::initialize();
 
           if (type == FTI_OPENVDB) {
