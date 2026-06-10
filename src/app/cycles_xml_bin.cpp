@@ -1359,7 +1359,7 @@ void xml_set_volume_to_attr(Scene *scene,
 #  if defined (WITH_SPACE_CONVERTER) && defined (WITH_OPENVDB)
           openvdb::initialize();
 
-          if (type == FTI_OPENVDB) {
+          if (type == space_converter::common::FTI_OPENVDB) {
             // Convert the vector<uint8_t> back into a stringstream
             std::string str(file_content.begin(), file_content.end());
             std::istringstream stream(str, std::ios_base::binary);
@@ -1380,7 +1380,7 @@ void xml_set_volume_to_attr(Scene *scene,
             //nanovdb_handle.size(), dt->info);
             // }
           }
-          else if (type == FTI_PATH) {
+          else if (type == space_converter::common::FTI_PATH) {
             std::string filename(file_content.begin(), file_content.end());
             openvdb::io::File vdbFile(filename);
             vdbFile.open();  // Explicitly open the file
@@ -1399,7 +1399,7 @@ void xml_set_volume_to_attr(Scene *scene,
             //nanovdb_handle.size(), dt->info);
             // }
           }
-          else if (type == FTI_NANOVDB) {
+          else if (type == space_converter::common::FTI_NANOVDB) {
             // nanovdb::NanoGrid<float>* nanogrid = nullptr;
             // size_t nanogrid_size = 0;
             // vector<char> nanogrid;

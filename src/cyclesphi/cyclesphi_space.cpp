@@ -291,8 +291,8 @@ class SpaceData {
 };
 #endif
 
-common::SpaceData spaceData;
-int file_type = FTI_NONE;
+space_converter::common::SpaceData spaceData;
+int file_type = space_converter::common::FTI_NONE;
 ////////////////////////
 ccl::vector<char> grid_handle_final;
 
@@ -431,7 +431,7 @@ void bspace_loop(FromCLSpace &fromCL)
         grid_handle_final.resize(size);
 
         // file type
-        int file_type0 = FTI_NONE;
+        int file_type0 = space_converter::common::FTI_NONE;
         bSpaceClientTcp.send_data_data((char *)&file_type0, sizeof(file_type0), false);
 
         std::size_t size0 = 0;  // echo about success, keep local grid
