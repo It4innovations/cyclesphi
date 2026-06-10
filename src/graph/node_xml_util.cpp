@@ -130,6 +130,7 @@ const char* enum_to_str(ImageDataType t)
   case IMAGE_DATA_TYPE_RAW3D_FLOAT:    return "IMAGE_DATA_TYPE_RAW3D_FLOAT";
   case IMAGE_DATA_TYPE_RAW3D_FLOAT3:   return "IMAGE_DATA_TYPE_RAW3D_FLOAT3";
   case IMAGE_DATA_TYPE_ZFP_FLOAT:      return "IMAGE_DATA_TYPE_ZFP_FLOAT";
+  case IMAGE_DATA_TYPE_CUB_FLOAT:      return "IMAGE_DATA_TYPE_CUB_FLOAT";
   case IMAGE_DATA_NUM_TYPES:           return "IMAGE_DATA_NUM_TYPES";
   default: {
     printf("enum_to_str: Unknown ImageDataType enum: %d\n", (int)t);
@@ -203,6 +204,9 @@ bool str_to_enum(const char* str, ImageDataType& out)
   }
   else if (std::strcmp(str, "IMAGE_DATA_TYPE_ZFP_FLOAT") == 0) {
     out = IMAGE_DATA_TYPE_ZFP_FLOAT;
+  }
+  else if (std::strcmp(str, "IMAGE_DATA_TYPE_CUB_FLOAT") == 0) {
+    out = IMAGE_DATA_TYPE_CUB_FLOAT;
   }
   else if (std::strcmp(str, "IMAGE_DATA_NUM_TYPES") == 0) {
     out = IMAGE_DATA_NUM_TYPES;

@@ -28,6 +28,77 @@ CCL_NAMESPACE_BEGIN
 namespace {
 #endif
 
+#ifdef WITH_GPU_CUDA
+/* CUB sparse voxel helper functions */
+#define CUB_COORD_BITS 21
+#define CUB_COORD_BIAS (1 << (CUB_COORD_BITS - 1))
+#define CUB_COORD_MASK ((1ull << CUB_COORD_BITS) - 1ull)
+
+ccl_device_inline uint64_t cub_pack_coord(int x, int y, int z)
+{
+  uint64_t ux = (uint64_t)(x + CUB_COORD_BIAS) & CUB_COORD_MASK;
+  uint64_t uy = (uint64_t)(y + CUB_COORD_BIAS) & CUB_COORD_MASK;
+  uint64_t uz = (uint64_t)(z + CUB_COORD_BIAS) & CUB_COORD_MASK;
+  return (ux) | (uy << CUB_COORD_BITS) | (uz << (2 * CUB_COORD_BITS));
+}
+
+ccl_device_inline void cub_unpack_coord(uint64_t key, int& x, int& y, int& z)
+{
+  uint64_t ux = (key) & CUB_COORD_MASK;
+  uint64_t uy = (key >> CUB_COORD_BITS) & CUB_COORD_MASK;
+  uint64_t uz = (key >> (2 * CUB_COORD_BITS)) & CUB_COORD_MASK;
+  x = (int)ux - CUB_COORD_BIAS;
+  y = (int)uy - CUB_COORD_BIAS;
+  z = (int)uz - CUB_COORD_BIAS;
+}
+
+/* Binary search for a voxel in the sorted sparse array */
+ccl_device_inline int cub_find_voxel(const uint64_t* keys, int count, uint64_t search_key)
+{
+  int left = 0;
+  int right = count - 1;
+  
+  while (left <= right) {
+    int mid = left + (right - left) / 2;
+    uint64_t mid_key = keys[mid];
+    
+    if (mid_key == search_key) {
+      return mid;
+    }
+    else if (mid_key < search_key) {
+      left = mid + 1;
+    }
+    else {
+      right = mid - 1;
+    }
+  }
+  
+  return -1; /* Not found */
+}
+
+/* Fetch voxel value from sparse array */
+ccl_device_inline float cub_fetch(const uint64_t* keys, 
+                                  const float* values, 
+                                  int count,
+                                  int x, int y, int z,
+                                  int dimx, int dimy, int dimz)
+{
+  /* Clamp coordinates to valid range */
+  if (x < 0 || y < 0 || z < 0 || x >= dimx || y >= dimy || z >= dimz) {
+    return 0.0f;
+  }
+  
+  uint64_t search_key = cub_pack_coord(x, y, z);
+  int index = cub_find_voxel(keys, count, search_key);
+  
+  if (index >= 0) {
+    return values[index];
+  }
+  
+  return 0.0f; /* Default value for empty voxels */
+}
+#endif
+
 #ifdef WITH_NANOVDB
 
 /* Cubic interpolation weights. */
@@ -1037,6 +1108,97 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     const uint local_idx = (ix & 3) + 4 * ((iy & 3) + 4 * (iz & 3));
     cuZFP::NoCache<float, 64> cache;
     const float f = cache.get(store, block_idx, local_idx);
+    return make_float4(f, f, f, 1.0f);
+  }
+#endif
+#ifdef WITH_GPU_CUDA
+  if (data_type == IMAGE_DATA_TYPE_CUB_FLOAT) {
+    const size_t dimx = (size_t)tex.transform_3d.x.x;
+    const size_t dimy = (size_t)tex.transform_3d.y.x;
+    const size_t dimz = (size_t)tex.transform_3d.z.x;
+
+    float scale_x = tex.transform_3d.x.y;
+    float scale_y = tex.transform_3d.y.y;
+    float scale_z = tex.transform_3d.z.y;
+
+    float trans_x = tex.transform_3d.x.z;
+    float trans_y = tex.transform_3d.y.z;
+    float trans_z = tex.transform_3d.z.z;
+
+    float bbox_min_x = tex.transform_3d.x.w;
+    float bbox_min_y = tex.transform_3d.y.w;
+    float bbox_min_z = tex.transform_3d.z.w;
+
+    float px = (P.x - bbox_min_x - trans_x) / scale_x;
+    float py = (P.y - bbox_min_y - trans_y) / scale_y;
+    float pz = (P.z - bbox_min_z - trans_z) / scale_z;
+
+    if (px < 0.0f || py < 0.0f || pz < 0.0f)
+      return zero_float4();
+
+    if (floorf(px) >= dimx || floorf(py) >= dimy || floorf(pz) >= dimz) {
+      return zero_float4();
+    }
+
+    const SerializableCUBData* header = (const SerializableCUBData*)info.data;
+    const int voxel_count = header->voxel_count;
+    
+    const uint64_t* keys = (const uint64_t*)((char*)info.data + header->placeholder_ptr);
+    const float* values = (const float*)((char*)info.data + header->placeholder_ptr + 
+                                         voxel_count * sizeof(uint64_t));
+
+    if (interpolation == INTERPOLATION_LINEAR) {
+      const int ix0 = (int)floorf(px), iy0 = (int)floorf(py), iz0 = (int)floorf(pz);
+      const float tx = px - (float)ix0, ty = py - (float)iy0, tz = pz - (float)iz0;
+      const int ix1 = ix0 + 1, iy1 = iy0 + 1, iz1 = iz0 + 1;
+      const float f = mix(
+          mix(mix(cub_fetch(keys, values, voxel_count, ix0, iy0, iz0, dimx, dimy, dimz),
+                  cub_fetch(keys, values, voxel_count, ix0, iy0, iz1, dimx, dimy, dimz),
+                  tz),
+              mix(cub_fetch(keys, values, voxel_count, ix0, iy1, iz1, dimx, dimy, dimz),
+                  cub_fetch(keys, values, voxel_count, ix0, iy1, iz0, dimx, dimy, dimz),
+                  1.0f - tz),
+              ty),
+          mix(mix(cub_fetch(keys, values, voxel_count, ix1, iy1, iz0, dimx, dimy, dimz),
+                  cub_fetch(keys, values, voxel_count, ix1, iy1, iz1, dimx, dimy, dimz),
+                  tz),
+              mix(cub_fetch(keys, values, voxel_count, ix1, iy0, iz1, dimx, dimy, dimz),
+                  cub_fetch(keys, values, voxel_count, ix1, iy0, iz0, dimx, dimy, dimz),
+                  1.0f - tz),
+              1.0f - ty),
+          tx);
+      return make_float4(f, f, f, 1.0f);
+    }
+
+    if (interpolation == INTERPOLATION_CUBIC) {
+      const float3 fp = make_float3(floorf(px), floorf(py), floorf(pz));
+      const float3 t = make_float3(px, py, pz) - fp;
+      const int3 idx = make_int3((int)fp.x - 1, (int)fp.y - 1, (int)fp.z - 1);
+
+      float3 w[4];
+      fill_cubic_weights(w, t);
+
+      float result = 0.0f;
+      for (int k = 0; k < 4; k++) {
+        float col_acc = 0.0f;
+        for (int j = 0; j < 4; j++) {
+          col_acc +=
+              w[j].y *
+              (w[0].x * cub_fetch(keys, values, voxel_count, idx.x + 0, idx.y + j, idx.z + k, dimx, dimy, dimz) +
+               w[1].x * cub_fetch(keys, values, voxel_count, idx.x + 1, idx.y + j, idx.z + k, dimx, dimy, dimz) +
+               w[2].x * cub_fetch(keys, values, voxel_count, idx.x + 2, idx.y + j, idx.z + k, dimx, dimy, dimz) +
+               w[3].x * cub_fetch(keys, values, voxel_count, idx.x + 3, idx.y + j, idx.z + k, dimx, dimy, dimz));
+        }
+        result += w[k].z * col_acc;
+      }
+      return make_float4(result, result, result, 1.0f);
+    }
+
+    /* INTERPOLATION_CLOSEST */
+    const int ix = (int)(floorf(px));
+    const int iy = (int)(floorf(py));
+    const int iz = (int)(floorf(pz));
+    const float f = cub_fetch(keys, values, voxel_count, ix, iy, iz, dimx, dimy, dimz);
     return make_float4(f, f, f, 1.0f);
   }
 #endif

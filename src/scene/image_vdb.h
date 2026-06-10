@@ -294,4 +294,46 @@ protected:
 };
 #endif
 
+#ifdef WITH_GPU_CUDA
+class CUBImageLoader : public VDBImageLoader {
+public:
+    CUBImageLoader(vector<char> &g,
+                   int3 d,
+                   float3 s,
+                   float3 t,
+                   int3 bmin,
+                   int3 bmax);
+    ~CUBImageLoader();
+
+    virtual bool load_metadata(ImageMetaData& metadata) override;
+
+    virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
+
+    virtual string name() const override;
+
+    virtual bool equals(const ImageLoader& other) const override;
+
+    virtual void cleanup() override;
+
+    virtual bool is_vdb_loader() const override;
+
+    virtual bool is_simple_mesh() const override;
+
+    virtual void get_bbox(int3& min_bbox, int3& max_bbox) override;
+
+    virtual float3 index_to_world(float3 in) override;
+
+protected:
+    vector<char> cub_data;
+    int3 dim;
+    float3 scale;
+    float3 trans;
+    int3 bbox_min;
+    int3 bbox_max;
+    void* dev_array_storage;
+
+    void deserialize_cub_array();
+};
+#endif
+
 CCL_NAMESPACE_END

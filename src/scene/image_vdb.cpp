@@ -1416,4 +1416,226 @@ float3 ZFPImageLoader::index_to_world(float3 in)
 }
 #endif
 
+#ifdef WITH_GPU_CUDA
+CUBImageLoader::CUBImageLoader(
+    vector<char> &g, int3 d, float3 s, float3 t, int3 bmin, int3 bmax)
+    : cub_data(std::move(g)), VDBImageLoader(""), dim(d), scale(s), trans(t), 
+      bbox_min(bmin), bbox_max(bmax), dev_array_storage(nullptr)
+{
+    printf("CUBImageLoader: size in bytes: %lld\n", cub_data.size());
+    deserialize_cub_array();
+}
+
+CUBImageLoader::~CUBImageLoader()
+{
+    if (dev_array_storage) {
+        free(dev_array_storage);
+        dev_array_storage = nullptr;
+    }
+}
+
+void CUBImageLoader::deserialize_cub_array()
+{
+    if (cub_data.empty()) {
+        printf("CUBImageLoader: No data to deserialize\n");
+        return;
+    }
+
+    printf("CUBImageLoader: Deserializing CUB sparse voxel array\n");
+    printf("  Input data size: %lld bytes\n", cub_data.size());
+    
+    // Read the voxel count from the beginning of the data
+    if (cub_data.size() < sizeof(int32_t)) {
+        printf("CUBImageLoader: Data too small for header\n");
+        return;
+    }
+    
+    const int32_t* voxel_count_ptr = reinterpret_cast<const int32_t*>(cub_data.data());
+    int32_t voxel_count = *voxel_count_ptr;
+    
+    printf("  Voxel count: %d\n", voxel_count);
+    printf("  Dimensions: %d x %d x %d\n", dim.x, dim.y, dim.z);
+    
+    // Calculate expected data size: sizeof(int) + voxel_count * (sizeof(uint64_t) + sizeof(float))
+    size_t expected_size = sizeof(int32_t) + 
+                          voxel_count * sizeof(uint64_t) + 
+                          voxel_count * sizeof(float);
+    
+    if (cub_data.size() < expected_size) {
+        printf("CUBImageLoader: Data size mismatch. Expected %zu, got %lld\n", 
+               expected_size, cub_data.size());
+        return;
+    }
+    
+    try {
+        // Allocate storage for SerializableCUBData header + keys + values
+        size_t struct_size = sizeof(SerializableCUBData);
+        size_t keys_size = voxel_count * sizeof(uint64_t);
+        size_t values_size = voxel_count * sizeof(float);
+        size_t total_size = struct_size + keys_size + values_size;
+        
+        dev_array_storage = malloc(total_size);
+        if (!dev_array_storage) {
+            printf("CUBImageLoader: Failed to allocate %zu bytes\n", total_size);
+            return;
+        }
+        
+        // Fill in the header
+        SerializableCUBData* cub_header = static_cast<SerializableCUBData*>(dev_array_storage);
+        cub_header->placeholder_ptr = struct_size;
+        cub_header->voxel_count = voxel_count;
+        
+        // Copy keys and values from cub_data
+        const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(cub_data.data());
+        src_ptr += sizeof(int32_t); // Skip voxel count
+        
+        uint8_t* dst_ptr = static_cast<uint8_t*>(dev_array_storage) + struct_size;
+        
+        // Copy keys
+        std::memcpy(dst_ptr, src_ptr, keys_size);
+        src_ptr += keys_size;
+        dst_ptr += keys_size;
+        
+        // Copy values
+        std::memcpy(dst_ptr, src_ptr, values_size);
+        
+        printf("  Total serialized size: %zu bytes (%.2f MB)\n", 
+               total_size, total_size / (1024.0 * 1024.0));
+    }
+    catch (const std::exception& e) {
+        printf("CUBImageLoader: Exception during deserialization: %s\n", e.what());
+        if (dev_array_storage) {
+            free(dev_array_storage);
+            dev_array_storage = nullptr;
+        }
+    }
+    catch (...) {
+        printf("CUBImageLoader: Unknown exception during deserialization\n");
+        if (dev_array_storage) {
+            free(dev_array_storage);
+            dev_array_storage = nullptr;
+        }
+    }
+}
+
+bool CUBImageLoader::load_metadata(ImageMetaData& metadata)
+{
+    if (!dev_array_storage) {
+        printf("CUBImageLoader: CUB array not initialized\n");
+        return false;
+    }
+
+    metadata.channels = 1; // CUB stores float values
+
+    /* Set dimensions. */
+    metadata.width = dim.x;
+    metadata.height = dim.y;
+
+    const SerializableCUBData* header = static_cast<const SerializableCUBData*>(dev_array_storage);
+    size_t keys_size = header->voxel_count * sizeof(uint64_t);
+    size_t values_size = header->voxel_count * sizeof(float);
+    metadata.nanovdb_byte_size = sizeof(SerializableCUBData) + keys_size + values_size;
+    
+    metadata.type = IMAGE_DATA_TYPE_CUB_FLOAT;
+
+    /* Set transform_3d. */
+    metadata.transform_3d = ccl::transform_identity();
+
+    metadata.transform_3d.x.x = (float)dim.x;
+    metadata.transform_3d.y.x = (float)dim.y;
+    metadata.transform_3d.z.x = (float)dim.z;
+
+    metadata.transform_3d.x.y = (float)scale.x;
+    metadata.transform_3d.y.y = (float)scale.y;
+    metadata.transform_3d.z.y = (float)scale.z;
+
+    metadata.transform_3d.x.z = (float)trans.x;
+    metadata.transform_3d.y.z = (float)trans.y;
+    metadata.transform_3d.z.z = (float)trans.z;
+
+    metadata.transform_3d.x.w = (float)bbox_min.x;
+    metadata.transform_3d.y.w = (float)bbox_min.y;
+    metadata.transform_3d.z.w = (float)bbox_min.z;
+
+    metadata.use_transform_3d = false;
+
+    printf("  metadata.transform_3d:\n");
+    printf("    [%9f %9f %9f %9f]\n",
+           metadata.transform_3d.x.x,
+           metadata.transform_3d.x.y,
+           metadata.transform_3d.x.z,
+           metadata.transform_3d.x.w);
+    printf("    [%9f %9f %9f %9f]\n",
+           metadata.transform_3d.y.x,
+           metadata.transform_3d.y.y,
+           metadata.transform_3d.y.z,
+           metadata.transform_3d.y.w);
+    printf("    [%9f %9f %9f %9f]\n",
+           metadata.transform_3d.z.x,
+           metadata.transform_3d.z.y,
+           metadata.transform_3d.z.z,
+           metadata.transform_3d.z.w);
+
+    return true;
+}
+
+bool CUBImageLoader::load_pixels(const ImageMetaData& metadata, void* pixels)
+{
+    if (dev_array_storage) {
+        memcpy(pixels, dev_array_storage, metadata.nanovdb_byte_size);
+        printf("CUBImageLoader: Copied serialized CUB data (%zu bytes)\n", 
+               metadata.nanovdb_byte_size);
+    }
+
+    return true;
+}
+
+string CUBImageLoader::name() const
+{
+    return "CUB Sparse Voxel Volume";
+}
+
+bool CUBImageLoader::equals(const ImageLoader& other) const
+{
+    const CUBImageLoader& other_loader = (const CUBImageLoader&)other;
+    
+    if (cub_data.size() != other_loader.cub_data.size()) {
+        return false;
+    }
+    
+    if (dim.x != other_loader.dim.x || dim.y != other_loader.dim.y || dim.z != other_loader.dim.z) {
+        return false;
+    }
+    
+    return !memcmp(cub_data.data(), other_loader.cub_data.data(), cub_data.size());
+}
+
+void CUBImageLoader::cleanup()
+{
+}
+
+bool CUBImageLoader::is_vdb_loader() const
+{
+    return true;
+}
+
+bool CUBImageLoader::is_simple_mesh() const
+{
+    return true;
+}
+
+void CUBImageLoader::get_bbox(int3 &bmin, int3 &bmax)
+{
+    bmin = bbox_min;
+    bmax = bbox_max;
+}
+
+float3 CUBImageLoader::index_to_world(float3 in)
+{
+    return make_float3((float)in[0] * scale.x + trans.x,
+                       (float)in[1] * scale.y + trans.y,
+                       (float)in[2] * scale.z + trans.z);
+}
+#endif
+
 CCL_NAMESPACE_END

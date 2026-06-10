@@ -72,6 +72,7 @@ TypeDesc ImageMetaData::typedesc() const
     case IMAGE_DATA_TYPE_RAW3D_FLOAT:
     case IMAGE_DATA_TYPE_RAW3D_FLOAT3:
     case IMAGE_DATA_TYPE_ZFP_FLOAT:
+    case IMAGE_DATA_TYPE_CUB_FLOAT:
     case IMAGE_DATA_NUM_TYPES:
       assert(!"Unknown data type");
       break;
@@ -113,6 +114,7 @@ size_t ImageMetaData::pixel_memory_size() const
     case IMAGE_DATA_TYPE_NANOVDB_DERIVATES:
     case IMAGE_DATA_TYPE_NANOVDB_DERIVATES_VEC4:
     case IMAGE_DATA_TYPE_ZFP_FLOAT:
+    case IMAGE_DATA_TYPE_CUB_FLOAT:
     case IMAGE_DATA_NUM_TYPES:
       break;
   }
@@ -199,7 +201,8 @@ void ImageMetaData::make_float()
     case IMAGE_DATA_TYPE_NANOVDB_DERIVATES_VEC4:
     case IMAGE_DATA_TYPE_RAW3D_FLOAT:
     case IMAGE_DATA_TYPE_RAW3D_FLOAT3:
-    case IMAGE_DATA_TYPE_ZFP_FLOAT:  
+    case IMAGE_DATA_TYPE_ZFP_FLOAT:
+    case IMAGE_DATA_TYPE_CUB_FLOAT:
     case IMAGE_DATA_NUM_TYPES:
       break;
   }
@@ -503,7 +506,8 @@ void ImageMetaData::conform_pixels(void *pixels,
     case IMAGE_DATA_TYPE_NANOVDB_DERIVATES_VEC4:
     case IMAGE_DATA_TYPE_RAW3D_FLOAT:
     case IMAGE_DATA_TYPE_RAW3D_FLOAT3:
-    case IMAGE_DATA_TYPE_ZFP_FLOAT:    
+    case IMAGE_DATA_TYPE_ZFP_FLOAT:
+    case IMAGE_DATA_TYPE_CUB_FLOAT:
     case IMAGE_DATA_NUM_TYPES:
       break;
   }
@@ -611,7 +615,8 @@ bool ImageMetaData::oiio_load_pixels(OIIO::string_view filepath,
     case IMAGE_DATA_TYPE_NANOVDB_DERIVATES_VEC4:
     case IMAGE_DATA_TYPE_RAW3D_FLOAT:
     case IMAGE_DATA_TYPE_RAW3D_FLOAT3:
-    case IMAGE_DATA_TYPE_ZFP_FLOAT:   
+    case IMAGE_DATA_TYPE_ZFP_FLOAT:
+    case IMAGE_DATA_TYPE_CUB_FLOAT:
     case IMAGE_DATA_NUM_TYPES:
       break;
   }
