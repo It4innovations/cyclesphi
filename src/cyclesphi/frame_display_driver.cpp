@@ -22,7 +22,7 @@ CCL_NAMESPACE_BEGIN
 FrameDisplayDriver::FrameDisplayDriver(/*const function<bool()>& gl_context_enable,
                                          const function<void()> &gl_context_disable*/)
     //: gl_context_enable_(gl_context_enable), gl_context_disable_(gl_context_disable)
-	: render_finished(true), duration(0.0f), d_pixels(nullptr)
+	: d_pixels(nullptr), render_finished(true), duration(0.0f)
 {
 }
 

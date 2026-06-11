@@ -366,9 +366,10 @@ struct CyclesphiDataRenderAux {
 int cyclesphi(int ac, char** av, TcpConnection* blenderClientTcp, FromCL& fromCL, std::vector<Options>& options)
 {
 	////////////////////////////////////////////////////
-	double render_time = 0;
-	double render_time_accu = 0;
-	int spp_one_step = 0;
+	// Unused variables removed to fix warnings
+	// double render_time = 0;
+	// double render_time_accu = 0;
+	// int spp_one_step = 0;
 
 #if 0//def WITH_CLIENT_GPUJPEG
 	CUdeviceptr cuda_fb = NULL;
@@ -410,8 +411,7 @@ int cyclesphi(int ac, char** av, TcpConnection* blenderClientTcp, FromCL& fromCL
 	CyclesphiDataRenderAux* main_data_render_aux = &data_render_aux[0];
 	/////////
 
-	BRaaSHPCDataState cyclesphiDataState;
-	memset(&cyclesphiDataState, 0, sizeof(cyclesphiDataState));
+	BRaaSHPCDataState cyclesphiDataState = {};
 
 	///////////////////
 	ccl::BoundBox bbox_scene = ccl::BoundBox::empty;
@@ -510,11 +510,8 @@ int cyclesphi(int ac, char** av, TcpConnection* blenderClientTcp, FromCL& fromCL
 				//Camera cam = renderer->getCamera();
 				//renderer->resetAccumulation();				
 				//total_samples = 0;
-				render_time = 0;
-				render_time_accu = 0;
-				//renderer->config.camera.dirty = true;
-
-				main_options->session_samples = 0;
+			// render_time = 0;
+			// render_time_accu = 0;
 
 				if (g_renderengine_data_rcv.reset || main_options->width != g_renderengine_data_rcv.width
 					|| main_options->height != g_renderengine_data_rcv.height) {
@@ -646,12 +643,8 @@ int cyclesphi(int ac, char** av, TcpConnection* blenderClientTcp, FromCL& fromCL
 				//renderer->resetAccumulation();
 				main_options->session_samples = 0;
 				//total_samples = 0;
-				render_time = 0;
-				render_time_accu = 0;
-				//renderer->config.camera.dirty = true;
-
-				////renderer->setColorMap(haystack_data);
-				//renderer->setTransferFunction(xf);
+			// render_time = 0;
+			// render_time_accu = 0;
 				//renderer->resetAccumulation();
 				//total_samples = 0;
 
@@ -764,7 +757,7 @@ int cyclesphi(int ac, char** av, TcpConnection* blenderClientTcp, FromCL& fromCL
 	//////////////////////////////////////////////////// 	
 
 	// reset
-	memset(&g_renderengine_data_rcv, 0, sizeof(g_renderengine_data_rcv));
+	g_renderengine_data_rcv = {};
 
 	g_renderengine_datas.clear();
 	//memset(&main_renderengine_data, 0, sizeof(main_renderengine_data));

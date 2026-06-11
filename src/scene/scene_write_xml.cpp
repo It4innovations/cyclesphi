@@ -364,10 +364,8 @@ void scene_write_xml_shader_graph(XMLWriteState& state, Shader* shader, xml_node
 
 				//ustring xml_socket_name(attr_name.value());
 
-				if (attr_name && ustring(attr_name.value()) == "filename" || 
-					attr_name_ui && ustring(attr_name_ui.value()) == "Filename") {
-					//std::string str_filename(attr.value());
-					//if (!str_filename.empty()) {
+			if ((attr_name && ustring(attr_name.value()) == "filename") || 
+				(attr_name_ui && ustring(attr_name_ui.value()) == "Filename")) {
 
 					xml_node_socket_found = xml_node_socket;
 					attr_name_found = attr_name;

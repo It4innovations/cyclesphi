@@ -18,6 +18,95 @@
 
 #pragma once
 
+// Prevent CUDA from declaring 'half' in global namespace to avoid conflict with Imath's half
+#define CUDA_NO_HALF
+
+// Prevent CUDA runtime headers from being included to avoid conflict with CUEW
+// CUEW provides its own CUDA definitions for dynamic loading
+#define __CUDA_RUNTIME_H__
+#define __CUDA_RUNTIME_API_H__
+#define __DRIVER_TYPES_H__
+#define __VECTOR_TYPES_H__
+
+// Define CUDA macros for non-CUDA compilation contexts
+// These are needed when CUDA headers are indirectly included via third-party libraries
+#ifndef __CUDACC__
+#define __host__
+#define __device__
+#define __global__
+#define __forceinline__ inline
+#define __inline__ inline
+#define __CUDA_HOSTDEVICE__
+#define __CUDA_HOSTDEVICE_FP16_DECL__ static inline
+#define __VECTOR_FUNCTIONS_DECL__ static inline
+
+// Define dim3 struct for non-CUDA compilation
+struct dim3 {
+    unsigned int x, y, z;
+    dim3(unsigned int x_ = 1, unsigned int y_ = 1, unsigned int z_ = 1) : x(x_), y(y_), z(z_) {}
+};
+
+// Define CUDA vector types for non-CUDA compilation
+struct char1 { signed char x; };
+struct uchar1 { unsigned char x; };
+struct char2 { signed char x, y; };
+struct uchar2 { unsigned char x, y; };
+struct char3 { signed char x, y, z; };
+struct uchar3 { unsigned char x, y, z; };
+struct char4 { signed char x, y, z, w; };
+struct uchar4 { unsigned char x, y, z, w; };
+
+struct short1 { short x; };
+struct ushort1 { unsigned short x; };
+struct short2 { short x, y; };
+struct ushort2 { unsigned short x, y; };
+struct short3 { short x, y, z; };
+struct ushort3 { unsigned short x, y, z; };
+struct short4 { short x, y, z, w; };
+struct ushort4 { unsigned short x, y, z, w; };
+
+struct int1 { int x; };
+struct uint1 { unsigned int x; };
+struct int2 { int x, y; };
+struct uint2 { unsigned int x, y; };
+struct int3 { int x, y, z; };
+struct uint3 { unsigned int x, y, z; };
+struct int4 { int x, y, z, w; };
+struct uint4 { unsigned int x, y, z, w; };
+
+struct long1 { long int x; };
+struct ulong1 { unsigned long int x; };
+struct long2 { long int x, y; };
+struct ulong2 { unsigned long int x, y; };
+struct long3 { long int x, y, z; };
+struct ulong3 { unsigned long int x, y, z; };
+struct long4 { long int x, y, z, w; };
+struct ulong4 { unsigned long int x, y, z, w; };
+
+struct float1 { float x; };
+struct float2 { float x, y; };
+struct float3 { float x, y, z; };
+struct float4 { float x, y, z, w; };
+
+struct longlong1 { long long int x; };
+struct ulonglong1 { unsigned long long int x; };
+struct longlong2 { long long int x, y; };
+struct ulonglong2 { unsigned long long int x, y; };
+struct longlong3 { long long int x, y, z; };
+struct ulonglong3 { unsigned long long int x, y, z; };
+struct longlong4 { long long int x, y, z, w; };
+struct ulonglong4 { unsigned long long int x, y, z, w; };
+
+struct double1 { double x; };
+struct double2 { double x, y; };
+struct double3 { double x, y, z; };
+struct double4 { double x, y, z, w; };
+
+// Define CUDA stream type for non-CUDA compilation
+typedef struct CUstream_st* cudaStream_t;
+typedef cudaStream_t gpuStream_t;
+#endif
+
 #include <stdio.h>
 #include <atomic>
 
@@ -34,12 +123,13 @@ public:
 	FromCL(): 
 		port(7000), 
 		anim(-1), 
-		threads(0),
 		use_anim(false), 
+		filepath(),
 		used_device("CPU"), 		
 		use_mpi(false),    
 		world_rank(0),
 		world_size(1),
+		threads(0),
     render_running(true)
 	{
 	}

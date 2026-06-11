@@ -594,8 +594,9 @@ static void merge_scalar_grids_for_velocity(const Scene *scene, Volume *volume)
 void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* volume, VDBImageLoader* vdb_loader)
 {
 #if 1
-    const float face_overlap_avoidance = 0.1f *
-        hash_uint_to_float(hash_string(volume->name.c_str()));
+    // TODO: Uncomment when face overlap avoidance is implemented
+    // const float face_overlap_avoidance = 0.1f *
+    //     hash_uint_to_float(hash_string(volume->name.c_str()));
 
     /////////// Create mesh
     vector<float3> vertices;
@@ -657,9 +658,9 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
     //openvdb::Coord dim = bbox.dim();
 
     //float3 cell_size = make_float3(1.0f / bbox.dim()[0], 1.0f / bbox.dim()[1], 1.0f / bbox.dim()[2]);
-    float3 cell_size = make_float3(1.0f / resolution[0], 1.0f / resolution[1], 1.0f / resolution[2]);
+    // float3 cell_size = make_float3(1.0f / resolution[0], 1.0f / resolution[1], 1.0f / resolution[2]);
     //TODO
-    float3 point_offset = cell_size;  // cell_size * face_overlap_avoidance;
+    // float3 point_offset = cell_size;  // cell_size * face_overlap_avoidance;
 
     vertices.reserve(vertices_is.size());
 

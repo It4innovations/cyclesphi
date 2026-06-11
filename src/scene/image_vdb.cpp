@@ -331,9 +331,9 @@ void VDBImageLoader::grid_from_dense_voxels(const size_t width,
 
 #ifdef WITH_NANOVDB
 NanoVDBImageLoader::NanoVDBImageLoader(vector<char> &g)
-    : nanogrid_data(std::move(g)), VDBImageLoader("")
+    : VDBImageLoader(""), nanogrid_data(std::move(g))
 {
-    printf("NanoVDBImageLoader: size in bytes: %lld\n", nanogrid_data.size());
+    printf("NanoVDBImageLoader: size in bytes: %zu\n", nanogrid_data.size());
 }
 
 NanoVDBImageLoader::~NanoVDBImageLoader()
@@ -675,7 +675,7 @@ NanoVDBDerivatesImageLoader::NanoVDBDerivatesImageLoader(vector<char>& g)
     printf("  Version: %u\n", file_header.version);
     printf("  Levels: %u\n", file_header.levelCount);
     printf("  Grids: %u\n", file_header.gridCount);
-    printf("  Total size: %llu bytes\n", file_header.totalFileSize);
+    printf("  Total size: %lu bytes\n", file_header.totalFileSize);
 
     // Find finest level (typically level 0, but we check resolution)
     const DerivLevelHeader* level_table = get_level_table();
@@ -820,7 +820,6 @@ bool NanoVDBDerivatesImageLoader::load_metadata(ImageMetaData& metadata)
     }
 
     // Use first grid of finest level for metadata
-    const DerivGridHeader& first_grid = grid_table[finest_level.firstGridIndex];
     nanovdb::NanoGrid<float>* grid = get_grid(finest_level.firstGridIndex);
 
     if (!grid) {
@@ -907,7 +906,6 @@ void NanoVDBDerivatesImageLoader::get_bbox(int3 &min_bbox, int3 &max_bbox)
     }
 
     const DerivLevelHeader* level_table = get_level_table();
-    const DerivGridHeader* grid_table = get_grid_table();
     
     // Use finest level's first grid as reference coordinate system
     const DerivLevelHeader& finest_level = level_table[finest_level_id];
@@ -1017,17 +1015,17 @@ float3 NanoVDBDerivatesImageLoader::index_to_world(float3 in)
 //RAWImageLoader(vector<char> &g, int3 d, float3 s, int3 bmin, int3 bmax, RAWImageLoaderType t, int c);
 RAWImageLoader::RAWImageLoader(
     vector<char> &g, int3 d, float3 s, float3 tr, int3 bmin, int3 bmax, RAWImageLoaderType type, int c)
-    : grid(std::move(g)),
+    : VDBImageLoader(""),
       dim(d),
       scale(s),
       trans(tr),
       bbox_min(bmin),
       bbox_max(bmax),
-      raw_type(type),
       channels(c),
-      VDBImageLoader("")
+      raw_type(type),
+      grid(std::move(g))
 {
-    printf("RAWImageLoader: size in bytes: %lld\n", grid.size());
+    printf("RAWImageLoader: size in bytes: %zu\n", grid.size());
 }
 
 RAWImageLoader::~RAWImageLoader()
@@ -1417,9 +1415,9 @@ float3 ZFPImageLoader::index_to_world(float3 in)
 #endif
 
 CUBImageLoader::CUBImageLoader(vector<char> &g)
-    : cub_data(std::move(g)), VDBImageLoader("") //, dev_array_storage(nullptr)
+    : VDBImageLoader(""), cub_data(std::move(g)) //, dev_array_storage(nullptr)
 {
-    printf("CUBImageLoader: size in bytes: %lld\n", cub_data.size());
+    printf("CUBImageLoader: size in bytes: %zu\n", cub_data.size());
     deserialize_cub_array();
 }
 
@@ -1439,7 +1437,7 @@ void CUBImageLoader::deserialize_cub_array()
     }
 
     printf("CUBImageLoader: Deserializing CUB sparse voxel array with header\n");
-    printf("  Input data size: %lld bytes\n", cub_data.size());
+    printf("  Input data size: %zu bytes\n", cub_data.size());
     
     // Header format: 6 floats (bbox) + 12 floats (transform) + int32_t (voxel_count) + padding
     constexpr size_t HEADER_SIZE = 6 * sizeof(float) + 12 * sizeof(float) + sizeof(int32_t) + sizeof(int32_t);
@@ -1471,7 +1469,7 @@ void CUBImageLoader::deserialize_cub_array()
     size_t expected_size = HEADER_SIZE + keys_size + values_size;
     
     if (cub_data.size() != expected_size) {
-        printf("CUBImageLoader: Data size mismatch. Expected %zu, got %lld\n", 
+        printf("CUBImageLoader: Data size mismatch. Expected %zu, got %zu\n", 
                expected_size, cub_data.size());
         return;
     }

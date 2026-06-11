@@ -124,7 +124,7 @@ static void read_vector_from_binary_file(XMLReader &reader, vector<T> &data, con
 
 /* Attribute Reading */
 
-static bool xml_read_int(int *value, const xml_node node, const char *name)
+[[maybe_unused]] static bool xml_read_int(int *value, const xml_node node, const char *name)
 {
   const xml_attribute attr = node.attribute(name);
 
@@ -154,7 +154,7 @@ static bool xml_read_int_array(vector<int> &value, const xml_node node, const ch
   return false;
 }
 
-static bool xml_read_float(float *value, const xml_node node, const char *name)
+[[maybe_unused]] static bool xml_read_float(float *value, const xml_node node, const char *name)
 {
   const xml_attribute attr = node.attribute(name);
 
@@ -184,7 +184,7 @@ static bool xml_read_float_array(vector<float> &value, const xml_node node, cons
   return false;
 }
 
-static bool xml_read_float3(float3 *value, const xml_node node, const char *name)
+[[maybe_unused]] static bool xml_read_float3(float3 *value, const xml_node node, const char *name)
 {
   vector<float> array;
 
@@ -196,7 +196,7 @@ static bool xml_read_float3(float3 *value, const xml_node node, const char *name
   return false;
 }
 
-static bool xml_read_float3_array(vector<float3> &value, const xml_node node, const char *name)
+[[maybe_unused]] static bool xml_read_float3_array(vector<float3> &value, const xml_node node, const char *name)
 {
   vector<float> array;
 
@@ -211,7 +211,7 @@ static bool xml_read_float3_array(vector<float3> &value, const xml_node node, co
   return false;
 }
 
-static bool xml_read_float4(float4 *value, const xml_node node, const char *name)
+[[maybe_unused]] static bool xml_read_float4(float4 *value, const xml_node node, const char *name)
 {
   vector<float> array;
 
@@ -235,7 +235,7 @@ static bool xml_read_string(string *str, const xml_node node, const char *name)
   return false;
 }
 
-static bool xml_equal_string(const xml_node node, const char *name, const char *value)
+[[maybe_unused]] static bool xml_equal_string(const xml_node node, const char *name, const char *value)
 {
   const xml_attribute attr = node.attribute(name);
 
@@ -285,9 +285,9 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml
       /* connect nodes */
 
       const xml_attribute xml_attr_from_node = node.attribute("from_node");
-      const xml_attribute xml_attr_from_socket = node.attribute("from_socket");
+      // const xml_attribute xml_attr_from_socket = node.attribute("from_socket");
       const xml_attribute xml_attr_to_node = node.attribute("to_node");
-      const xml_attribute xml_attr_to_socket = node.attribute("to_socket");
+      // const xml_attribute xml_attr_to_socket = node.attribute("to_socket");
 
       if (xml_attr_from_node && xml_attr_to_node) {
         ustring from_node_name(node.attribute("from_node").value());
@@ -308,8 +308,8 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml
           for (ShaderOutput *out : fromnode->outputs) {
             // if (string_iequals(out->socket_type.ui_name.string(), from_socket_name.string()))
 
-            if (from_socket && ustring(from_socket.value()) != out->socket_type.name ||
-                from_socket_ui && ustring(from_socket_ui.value()) != out->socket_type.ui_name)
+            if ((from_socket && ustring(from_socket.value()) != out->socket_type.name) ||
+                (from_socket_ui && ustring(from_socket_ui.value()) != out->socket_type.ui_name))
             {
               continue;
             }
@@ -334,8 +334,8 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml
           for (ShaderInput *in : tonode->inputs) {
             // if (string_iequals(in->socket_type.ui_name.string(), to_socket_name.string())) {
 
-            if (to_socket && ustring(to_socket.value()) != in->socket_type.name ||
-                to_socket_ui && ustring(to_socket_ui.value()) != in->socket_type.ui_name)
+            if ((to_socket && ustring(to_socket.value()) != in->socket_type.name) ||
+                (to_socket_ui && ustring(to_socket_ui.value()) != in->socket_type.ui_name))
             {
               continue;
             }
@@ -777,7 +777,7 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           else {
             nanovdb::GridHandle<nanovdb::HostBuffer> grid_handle =
                 nanovdb::io::readGrid<nanovdb::HostBuffer>(filename);
-            size_t nanogrid_size = grid_handle.size();
+            size_t nanogrid_size = grid_handle.bufferSize();
             nanogrid.resize(nanogrid_size);
             memcpy(nanogrid.data(), grid_handle.data(), nanogrid_size);
           }
@@ -1182,7 +1182,7 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
 
 static void xml_read_object(XMLReadState &state, const xml_node xml_node_obj)
 {
-  Scene *scene = state.scene;
+  // Scene *scene = state.scene;
 
   Object *object = state.scene->create_node<Object>();
 
