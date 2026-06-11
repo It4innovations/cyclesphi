@@ -52,7 +52,7 @@ ccl_device_inline void cub_unpack_coord(uint64_t key, int& x, int& y, int& z)
 }
 
 /* Binary search for a voxel in the sorted sparse array */
-ccl_device_inline int cub_find_voxel(const uint64_t* keys, int count, uint64_t search_key)
+ccl_device_noinline int cub_find_voxel(const uint64_t* keys, int count, uint64_t search_key)
 {
   int left = 0;
   int right = count - 1;
@@ -83,12 +83,12 @@ ccl_device_inline int cub_find_voxel(const uint64_t* keys, int count, uint64_t s
 }
 
 /* Fetch voxel value from sparse array */
-ccl_device_inline float cub_fetch(const uint64_t* keys, 
+ccl_device_inline float cub_fetch(const uint64_t *keys, 
                                   const float* values, 
                                   int count,
                                   int x, int y, int z,
                                   int dimx, int dimy, int dimz)
-{
+{  
   /* Clamp coordinates to valid range */
   if (x < 0 || y < 0 || z < 0 || x >= dimx || y >= dimy || z >= dimz) {
     return 0.0f;
@@ -1119,10 +1119,7 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
   if (data_type == IMAGE_DATA_TYPE_CUB_FLOAT) {
     // CUB now uses transform from header similar to NanoVDB
     const SerializableCUBData* header = (const SerializableCUBData*)info.data;
-    //  float bbox[6];           // min_x, min_y, min_z, max_x, max_y, max_z
-    //  float transform[12];     // 3x4 transformation matrix (row-major)
-    //  int32_t voxel_count;     // Number of voxels
-    size_t header_size = 6 * sizeof(float) + 12 * sizeof(float) + sizeof(int32_t);
+    size_t header_size = sizeof(SerializableCUBData);
     const int voxel_count = header->voxel_count;
     
     // Extract bbox from header

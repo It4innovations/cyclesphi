@@ -1442,7 +1442,7 @@ void CUBImageLoader::deserialize_cub_array()
     printf("  Input data size: %lld bytes\n", cub_data.size());
     
     // Header format: 6 floats (bbox) + 12 floats (transform) + int32_t (voxel_count) + padding
-    constexpr size_t HEADER_SIZE = 6 * sizeof(float) + 12 * sizeof(float) + sizeof(int32_t);//+sizeof(int32_t);
+    constexpr size_t HEADER_SIZE = 6 * sizeof(float) + 12 * sizeof(float) + sizeof(int32_t) + sizeof(int32_t);
     
     if (cub_data.size() < HEADER_SIZE) {
         printf("CUBImageLoader: Data too small for header (expected at least %zu bytes)\n", HEADER_SIZE);

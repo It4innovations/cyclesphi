@@ -75,7 +75,7 @@ struct SerializableCUBData {
   float bbox[6];           // min_x, min_y, min_z, max_x, max_y, max_z
   float transform[12];     // 3x4 transformation matrix (row-major)
   int32_t voxel_count;     // Number of voxels
-  //int32_t padding;         // Alignment padding
+  int32_t padding;         // Alignment padding
   // Followed by: uint64_t keys[voxel_count], float values[voxel_count]
 };
 

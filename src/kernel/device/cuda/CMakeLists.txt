@@ -151,9 +151,8 @@ if(WITH_CYCLES_CUDA_BINARIES)
       --${format}
       ${CMAKE_CURRENT_SOURCE_DIR}${cuda_kernel_src}
       ${cuda_flags}
-      -g
-      -G
     )
+    # TODO: Debug CUDA -g -G
 
     if(WITH_COMPILER_CCACHE AND CCACHE_PROGRAM)
       add_custom_command(
