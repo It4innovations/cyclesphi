@@ -153,6 +153,9 @@ if(WITH_CYCLES_CUDA_BINARIES)
       ${cuda_flags}
     )
     # TODO: Debug CUDA -g -G
+    if(WITH_CYCLES_DEVICE_CUDA_DEBUG)
+      list(APPEND _cuda_nvcc_args -g -G)
+    endif()
 
     if(WITH_COMPILER_CCACHE AND CCACHE_PROGRAM)
       add_custom_command(

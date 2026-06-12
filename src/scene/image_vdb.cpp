@@ -675,7 +675,7 @@ NanoVDBDerivatesImageLoader::NanoVDBDerivatesImageLoader(vector<char>& g)
     printf("  Version: %u\n", file_header.version);
     printf("  Levels: %u\n", file_header.levelCount);
     printf("  Grids: %u\n", file_header.gridCount);
-    printf("  Total size: %lu bytes\n", file_header.totalFileSize);
+    printf("  Total size: %zu bytes\n", file_header.totalFileSize);
 
     // Find finest level (typically level 0, but we check resolution)
     const DerivLevelHeader* level_table = get_level_table();
