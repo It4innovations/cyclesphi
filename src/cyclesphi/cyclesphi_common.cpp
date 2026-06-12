@@ -196,6 +196,7 @@ void session_init(FromCL &fromCL, Options &options, int session_id)
   std::string used_device = fromCL.used_device;
   options.filepath = fromCL.filepath;
   options.id = session_id;
+  options.use_gpujpeg = fromCL.use_gpujpeg;
 
   if (fromCL.use_anim && fromCL.anim > 1) {
     char temp[1024];
@@ -273,7 +274,7 @@ void session_init(FromCL &fromCL, Options &options, int session_id)
   options.display_driver = display_driver.get();
   options.session->set_display_driver(std::move(display_driver));
 #ifdef WITH_CLIENT_GPUJPEG
-  if (options.session_params.device.type != ccl::DEVICE_CPU) {
+  if (options.session_params.device.type != ccl::DEVICE_CPU && options.use_gpujpeg) {
     options.display_driver->use_device_buffer = true;
     options.display_driver->use_linear2srgb = true;
   }
@@ -709,7 +710,7 @@ int cyclesphi(int ac,
       DEBUG_END_TIME(render);
 
 #ifdef WITH_CLIENT_GPUJPEG
-      if (main_options->display_driver) {
+      if (main_options->use_gpujpeg && main_options->display_driver) {
         DEBUG_START_TIME(send_gpujpeg_display);
         int format = main_options->display_driver->use_linear2srgb ? 8 : 16;
         if (main_options->display_driver->d_pixels) {
@@ -730,14 +731,14 @@ int cyclesphi(int ac,
         // blenderClientTcp->send_gpujpeg((char*)main_options->display_driver->pixels.data(),
         // pixels_buf_empty.data(), main_options->width, main_options->height, 0);
         DEBUG_END_TIME(send_gpujpeg_display);
-      }
+      } else
       // else if (main_options->output_driver) {
       //	DEBUG_START_TIME(send_gpujpeg_output);
       //	blenderClientTcp->send_gpujpeg((char*)main_options->output_driver->pixels.data(),
       //pixels_buf_empty.data(), main_options->width, main_options->height, 1);
       //	DEBUG_END_TIME(send_gpujpeg_output);
       // }
-#else
+#endif
       // char* pixels_buf = (char*)main_options->output_driver->pixels.data(); //cuda_fb;
       // //renderer->getBuffer();
       //((int*)pixels_buf)[0] = total_samples; //renderer->getTotalSamples();
@@ -759,7 +760,7 @@ int cyclesphi(int ac,
       //	blenderClientTcp->send_data_data((char*)main_options->output_driver->pixels.data(),
       //pixels_buf_empty.size()); 	DEBUG_END_TIME(send_gpujpeg_output);
       // }
-#endif
+
       if (blenderClientTcp->is_error()) {
         throw std::runtime_error("TCP Error!");
       }
@@ -835,6 +836,8 @@ void FromCL::usage()
   std::cout << "\t--port X" << std::endl;
   std::cout << "\t--anim X" << std::endl;
   std::cout << "\t--threads X" << std::endl;
+  std::cout << "\t--gpujpeg (enable GPU JPEG encoding)" << std::endl;
+  std::cout << "\t--no-gpujpeg (disable GPU JPEG encoding)" << std::endl;
 
   const ccl::vector<ccl::DeviceInfo> devices = ccl::Device::available_devices();
   printf("Devices:\n");
@@ -872,6 +875,12 @@ void FromCL::parse_args(int argc, char **argv)
     }
     else if (arg == "--device") {
       used_device = argv[++i];
+    }
+    else if (arg == "--gpujpeg") {
+      use_gpujpeg = true;
+    }
+    else if (arg == "--no-gpujpeg") {
+      use_gpujpeg = false;
     }
     else if (arg == "-h" || arg == "--help") {
       usage();

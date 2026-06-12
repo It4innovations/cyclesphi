@@ -130,6 +130,11 @@ public:
 		world_rank(0),
 		world_size(1),
 		threads(0),
+#ifdef WITH_CLIENT_GPUJPEG
+		use_gpujpeg(true),
+#else
+		use_gpujpeg(false),
+#endif
     render_running(true)
 	{
 	}
@@ -145,6 +150,12 @@ public:
 	int world_size;
 
 	int threads;
+
+#ifdef WITH_CLIENT_GPUJPEG
+	bool use_gpujpeg = true;
+#else
+	bool use_gpujpeg = false;
+#endif
 
 	// Atomic flag to control the infinite loops
 	std::atomic<bool> render_running;
@@ -170,6 +181,12 @@ struct Options {
 
 	//ccl::FrameOutputDriver* output_driver = nullptr;
 	ccl::FrameDisplayDriver* display_driver = nullptr;
+
+#ifdef WITH_CLIENT_GPUJPEG
+	bool use_gpujpeg = true;
+#else
+	bool use_gpujpeg = false;
+#endif
 };
 
 void session_init(FromCL& fromCL, Options &options, int session_id);
