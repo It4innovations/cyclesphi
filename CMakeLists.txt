@@ -139,6 +139,7 @@ option(WITH_CYCLES_STANDALONE_GUI    "Build Cycles standalone with GUI" OFF)
 # CyclesPhi Features
 option(WITH_CYCLESPHI "Enable CyclesPhi" ON)
 option(WITH_CLIENT_GPUJPEG "Enable GPUJPEG" OFF)
+option(WITH_CLIENT_HDR_BLOCK_CODEC "Enable hdr block codec" OFF)
 option(WITH_MULTIRES_COUNTER "Enable multires counter" OFF)
 option(WITH_ZFP_LOADER "Enable ZFP loader" OFF)
 

@@ -130,7 +130,7 @@ public:
 		world_rank(0),
 		world_size(1),
 		threads(0),
-#ifdef WITH_CLIENT_GPUJPEG
+#if defined(WITH_CLIENT_GPUJPEG) || defined(WITH_CLIENT_HDR_BLOCK_CODEC)
 		use_gpujpeg(true),
 #else
 		use_gpujpeg(false),
@@ -151,7 +151,7 @@ public:
 
 	int threads;
 
-#ifdef WITH_CLIENT_GPUJPEG
+#if defined(WITH_CLIENT_GPUJPEG) || defined(WITH_CLIENT_HDR_BLOCK_CODEC)
 	bool use_gpujpeg = true;
 #else
 	bool use_gpujpeg = false;
@@ -182,7 +182,7 @@ struct Options {
 	//ccl::FrameOutputDriver* output_driver = nullptr;
 	ccl::FrameDisplayDriver* display_driver = nullptr;
 
-#ifdef WITH_CLIENT_GPUJPEG
+#if defined(WITH_CLIENT_GPUJPEG) || defined(WITH_CLIENT_HDR_BLOCK_CODEC)
 	bool use_gpujpeg = true;
 #else
 	bool use_gpujpeg = false;

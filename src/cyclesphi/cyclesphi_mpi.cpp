@@ -121,7 +121,7 @@ public:
 
 	void send_gpujpeg(char* dmem, char* pixels, int width, int height, int format) override
 	{
-#ifdef WITH_CLIENT_GPUJPEG
+#if defined(WITH_CLIENT_GPUJPEG) || defined(WITH_CLIENT_HDR_BLOCK_CODEC)
 		int frame_size = 0;
 		TcpConnection::gpujpeg_encode(width, height, format, (uint8_t*)dmem, (uint8_t*)pixels, frame_size);
 

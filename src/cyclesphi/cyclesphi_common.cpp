@@ -75,7 +75,7 @@
 #  define DEBUG_END_TIME(name)
 #endif
 
-#ifdef WITH_CLIENT_GPUJPEG
+#if defined(WITH_CLIENT_GPUJPEG) || defined(WITH_CLIENT_HDR_BLOCK_CODEC)
 
 #  ifdef WITH_CUDA_DYNLOAD
 #    include "cuew.h"
@@ -277,6 +277,11 @@ void session_init(FromCL &fromCL, Options &options, int session_id)
   if (options.session_params.device.type != ccl::DEVICE_CPU && options.use_gpujpeg) {
     options.display_driver->use_device_buffer = true;
     options.display_driver->use_linear2srgb = true;
+  }
+#elif defined(WITH_CLIENT_HDR_BLOCK_CODEC)
+  if (options.session_params.device.type != ccl::DEVICE_CPU && options.use_gpujpeg) {
+    options.display_driver->use_device_buffer = true;
+    options.display_driver->use_linear2srgb = false;
   }
 #endif
 
@@ -709,10 +714,14 @@ int cyclesphi(int ac,
       renderFrame(main_options);
       DEBUG_END_TIME(render);
 
-#ifdef WITH_CLIENT_GPUJPEG
+#if defined(WITH_CLIENT_GPUJPEG) || defined(WITH_CLIENT_HDR_BLOCK_CODEC)
       if (main_options->use_gpujpeg && main_options->display_driver) {
         DEBUG_START_TIME(send_gpujpeg_display);
+#ifdef WITH_CLIENT_HDR_BLOCK_CODEC
+        int format = 8; // TODO: set profiles
+#else
         int format = main_options->display_driver->use_linear2srgb ? 8 : 16;
+#endif
         if (main_options->display_driver->d_pixels) {
           blenderClientTcp->send_gpujpeg((char *)main_options->display_driver->d_pixels,
                                          pixels_buf_empty.data(),
@@ -728,16 +737,8 @@ int cyclesphi(int ac,
                                          main_options->height,
                                          format);
         }
-        // blenderClientTcp->send_gpujpeg((char*)main_options->display_driver->pixels.data(),
-        // pixels_buf_empty.data(), main_options->width, main_options->height, 0);
-        DEBUG_END_TIME(send_gpujpeg_display);
+         DEBUG_END_TIME(send_gpujpeg_display);
       } else
-      // else if (main_options->output_driver) {
-      //	DEBUG_START_TIME(send_gpujpeg_output);
-      //	blenderClientTcp->send_gpujpeg((char*)main_options->output_driver->pixels.data(),
-      //pixels_buf_empty.data(), main_options->width, main_options->height, 1);
-      //	DEBUG_END_TIME(send_gpujpeg_output);
-      // }
 #endif
       // char* pixels_buf = (char*)main_options->output_driver->pixels.data(); //cuda_fb;
       // //renderer->getBuffer();

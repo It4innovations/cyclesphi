@@ -158,6 +158,10 @@ if(WITH_CLIENT_GPUJPEG)
 	add_definitions(-DWITH_CLIENT_GPUJPEG)
 endif()
 
+if(WITH_CLIENT_HDR_BLOCK_CODEC)
+  add_definitions(-DWITH_CLIENT_HDR_BLOCK_CODEC)
+endif()
+
 if(WITH_CLIENT_MPI_SOCKET)
 	add_definitions(-DWITH_CLIENT_MPI_SOCKET)
 endif()
