@@ -760,6 +760,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           xml_read_image_params(state, params, node_attribute);
 
           attr->data_voxel() = state.scene->image_manager->add_image(std::move(loader), params);
+
+          //if (attr->data_voxel().vdb_loader()) {
+          //  attr->data_voxel().vdb_loader()->set_image_params(params);
+          //}
         }
 #endif
 
@@ -789,6 +793,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
 
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
+
+          //if (attr->data_voxel().vdb_loader()) {
+          //  attr->data_voxel().vdb_loader()->set_image_params(params);
+          //}
         }
         else if (volume_type == "nanovdb_multires") {
           // nanovdb::NanoGrid<float>* nanogrid = nullptr;
@@ -838,6 +846,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
 
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
+
+          //if (attr->data_voxel().vdb_loader()) {
+          //  attr->data_voxel().vdb_loader()->set_image_params(params);
+          //}
         }
         else if (volume_type == "nanovdb_derivates" || volume_type == "nanovdb_derivates_vec4") {
           vector<char> raw_data;
@@ -872,6 +884,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
 
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
+
+          //if (attr->data_voxel().vdb_loader()) {
+          //  attr->data_voxel().vdb_loader()->set_image_params(params);
+          //}
         }
 #endif
 
@@ -974,6 +990,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
 
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
+
+          //if (attr->data_voxel().vdb_loader()) {
+          //  attr->data_voxel().vdb_loader()->set_image_params(params);
+          //}
         }
 #endif
         else if (volume_type == "raw")
@@ -1096,6 +1116,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
 
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
+
+          //if (attr->data_voxel().vdb_loader()) {
+          //  attr->data_voxel().vdb_loader()->set_image_params(params);
+          //}
         }
         else if (volume_type == "cub") {
           vector<char> raw_data;
@@ -1129,6 +1153,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
 
           attr->data_voxel() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
+
+          //if (attr->data_voxel().vdb_loader()) {
+          //  attr->data_voxel().vdb_loader()->set_image_params(params);
+          //}
         }
       }
       else {
@@ -1476,8 +1504,16 @@ void xml_set_volume_to_attr(Scene *scene,
           // remove???
 
           // unique_ptr<ImageLoader> loader = make_unique<VDBImageLoader>(grid, name.string());
-          const ImageParams params;
+          ImageParams params;
+          if (!attr.data_voxel().empty() && attr.data_voxel().vdb_image_single()) {
+            params = attr.data_voxel().vdb_image_single()->params;
+          }
+
           attr.data_voxel() = scene->image_manager->add_image(std::move(loader), params);
+
+          if (attr.data_voxel().vdb_image_single()) {
+            attr.data_voxel().vdb_image_single()->need_metadata = true;
+          }
 
           // geom->tag_update(scene, true);
           geom->tag_modified();

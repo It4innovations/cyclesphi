@@ -148,6 +148,16 @@ device_image *ImageHandle::vdb_image_memory() const
   return img->vdb_memory;
 }
 
+ImageSingle *ImageHandle::vdb_image_single() const
+{
+  if (image_texture == nullptr || image_texture->type != ImageTexture::SINGLE) {
+    return nullptr;
+  }
+
+  ImageSingle *img = static_cast<ImageSingle *>(image_texture);
+  return img;
+}
+
 VDBImageLoader *ImageHandle::vdb_loader() const
 {
   if (image_texture == nullptr || image_texture->type != ImageTexture::SINGLE) {

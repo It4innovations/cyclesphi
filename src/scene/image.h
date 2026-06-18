@@ -81,6 +81,7 @@ class ImageHandle {
   int kernel_id() const;
 
   device_image *vdb_image_memory() const;
+  ImageSingle *vdb_image_single() const;
   VDBImageLoader *vdb_loader() const;
 
   ImageManager *get_manager() const;

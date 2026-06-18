@@ -26,7 +26,7 @@
 
 class FromCLSpace : public FromCL {
  public:
-  FromCLSpace() : FromCL(), space_port(6000), space_server("localhost"), space_server_port(5005) {}
+  FromCLSpace() : FromCL(), space_port(7001), space_server("localhost"), space_server_port(7000) {}
   int space_port;
   std::string space_server;
   int space_server_port;

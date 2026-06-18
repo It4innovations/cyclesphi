@@ -121,7 +121,7 @@ typedef cudaStream_t gpuStream_t;
 class FromCL {
 public:
 	FromCL(): 
-		port(7000), 
+		port(8000), 
 		anim(-1), 
 		use_anim(false), 
 		filepath(),

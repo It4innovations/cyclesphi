@@ -24,6 +24,7 @@
 #endif
 
 #include "scene/image_loader.h"
+#include "scene/image.h"
 
 #include "util/transform.h"
 #include "kernel/util/image_3d_derivates.h"
@@ -67,6 +68,14 @@ class VDBImageLoader : public ImageLoader {
 //  static void get_texture_info(nanovdb::NanoGrid<float>* ng, size_t ng_size, TextureInfo &info);
 //#endif
 
+  //void set_image_params(const ImageParams &params) {
+  //    this->params = params;
+  //}
+
+  //void get_image_params(ImageParams &params) const {
+  //    params = this->params;
+  //}
+
  protected:
   virtual void load_grid() {}
 
@@ -87,6 +96,8 @@ class VDBImageLoader : public ImageLoader {
   nanovdb::GridHandle<> nanogrid;
   int precision = 32;
 #endif
+
+  //ImageParams params;
 };
 
 #ifdef WITH_NANOVDB
