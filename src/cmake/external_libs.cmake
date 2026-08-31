@@ -620,27 +620,6 @@ if(WITH_ZFP_LOADER)
 endif()
 
 ###########################################################################
-# Space Converter
-###########################################################################
-
-if(WITH_SPACE_CONVERTER)
-  find_package(space_converter CONFIG)
-  set_and_warn_library_found("Space Converter" space_converter_FOUND WITH_SPACE_CONVERTER)
-
-  if(space_converter_FOUND)
-    message(STATUS "Found Space Converter: ${space_converter_DIR}")
-    
-    # Extract include directories from space_converter::space_common target
-    if(TARGET space_converter::space_common)
-      get_target_property(SPACE_CONVERTER_INCLUDE_DIR space_converter::space_common INTERFACE_INCLUDE_DIRECTORIES)
-      if(SPACE_CONVERTER_INCLUDE_DIR)
-        set(SPACE_CONVERTER_INCLUDE_DIRS ${SPACE_CONVERTER_INCLUDE_DIR})
-      endif()
-    endif()
-  endif()
-endif()
-
-###########################################################################
 # OpenImageDenoise
 ###########################################################################
 
@@ -804,6 +783,29 @@ if(EXISTS ${_cycles_lib_dir})
   unset(CMAKE_IGNORE_PATH)
   unset(CMAKE_PREFIX_PATH)
   unset(_cycles_lib_dir)
+endif()
+
+###########################################################################
+# Space Converter
+###########################################################################
+
+# Must run after CMAKE_IGNORE_PATH is cleared: space_converterConfig.cmake
+# finds OpenMP/HDF5/MPI, which need the system library directories.
+if(WITH_SPACE_CONVERTER)
+  find_package(space_converter CONFIG)
+  set_and_warn_library_found("Space Converter" space_converter_FOUND WITH_SPACE_CONVERTER)
+
+  if(space_converter_FOUND)
+    message(STATUS "Found Space Converter: ${space_converter_DIR}")
+
+    # Extract include directories from space_converter::space_common target
+    if(TARGET space_converter::space_common)
+      get_target_property(SPACE_CONVERTER_INCLUDE_DIR space_converter::space_common INTERFACE_INCLUDE_DIRECTORIES)
+      if(SPACE_CONVERTER_INCLUDE_DIR)
+        set(SPACE_CONVERTER_INCLUDE_DIRS ${SPACE_CONVERTER_INCLUDE_DIR})
+      endif()
+    endif()
+  endif()
 endif()
 
 ###########################################################################
