@@ -90,14 +90,7 @@ endif()
 # -----------------------------------------------------------------------------
 # Configure OpenColorIO
 
-add_library(bf_deps_optional_opencolorio INTERFACE)
-add_library(bf::dependencies::optional::opencolorio ALIAS bf_deps_optional_opencolorio)
-
-if(WITH_OPENCOLORIO)
-  target_compile_definitions(bf_deps_optional_opencolorio INTERFACE WITH_OPENCOLORIO)
-  target_include_directories(bf_deps_optional_opencolorio SYSTEM INTERFACE ${OPENCOLORIO_INCLUDE_DIRS})
-  target_link_libraries(bf_deps_optional_opencolorio INTERFACE ${OPENCOLORIO_LIBRARIES})
-endif()
+add_library(bf::dependencies::opencolorio ALIAS OpenColorIO::OpenColorIO)
 
 # -----------------------------------------------------------------------------
 # Configure Zlib
@@ -127,28 +120,9 @@ target_include_directories(bf_deps_freetype SYSTEM INTERFACE ${FREETYPE_INCLUDE_
 target_link_libraries(bf_deps_freetype INTERFACE ${FREETYPE_LIBRARIES} ${BROTLI_LIBRARIES})
 
 # -----------------------------------------------------------------------------
-# Configure JPEG
-
-add_library(bf_deps_jpeg INTERFACE)
-add_library(bf::dependencies::jpeg ALIAS bf_deps_jpeg)
-
-target_include_directories(bf_deps_jpeg SYSTEM INTERFACE ${JPEG_INCLUDE_DIR})
-target_link_libraries(bf_deps_jpeg INTERFACE ${JPEG_LIBRARIES})
-
-# -----------------------------------------------------------------------------
-# Configure PNG
-
-add_library(bf_deps_png INTERFACE)
-add_library(bf::dependencies::png ALIAS bf_deps_png)
-
-target_include_directories(bf_deps_png SYSTEM INTERFACE ${PNG_INCLUDE_DIRS})
-target_link_libraries(bf_deps_png INTERFACE ${PNG_LIBRARIES})
-
-# -----------------------------------------------------------------------------
 # Configure OpenImageIO
 
 add_library(bf::dependencies::openimageio ALIAS OpenImageIO::OpenImageIO)
-get_target_property(OPENIMAGEIO_TOOL OpenImageIO::oiiotool LOCATION)
 
 # -----------------------------------------------------------------------------
 # Configure USD
@@ -189,38 +163,8 @@ endif()
 # -----------------------------------------------------------------------------
 # Configure OpenEXR
 
-add_library(bf_deps_optional_openexr INTERFACE)
-add_library(bf::dependencies::optional::openexr ALIAS bf_deps_optional_openexr)
+add_library(bf::dependencies::openexr ALIAS OpenEXR::OpenEXR)
 
-if(WITH_IMAGE_OPENEXR)
-  target_compile_definitions(bf_deps_optional_openexr INTERFACE WITH_IMAGE_OPENEXR)
-  target_link_libraries(bf_deps_optional_openexr INTERFACE OpenEXR::OpenEXR)
-endif()
-
-# -----------------------------------------------------------------------------
-# Configure WebP
-
-add_library(bf_deps_optional_webp INTERFACE)
-add_library(bf::dependencies::optional::webp ALIAS bf_deps_optional_webp)
-
-if(WITH_IMAGE_WEBP)
-  target_compile_definitions(bf_deps_optional_webp INTERFACE WITH_IMAGE_WEBP)
-  target_include_directories(bf_deps_optional_webp SYSTEM INTERFACE ${WEBP_INCLUDE_DIRS})
-  target_link_libraries(bf_deps_optional_webp INTERFACE ${WEBP_LIBRARIES})
-endif()
-
-# -----------------------------------------------------------------------------
-# Configure OpenJPEG
-
-add_library(bf_deps_optional_openjpeg INTERFACE)
-add_library(bf::dependencies::optional::openjpeg ALIAS bf_deps_optional_openjpeg)
-
-if(WITH_IMAGE_OPENJPEG)
-  target_compile_definitions(bf_deps_optional_openjpeg INTERFACE WITH_IMAGE_OPENJPEG)
-  target_compile_definitions(bf_deps_optional_openjpeg INTERFACE ${OPENJPEG_DEFINES})
-  target_include_directories(bf_deps_optional_openjpeg SYSTEM INTERFACE ${OPENJPEG_INCLUDE_DIRS})
-  target_link_libraries(bf_deps_optional_openjpeg INTERFACE ${OPENJPEG_LIBRARIES})
-endif()
 
 # -----------------------------------------------------------------------------
 # Configure SDL
@@ -244,9 +188,6 @@ if(WITH_CODEC_FFMPEG)
   target_compile_definitions(bf_deps_optional_ffmpeg INTERFACE WITH_FFMPEG)
   target_include_directories(bf_deps_optional_ffmpeg SYSTEM INTERFACE ${FFMPEG_INCLUDE_DIRS})
   target_link_libraries(bf_deps_optional_ffmpeg INTERFACE ${FFMPEG_LIBRARIES})
-  if(WITH_IMAGE_OPENJPEG)
-    target_link_libraries(bf_deps_optional_ffmpeg INTERFACE ${OPENJPEG_LIBRARIES})
-  endif()
 endif()
 
 # -----------------------------------------------------------------------------
@@ -497,12 +438,6 @@ endif()
 if(DEFINED PTHREADS_LIBRARIES)
   target_link_libraries(bf_deps_pthreads INTERFACE ${PTHREADS_LIBRARIES})
 endif()
-
-# -----------------------------------------------------------------------------
-# Configure libfmt
-#
-
-add_library(bf::dependencies::fmt ALIAS fmt::fmt)
 
 # -----------------------------------------------------------------------------
 # Configure OSL

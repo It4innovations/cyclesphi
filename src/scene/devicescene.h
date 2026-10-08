@@ -26,9 +26,9 @@ class DeviceScene {
   device_vector<float2> prim_time;
 
   /* mesh */
-  device_vector<packed_float3> tri_verts;
   device_vector<uint> tri_shader;
   device_vector<packed_uint3> tri_vindex;
+  device_vector<packed_float3> tri_verts;
 
   device_vector<KernelCurve> curves;
   device_vector<float4> curve_keys;
@@ -74,7 +74,7 @@ class DeviceScene {
   device_vector<KernelParticle> particles;
 
   /* shaders */
-  device_vector<int4> svm_nodes;
+  device_vector<int> svm_nodes;
   device_vector<KernelShader> shaders;
 
   /* lookup tables */
@@ -94,6 +94,8 @@ class DeviceScene {
 
   /* Image textures */
   device_vector<KernelImageTexture> image_textures;
+  device_vector<KernelTileDescriptor> image_texture_tile_descriptors;
+  device_vector<uint8_t> image_texture_tile_access_state;
   device_vector<KernelImageUDIM> image_texture_udims;
 
   KernelData data;

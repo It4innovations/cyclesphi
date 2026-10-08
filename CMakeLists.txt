@@ -50,7 +50,12 @@ if(POLICY CMP0074)
 endif()
 if(POLICY CMP0144)
   cmake_policy(SET CMP0144 NEW)
-endif() 
+endif()
+
+# install() DESTINATION paths are normalized.
+if(POLICY CMP0177)
+  cmake_policy(SET CMP0177 NEW)
+endif()
 
 # The target_sources() command converts relative paths to absolute.
 cmake_policy(SET CMP0076 NEW)
@@ -119,7 +124,6 @@ option(WITH_LIBS_PRECOMPILED        "Use precompiled library dependencies" ON)
 option(WITH_CYCLES_ALEMBIC          "Build with Alembic procedural support" ON)
 option(WITH_CYCLES_EMBREE           "Build with Embree support" ON)
 option(WITH_CYCLES_LOGGING          "Build with logging support (using glog)" OFF)
-option(WITH_CYCLES_OPENCOLORIO      "Build with OpenColorIO support" ON)
 option(WITH_CYCLES_OPENIMAGEDENOISE "Build with OpenImageDenoise support" ON)
 option(WITH_CYCLES_OPENSUBDIV       "Build with OpenSubdiv support" ON)
 option(WITH_CYCLES_OPENVDB          "Build with OpenVDB support" ON)

@@ -85,6 +85,7 @@ set(SRC_KERNEL_SVM_HEADERS
   svm/math.h
   svm/math_util.h
   svm/mix.h
+  svm/node_types.h
   svm/node_types_template.h
   svm/noise.h
   svm/noisetex.h
@@ -94,6 +95,7 @@ set(SRC_KERNEL_SVM_HEADERS
   svm/radial_tiling.h
   svm/radial_tiling_shared.h
   svm/raycast.h
+  svm/scene_time.h
   svm/sepcomb_color.h
   svm/sepcomb_vector.h
   svm/sky.h
@@ -182,6 +184,7 @@ set(SRC_KERNEL_INTEGRATOR_HEADERS
   integrator/init_from_camera.h
   integrator/intersect_dedicated_light.h
   integrator/intersect_closest.h
+  integrator/intersect_mnee.h
   integrator/intersect_shadow.h
   integrator/intersect_subsurface.h
   integrator/intersect_volume_stack.h

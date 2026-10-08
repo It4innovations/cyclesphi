@@ -3,16 +3,21 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include <cassert>
+#include <csetjmp>
 #include <cstdio>
 
 #include <OpenImageIO/filesystem.h>
 #include <OpenImageIO/typedesc.h>
 
+#include "util/color.h"
 #include "util/colorspace.h"
+#include "util/debug.h"
 #include "util/image.h"
+#include "util/image_maketx.h"
 #include "util/image_metadata.h"
 #include "util/log.h"
 #include "util/param.h"
+#include "util/path.h"
 #include "util/types_image.h"
 
 CCL_NAMESPACE_BEGIN
@@ -157,6 +162,12 @@ void ImageMetaData::finalize(const ImageAlphaType alpha_type)
     }
   }
 
+  /* For Blender tx files, match colorspace used by maketx to generate the file.
+   * THis is needed because TIFF files can not store arbitrary colorspace metadata. */
+  if (!tile_need_conform) {
+    colorspace = make_tx_get_file_colorspace(*this);
+  }
+
   ignore_alpha = alpha_type == IMAGE_ALPHA_IGNORE;
   is_channel_packed = alpha_type == IMAGE_ALPHA_CHANNEL_PACKED;
 
@@ -172,6 +183,19 @@ void ImageMetaData::finalize(const ImageAlphaType alpha_type)
   }
   else {
     /* Leave automatically detected is_unassociated_alpha unchanged. */
+  }
+
+  /* Convert average color to scene linear colorspace. */
+  if (!is_zero(average_color) && colorspace != u_colorspace_data &&
+      colorspace != u_colorspace_scene_linear)
+  {
+    if (colorspace == u_colorspace_scene_linear_srgb) {
+      average_color = color_srgb_to_linear_v4(average_color);
+    }
+    else {
+      ColorSpaceManager::to_scene_linear(
+          colorspace, &average_color.x, 1, 1, 0, true, false, ignore_alpha || is_channel_packed);
+    }
   }
 }
 
@@ -208,21 +232,174 @@ void ImageMetaData::make_float()
   }
 }
 
+static bool load_metadata_color(const ImageSpec &spec, const char *name, float4 &r_color)
+{
+  string_view metadata_color = spec.get_string_attribute(name);
+  if (metadata_color.size() == 0) {
+    return false;
+  }
+
+  vector<float> color;
+  while (metadata_color.size()) {
+    float val;
+    if (!OIIO::Strutil::parse_float(metadata_color, val)) {
+      break;
+    }
+    color.push_back(val);
+    if (!OIIO::Strutil::parse_char(metadata_color, ',')) {
+      break;
+    }
+  }
+
+  if (color.size() != size_t(spec.nchannels)) {
+    return false;
+  }
+
+  switch (spec.nchannels) {
+    case 1:
+      r_color = make_float4(color[0], color[0], color[0], 1.0f);
+      return true;
+    case 2:
+      r_color = make_float4(color[0], color[0], color[0], color[1]);
+      return true;
+    case 3:
+      r_color = make_float4(color[0], color[1], color[2], 1.0f);
+      return true;
+    case 4:
+      r_color = make_float4(color[0], color[1], color[2], color[3]);
+      return true;
+    default:
+      return false;
+  }
+}
+
+void ImageMetaData::detect_tiles(ImageInput &input,
+                                 const ImageSpec &spec,
+                                 OIIO::string_view filepath)
+{
+  /* 1x1 file can be used as tx file regardless of how it was generated,
+   * could be a constant color tx or just regular file. */
+  is_tx_file = (width == 1 && height == 1);
+
+  if (spec.tile_width == 0) {
+    return;
+  }
+
+  const std::string software = spec.get_string_attribute("Software");
+  int tx_file_format_version = INT_MAX;
+  sscanf(software.c_str(), "Blender maketx v%d", &tx_file_format_version);
+
+  if (tx_file_format_version != INT_MAX &&
+      (tx_file_format_version < 0 || tx_file_format_version > TX_FILE_FORMAT_VERSION))
+  {
+    LOG_DEBUG << "Image " << OIIO::Filesystem::filename(filepath)
+              << " has tiles, but file format version " << tx_file_format_version
+              << " is not supported by this version of Cycles";
+    return;
+  }
+
+  if (tx_file_format_version == INT_MAX) {
+    LOG_DEBUG << "Image " << OIIO::Filesystem::filename(filepath)
+              << " has tiles, but is missing blender:TxFileFormatVersion";
+    tile_need_conform = true;
+  }
+  else if (!(channels == 1 || channels == 4)) {
+    LOG_DEBUG << "Image " << OIIO::Filesystem::filename(filepath)
+              << " has tiles, but expected 1 or 4 channels, found " << channels;
+    tile_need_conform = true;
+  }
+  else {
+    tile_need_conform = false;
+  }
+
+  bool has_tiles = false;
+  bool is_small_image = false;
+
+  /* Load multiple small tiles together if min_tile_size is specified. */
+  uint32_t load_tile_size = spec.tile_width;
+  uint32_t min_tile_size = DebugFlags().texture_cache.min_tile_size;
+  if (min_tile_size > 0) {
+    min_tile_size = is_power_of_two(min_tile_size) ? min_tile_size :
+                                                     next_power_of_two(min_tile_size);
+    load_tile_size = std::max(load_tile_size, min_tile_size);
+  }
+
+  if (!is_power_of_two(spec.tile_width)) {
+    LOG_DEBUG << "Image " << OIIO::Filesystem::filename(filepath)
+              << " has tiles, but tile size not power of two (" << spec.tile_width << ")";
+  }
+  else if (spec.tile_width != spec.tile_height) {
+    LOG_DEBUG << "Image " << OIIO::Filesystem::filename(filepath)
+              << " has tiles, but tile size is not square (" << spec.tile_width << "x"
+              << spec.tile_height << ")";
+  }
+  else if (spec.tile_depth != 1) {
+    LOG_DEBUG << "Image " << OIIO::Filesystem::filename(filepath)
+              << " has tiles, but depth is not 1";
+  }
+  else if (spec.tile_width < KERNEL_IMAGE_TEX_PADDING * 4) {
+    LOG_DEBUG << "Image " << OIIO::Filesystem::filename(filepath)
+              << " has tiles, but tile size too small (found " << spec.tile_width << ", minimum "
+              << KERNEL_IMAGE_TEX_PADDING * 4 << ")";
+  }
+  else if (width < load_tile_size && height < load_tile_size) {
+    /* We don't currently supporting using tiles for images smaller than the tile
+     * size, and it's also unnecessary. To enable this, we'd need to solve the
+     * problem where interpolation at tile pixel centers does not match full image
+     * sampling due to padding offset. */
+    LOG_DEBUG << "Image " << OIIO::Filesystem::filename(filepath)
+              << " has tiles, but image resolution is smaller than tile size";
+    has_tiles = true;
+    is_small_image = true;
+  }
+  else {
+    tile_size = load_tile_size;
+    has_tiles = true;
+  }
+
+  /* Check if mip levels are complete. */
+  has_tiles_and_mipmaps = has_tiles && tile_size;
+
+  if (has_tiles_and_mipmaps) {
+    for (int miplevel = 0;; miplevel++) {
+      if (!input.seek_subimage(0, miplevel)) {
+        LOG_DEBUG << "Image " << OIIO::Filesystem::filename(filepath)
+                  << " has tiles, but missing mip levels";
+        has_tiles_and_mipmaps = false;
+        break;
+      }
+
+      const int mip_width = width >> miplevel;
+      const int mip_height = height >> miplevel;
+      if (mip_width <= tile_size && mip_height <= tile_size) {
+        break;
+      }
+    }
+
+    input.seek_subimage(0, 0);
+  }
+
+  /* Tiled tx files need to either have mipmaps, or be small enough not to need mipmaps. */
+  if (has_tiles && (is_small_image || has_tiles_and_mipmaps)) {
+    is_tx_file = true;
+  }
+}
+
 bool ImageMetaData::oiio_load_metadata(OIIO::string_view filepath, OIIO::ImageSpec *r_spec)
 {
   /* Perform preliminary checks, with meaningful logging. */
   if (!OIIO::Filesystem::exists(filepath)) {
-    LOG_ERROR << "Image file " << filepath << " does not exist.";
+    LOG_WARNING << "Image file " << filepath << " does not exist.";
     return false;
   }
   if (OIIO::Filesystem::is_directory(filepath)) {
-    LOG_ERROR << "Image file " << filepath << " is a directory, cannot use as image.";
+    LOG_WARNING << "Image file " << filepath << " is a directory, cannot use as image.";
     return false;
   }
 
   std::unique_ptr<ImageInput> in(ImageInput::create(filepath));
   if (!in) {
-    LOG_ERROR << "Image file " << filepath << " failed to load.";
+    LOG_WARNING << "Image file " << filepath << " failed to load.";
     return false;
   }
 
@@ -233,7 +410,12 @@ bool ImageMetaData::oiio_load_metadata(OIIO::string_view filepath, OIIO::ImageSp
   config.attribute("oiio:UnassociatedAlpha", 1);
 
   if (!in->open(filepath, spec, config)) {
-    LOG_ERROR << "Image file " << filepath << " failed to open.";
+    LOG_WARNING << "Image file " << filepath << " failed to open.";
+    return false;
+  }
+
+  if (spec.depth > 1) {
+    LOG_WARNING << "Image file " << filepath << " has unsupported depth of " << spec.depth;
     return false;
   }
 
@@ -301,11 +483,19 @@ bool ImageMetaData::oiio_load_metadata(OIIO::string_view filepath, OIIO::ImageSp
     }
   }
 
-  /* Workaround OIIO bug that sets oiio:UnassociatedAlpha on the last layer
-   * but not composite image that we read. */
-  is_cmyk = strcmp(in->format_name(), "jpeg") == 0 && channels == 4;
+  /* Load constant or average color. */
+  if (load_metadata_color(spec, "oiio:ConstantColor", average_color)) {
+    /* Could avoid loading tiles entirely for a bit more memory saving, or even
+     * constant folding in the shader nodes. */
+  }
+  else {
+    load_metadata_color(spec, "oiio:AverageColor", average_color);
+  }
 
-  LOG_DEBUG << "Image " << OIIO::Filesystem::filename(filepath) << ", " << width << "x" << height;
+  detect_tiles(*in, spec, filepath);
+
+  LOG_DEBUG << "Image " << OIIO::Filesystem::filename(filepath) << ", " << width << "x" << height
+            << ", " << (tile_size ? "tiled" : "untiled");
 
   if (r_spec) {
     *r_spec = spec;
@@ -327,25 +517,6 @@ static void conform_pixels_to_metadata_type(const ImageMetaData &metadata,
    * channel image is converted to RGBA format. */
   const int channels = metadata.channels;
   const bool is_rgba = metadata.is_rgba();
-
-  /* CMYK to RGBA. */
-  if (metadata.is_cmyk && is_rgba) {
-    const StorageType one = util_image_cast_from_float<StorageType>(1.0f);
-
-    for (int64_t j = 0; j < height; j++) {
-      StorageType *pixel = pixels + j * in_y_stride;
-      for (int64_t i = 0; i < width; i++, pixel += 4) {
-        const float c = util_image_cast_to_float(pixel[0]);
-        const float m = util_image_cast_to_float(pixel[1]);
-        const float y = util_image_cast_to_float(pixel[2]);
-        const float k = util_image_cast_to_float(pixel[3]);
-        pixel[0] = util_image_cast_from_float<StorageType>((1.0f - c) * (1.0f - k));
-        pixel[1] = util_image_cast_from_float<StorageType>((1.0f - m) * (1.0f - k));
-        pixel[2] = util_image_cast_from_float<StorageType>((1.0f - y) * (1.0f - k));
-        pixel[3] = one;
-      }
-    }
-  }
 
   /* Associate alpha. */
   if (channels == 4 && metadata.is_unassociated_alpha) {
@@ -588,6 +759,11 @@ bool ImageMetaData::oiio_load_pixels(OIIO::string_view filepath,
   config.attribute("oiio:UnassociatedAlpha", 1);
 
   if (!in->open(filepath, spec, config)) {
+    return false;
+  }
+
+  if (spec.depth > 1) {
+    LOG_WARNING << "Image file " << filepath << " has unsupported depth " << spec.depth;
     return false;
   }
 

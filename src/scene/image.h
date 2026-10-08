@@ -11,9 +11,8 @@
 
 #include "util/colorspace.h"
 #include "util/image_metadata.h"
-#include "util/string.h"
+#include "util/set.h"
 #include "util/thread.h"
-#include "util/transform.h"
 #include "util/unique_ptr.h"
 #include "util/vector.h"
 
@@ -31,6 +30,7 @@ class ImageTexture;
 class Progress;
 class RenderStats;
 class Scene;
+class SceneParams;
 class ColorSpaceProcessor;
 class VDBImageLoader;
 
@@ -78,6 +78,7 @@ class ImageHandle {
   int num_tiles() const;
 
   ImageMetaData metadata(Progress &progress);
+  bool all_udim_tiled(Progress &progress);
   int kernel_id() const;
 
   device_image *vdb_image_memory() const;
@@ -123,6 +124,9 @@ class ImageSingle : public ImageTexture {
   bool need_metadata = true;
   bool builtin = false;
 
+  /* Number of top mip levels in the image file to discard. */
+  int miplevel_offset = 0;
+
   thread_mutex mutex;
 
   device_image *vdb_memory = nullptr;
@@ -145,7 +149,7 @@ class ImageUDIM : public ImageTexture {
  * texture images and 3D volume images. */
 class ImageManager {
  public:
-  explicit ImageManager(const DeviceInfo &info);
+  explicit ImageManager(const DeviceInfo &info, const SceneParams &params);
   ~ImageManager();
 
   ImageHandle add_image(const string &filename, const ImageParams &params);
@@ -168,8 +172,9 @@ class ImageManager {
                           Progress &progress,
                           const set<const ImageSingle *> &images);
 
-  void set_osl_texture_system(void *texture_system);
   bool set_animation_frame_update(const int frame);
+
+  void evict_unused(Device *device, Scene *scene);
 
   void collect_statistics(RenderStats *stats, Scene *scene);
 
@@ -178,13 +183,14 @@ class ImageManager {
   bool need_update() const;
 
   bool get_use_texture_cache() const;
+  bool get_auto_texture_cache() const;
 
  private:
-  bool need_update_;
+  bool need_update_ = true;
 
   thread_mutex device_mutex;
   thread_mutex images_mutex;
-  int animation_frame;
+  int animation_frame = 0;
 
   unique_ptr_vector<ImageSingle> images;
   unique_ptr_vector<ImageUDIM> image_udims;
@@ -192,7 +198,12 @@ class ImageManager {
 
   ImageCache image_cache;
 
-  void *osl_texture_system;
+  bool use_texture_cache = true;
+  bool auto_texture_cache = false;
+  std::string texture_cache_path;
+
+  std::atomic<int> load_failure_num = 0;
+  std::atomic<int> tx_failure_num = 0;
 
   ImageSingle *add_image_texture(unique_ptr<ImageLoader> &&loader,
                                  const ImageParams &params,
@@ -201,16 +212,28 @@ class ImageManager {
 
   void load_image_metadata(ImageSingle *img, Progress &progress);
 
+  void device_gpu_load_requested(Device *device, DeviceQueue &queue, Scene *scene);
+  void device_cpu_load_requested(Device *device,
+                                 Scene *scene,
+                                 size_t image_texture_id,
+                                 int miplevel,
+                                 int x,
+                                 int y,
+                                 KernelTileDescriptor &tile_descriptor);
+
   void device_load_image(Device *device,
                          Scene *scene,
                          const size_t image_texture_id,
                          Progress &progress);
+  void device_load_tiled_descriptors(Scene *scene);
   void device_free_image(Scene *scene, const size_t image_texture_id);
 
   void device_update_udims(Device *device, Scene *scene);
 
   void device_resize_image_textures(Scene *scene);
-  void device_copy_image_textures(Scene *scene);
+  void device_copy_image_textures(Device *device, Scene *scene);
+
+  void report_failures();
 
   friend class ImageHandle;
 };

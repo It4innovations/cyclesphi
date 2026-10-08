@@ -8,6 +8,7 @@
 
 #include "kernel/camera/projection.h"
 #include "kernel/integrator/displacement_shader.h"
+#include "kernel/integrator/state.h"
 #include "kernel/integrator/surface_shader.h"
 #include "kernel/integrator/volume_shader.h"
 
@@ -16,11 +17,14 @@
 
 #include "kernel/util/colorspace.h"
 
+#include "util/types_rgbe.h"
+
 CCL_NAMESPACE_BEGIN
 
 ccl_device void kernel_displace_evaluate(KernelGlobals kg,
                                          const ccl_global KernelShaderEvalInput *input,
                                          ccl_global float *output,
+                                         ccl_global uint *cache_miss,
                                          const int offset)
 {
   /* Setup shader data. */
@@ -34,7 +38,9 @@ ccl_device void kernel_displace_evaluate(KernelGlobals kg,
   const float3 P = sd.P;
   displacement_shader_eval(kg, state, &sd);
   float3 D = sd.P - P;
-
+  if (sd.runtime_flag & SR_CACHE_MISS) {
+    *cache_miss = true;
+  }
   object_inverse_dir_transform(kg, &sd, &D);
 
 #ifdef __KERNEL_DEBUG_NAN__
@@ -48,14 +54,15 @@ ccl_device void kernel_displace_evaluate(KernelGlobals kg,
   D = ensure_finite(D);
 
   /* Write output. */
-  output[offset * 3 + 0] += D.x;
-  output[offset * 3 + 1] += D.y;
-  output[offset * 3 + 2] += D.z;
+  output[offset * 3 + 0] = D.x;
+  output[offset * 3 + 1] = D.y;
+  output[offset * 3 + 2] = D.z;
 }
 
 ccl_device void kernel_background_evaluate(KernelGlobals kg,
                                            const ccl_global KernelShaderEvalInput *input,
                                            ccl_global float *output,
+                                           ccl_global uint *cache_miss,
                                            const int offset)
 {
   /* Setup ray */
@@ -64,9 +71,16 @@ ccl_device void kernel_background_evaluate(KernelGlobals kg,
   const float3 ray_D = equirectangular_to_direction(in.u, in.v);
   const float ray_time = 0.5f;
 
+  /* Compute ray differential from resolution passed via object and prim fields. */
+  const float du = 1.0f / in.object;
+  const float dv = 1.0f / in.prim;
+  const float3 ray_D_du = equirectangular_to_direction(in.u + du, in.v);
+  const float3 ray_D_dv = equirectangular_to_direction(in.u, in.v + dv);
+  const float ray_dD = 0.5f * (len(ray_D_du - ray_D) + len(ray_D_dv - ray_D));
+
   /* Setup shader data. */
   ShaderData sd;
-  shader_setup_from_background(kg, &sd, ray_P, ray_D, 0.0f, ray_time);
+  shader_setup_from_background(kg, &sd, ray_P, ray_D, ray_dD, ray_time);
 
   /* Evaluate shader.
    * This is being evaluated for all BSDFs, so path flag does not contain a specific type.
@@ -75,7 +89,11 @@ ccl_device void kernel_background_evaluate(KernelGlobals kg,
   const uint32_t path_flag = PATH_RAY_EMISSION | PATH_RAY_IMPORTANCE_BAKE;
   surface_shader_eval<KERNEL_FEATURE_NODE_MASK_SURFACE_LIGHT &
                       ~(KERNEL_FEATURE_NODE_RAYTRACE | KERNEL_FEATURE_NODE_LIGHT_PATH)>(
-      kg, state, &sd, nullptr, path_flag);
+      kg, state, &sd, nullptr, PATH_RAY_VISIBILITY_NONE, path_flag);
+  if (sd.runtime_flag & SR_CACHE_MISS) {
+    *cache_miss = true;
+  }
+
   Spectrum color = surface_shader_background(&sd);
 
 #ifdef __KERNEL_DEBUG_NAN__
@@ -90,15 +108,16 @@ ccl_device void kernel_background_evaluate(KernelGlobals kg,
   const float3 color_rgb = spectrum_to_rgb(color);
 
   /* Write output. */
-  output[offset * 3 + 0] += color_rgb.x;
-  output[offset * 3 + 1] += color_rgb.y;
-  output[offset * 3 + 2] += color_rgb.z;
+  output[offset * 3 + 0] = color_rgb.x;
+  output[offset * 3 + 1] = color_rgb.y;
+  output[offset * 3 + 2] = color_rgb.z;
 }
 
 ccl_device void kernel_curve_shadow_transparency_evaluate(
     KernelGlobals kg,
     const ccl_global KernelShaderEvalInput *input,
     ccl_global float *output,
+    ccl_global uint *cache_miss,
     const int offset)
 {
 #ifdef __HAIR__
@@ -112,16 +131,21 @@ ccl_device void kernel_curve_shadow_transparency_evaluate(
   ConstIntegratorBakeState state;
   surface_shader_eval<KERNEL_FEATURE_NODE_MASK_SURFACE_SHADOW &
                       ~(KERNEL_FEATURE_NODE_RAYTRACE | KERNEL_FEATURE_NODE_LIGHT_PATH)>(
-      kg, state, &sd, nullptr, PATH_RAY_SHADOW);
+      kg, state, &sd, nullptr, PATH_RAY_VISIBILITY_SHADOW, PATH_RAY_FLAG_NONE);
+
+  if (sd.runtime_flag & SR_CACHE_MISS) {
+    *cache_miss = true;
+  }
 
   /* Write output. */
-  output[offset] = clamp(average(surface_shader_transparency(&sd)), 0.0f, 1.0f);
+  output[offset] = rgb_to_rgbe(saturate(spectrum_to_rgb(surface_shader_transparency(&sd)))).f;
 #endif
 }
 
 ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
                                                ccl_global const KernelShaderEvalInput *input,
                                                ccl_global float *output,
+                                               ccl_global uint *cache_miss,
                                                const int offset)
 {
 #ifdef __VOLUME__
@@ -143,7 +167,8 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
   /* Setup shader data. */
   ShaderData sd;
   shader_setup_from_volume(&sd, &ray, in.object);
-  sd.flag = SD_IS_VOLUME_SHADER_EVAL;
+  sd.runtime_flag = SR_IS_VOLUME_SHADER_EVAL;
+  sd.shader_flag = 0;
   /* For stochastic texture sampling. */
   sd.lcg_state = lcg_state_init(offset, 0, 0, 0x15b4f88d);
 
@@ -153,7 +178,8 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
    * that depends on ray types, the extrema are estimated on the fly. */
   /* TODO(weizhen): Volume invisible to camera ray might appear noisy. We can at least build a
    * separate octree for shadow ray. */
-  const uint32_t path_flag = PATH_RAY_CAMERA;
+  const PathRayVisibility path_visibility = PATH_RAY_VISIBILITY_CAMERA;
+  const uint32_t path_flag = PATH_RAY_FLAG_NONE;
 
   /* Setup volume stack entry. */
   in = input[offset * 2 + 1];
@@ -190,7 +216,12 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
     ConstIntegratorBakeState state;
     volume_shader_eval_entry<false,
                              KERNEL_FEATURE_NODE_MASK_VOLUME & ~KERNEL_FEATURE_NODE_LIGHT_PATH>(
-        kg, state, &sd, entry, path_flag);
+        kg, state, &sd, entry, path_visibility, path_flag);
+
+    if (sd.runtime_flag & SR_CACHE_MISS) {
+      /* Note we keep rendering other samples so we find all cache misses in one go. */
+      *cache_miss = true;
+    }
 
     const float sigma = reduce_max(sd.closure_transparent_extinction);
     const float emission = reduce_max(sd.closure_emission_background);

@@ -21,6 +21,10 @@
 #  include <cmath>   // IWYU pragma: export
 #endif
 
+#if !defined(__KERNEL_GPU__)
+#  include <bit>
+#endif
+
 CCL_NAMESPACE_BEGIN
 
 /* Float Pi variations */
@@ -369,11 +373,6 @@ ccl_device_inline float clamp(const float a, const float mn, const float mx)
   return min(max(a, mn), mx);
 }
 
-ccl_device_inline float mix(const float a, const float b, float t)
-{
-  return a + t * (b - a);
-}
-
 ccl_device_inline float smoothstep(const float edge0, const float edge1, const float x)
 {
   float result;
@@ -390,17 +389,51 @@ ccl_device_inline float smoothstep(const float edge0, const float edge1, const f
   return result;
 }
 
+/* There are two common ways of implementing a linear interpolation: result = a + t * (b - a) and
+ * result = (1 - t) * a + t * b. The former variant is called "mix" in our code and it ensures that
+ * result always changes monotonically when t increases monotonically. This comes at the cost of
+ * the fact that generally result != b when t == 1, which becomes particularly noticeable when the
+ * magnitudes of a and b are vastly different. The latter variant is called
+ * "endvalue_preserving_mix" in our code ensures that result == b when t == 1. This comes at the
+ * cost of an additional multiplication step compared to the former version and the fact that
+ * result may not change monotonically when a and b have different signs and t increases
+ * monotonically, which however isn't noticeable in most cases as long as monotony isn't explicitly
+ * required. In general, "endvalue_preserving_mix" should be preferred over "mix" when it is
+ * important that result == b when t == 1 or when a and b may have vastly different magnitudes.*/
+template<typename T1, typename T2> ccl_device_inline T1 mix(const T1 a, const T1 b, const T2 t)
+{
+  return a + t * (b - a);
+}
+
 #endif /* !defined(__KERNEL_METAL__) */
 
-#if defined(__KERNEL_CUDA__)
-ccl_device_inline float saturatef(const float a)
+/* Same as the "mix" function but with different numerical behavior. See comment above the "mix"
+ * function for more information. */
+template<typename T1, typename T2>
+ccl_device_inline T1 endvalue_preserving_mix(const T1 a, const T1 b, const T2 t)
 {
-  return __saturatef(a);
+  return (1.0f - t) * a + t * b;
 }
-#elif !defined(__KERNEL_METAL__)
+
+#if !defined(__KERNEL_METAL__)
 ccl_device_inline float saturatef(const float a)
 {
+#  ifdef __KERNEL_OPTIX__
+  /* Workaround OptiX driver bug which somehow rounds constant values to
+   * integers when using __saturatef. This particular logic works around the
+   * problem, just using clamp gets optimized back to saturate. See #159954. */
+  if (!(a >= 0.0f)) {
+    return 0.0f;
+  }
+  if (!(a <= 1.0f)) {
+    return 1.0f;
+  }
+  return a;
+#  elif defined(__KERNEL_CUDA__)
+  return __saturatef(a);
+#  else
   return clamp(a, 0.0f, 1.0f);
+#  endif
 }
 #endif /* __KERNEL_CUDA__ */
 
@@ -684,22 +717,14 @@ ccl_device_inline bool is_zero(const float a)
 }
 
 #if !defined(__KERNEL_GPU__)
-#  if defined(__GNUC__)
 ccl_device_inline uint popcount(const uint x)
 {
-  return __builtin_popcount(x);
+  return std::popcount(x);
 }
-#  else
-ccl_device_inline uint popcount(const uint x)
+ccl_device_inline uint popcount(const uint64_t x)
 {
-  /* TODO(Stefan): pop-count intrinsic for Windows with fallback for older CPUs. */
-  uint i = x;
-  i = i - ((i >> 1) & 0x55555555);
-  i = (i & 0x33333333) + ((i >> 2) & 0x33333333);
-  i = (((i + (i >> 4)) & 0xF0F0F0F) * 0x1010101) >> 24;
-  return i;
+  return std::popcount(x);
 }
-#  endif
 #elif defined(__KERNEL_ONEAPI__)
 #  define popcount(x) sycl::popcount(x)
 #elif defined(__KERNEL_HIP__)

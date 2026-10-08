@@ -84,6 +84,22 @@ void DebugFlags::Metal::reset()
   if (const char *str = getenv("CYCLES_METALRT_PCMI")) {
     use_metalrt_pcmi = (atoi(str) != 0);
   }
+
+  if (const char *str = getenv("CYCLES_METAL_RESIDENCY_SETS")) {
+    use_residency_sets_if_available = (atoi(str) != 0);
+  }
+}
+
+DebugFlags::TextureCache::TextureCache()
+{
+  reset();
+}
+
+void DebugFlags::TextureCache::reset()
+{
+  use_eviction = true;
+  preserve_unused = 0;
+  min_tile_size = 64;
 }
 
 DebugFlags::OptiX::OptiX()
@@ -102,6 +118,7 @@ void DebugFlags::reset()
   cuda.reset();
   optix.reset();
   metal.reset();
+  texture_cache.reset();
 }
 
 CCL_NAMESPACE_END

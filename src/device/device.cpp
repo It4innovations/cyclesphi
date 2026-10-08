@@ -276,8 +276,17 @@ vector<DeviceInfo> Device::available_devices(const uint mask)
 #ifdef WITH_OPTIX
   if (mask & DEVICE_MASK_OPTIX) {
     if (!(devices_initialized_mask & DEVICE_MASK_OPTIX)) {
-      if (device_optix_init()) {
+      bool meets_nvidia_driver_requirement = true;
+      if (device_optix_init(&meets_nvidia_driver_requirement) || !meets_nvidia_driver_requirement)
+      {
         device_optix_info(cuda_devices(), optix_devices());
+        for (DeviceInfo &info : optix_devices()) {
+          info.meets_driver_requirement = meets_nvidia_driver_requirement;
+        }
+      }
+      else {
+        /* `device_optix_init` has failed but not because of the driver being too old.
+         * Nothing to do in this case. */
       }
       devices_initialized_mask |= DEVICE_MASK_OPTIX;
     }
@@ -290,8 +299,29 @@ vector<DeviceInfo> Device::available_devices(const uint mask)
 #ifdef WITH_HIP
   if (mask & DEVICE_MASK_HIP) {
     if (!(devices_initialized_mask & DEVICE_MASK_HIP)) {
-      if (device_hip_init()) {
+      bool meets_amd_driver_requirement = true;
+      if (device_hip_init(&meets_amd_driver_requirement)) {
         device_hip_info(hip_devices());
+        for (DeviceInfo &info : hip_devices()) {
+          info.meets_driver_requirement = meets_amd_driver_requirement;
+        }
+      }
+      else if (meets_amd_driver_requirement == false) {
+        /* If we are here, then hipewInit has failed with HIPEW_ERROR_OLD_DRIVER. */
+        /* It is unclear if proper device info can be collected at this point, so we create
+         * a placeholder device to communicate the need to upgrade the driver, as presumably
+         * the hardware is available. */
+        DeviceInfo info = DeviceInfo();
+        info.type = DEVICE_HIP;
+        info.description = "Unknown AMD device";
+        info.id = "unknown_amd_device_with_outdated_driver";
+        info.num = 0;
+        info.meets_driver_requirement = false;
+        hip_devices().push_back(info);
+      }
+      else {
+        /* `device_hip_init` has failed but not because of the driver being too old.
+         * Nothing to do in this case. */
       }
       devices_initialized_mask |= DEVICE_MASK_HIP;
     }
@@ -429,7 +459,7 @@ DeviceInfo Device::get_multi_device(const vector<DeviceInfo> &subdevices,
   info.num = 0;
 
   info.has_nanovdb = true;
-  info.has_mnee = true;
+  info.has_mnee_ = true;
   info.has_osl = true;
   info.has_guiding = true;
   info.has_profiling = true;
@@ -478,7 +508,7 @@ DeviceInfo Device::get_multi_device(const vector<DeviceInfo> &subdevices,
 
     /* Accumulate device info. */
     info.has_nanovdb &= device.has_nanovdb;
-    info.has_mnee &= device.has_mnee;
+    info.has_mnee_ &= device.has_mnee();
     info.has_osl &= device.has_osl;
     info.has_guiding &= device.has_guiding;
     info.has_profiling &= device.has_profiling;
@@ -519,10 +549,15 @@ const CPUKernels &Device::get_cpu_kernels()
   return kernels;
 }
 
-void Device::get_cpu_kernel_thread_globals(
-    vector<ThreadKernelGlobalsCPU> & /*kernel_thread_globals*/)
+vector<ThreadKernelGlobalsCPU> *Device::acquire_cpu_kernel_thread_globals()
 {
   LOG_FATAL << "Device does not support CPU kernels.";
+  return nullptr;
+}
+
+void Device::release_cpu_kernel_thread_globals()
+{
+  /* No-op for non-CPU devices. */
 }
 
 OSLGlobals *Device::get_cpu_osl_memory()
@@ -546,14 +581,48 @@ void Device::host_free(const MemoryType /*type*/, void *host_pointer, const size
   util_aligned_free(host_pointer, size);
 }
 
+void Device::mem_or_from_device(device_memory &mem)
+{
+  /* Note that we always accumulate into the host buffer without zeroing, as CPU and unified
+   * memory write into the host buffer and we need to combine with those flags. */
+  const size_t size = mem.memory_size();
+  vector<uint8_t> tmp(size);
+  uint8_t *combined = static_cast<uint8_t *>(mem.host_pointer);
+  mem.host_pointer = tmp.data();
+  mem_copy_from(
+      mem, 0, mem.data_width, (mem.data_height == 0) ? 1 : mem.data_height, sizeof(uint8_t));
+  const uint8_t *src = (const uint8_t *)mem.host_pointer;
+  for (size_t i = 0; i < size; i++) {
+    combined[i] |= src[i];
+  }
+  mem.host_pointer = combined;
+}
+
+device_ptr Device::mem_device_ptr(const device_memory &mem, Device *sub_device)
+{
+  assert(sub_device == this);
+  (void)sub_device;
+  return mem.device_pointer;
+}
+
 GPUDevice::~GPUDevice() noexcept(false) = default;
 
-bool GPUDevice::load_image_info()
+bool GPUDevice::load_image_info(DeviceQueue *queue)
 {
   /* Note image_info is never host mapped, and load_image_info() should only
    * be called right before kernel enqueue when all memory operations have completed. */
   if (need_image_info) {
-    image_info.copy_to_device();
+    /* If the host buffer was grown with host_only_resize() while a kernel was reading the old
+     * device buffer, we now free and reallocate it. */
+    if (image_info.device_size < image_info.memory_size()) {
+      generic_free(image_info);
+    }
+    if (queue) {
+      queue->copy_to_device(image_info);
+    }
+    else {
+      image_info.copy_to_device();
+    }
     need_image_info = false;
     return true;
   }
@@ -799,7 +868,7 @@ void GPUDevice::generic_free(device_memory &mem)
 
   /* Host pointer should already have been freed at this point. If not we might
    * end up freeing shared memory and can't recover original host memory. */
-  assert(mem.host_pointer == nullptr || mem.move_to_host);
+  assert(mem.host_pointer == nullptr || mem.move_to_host || !mem.is_shared(this));
 
   const thread_scoped_lock lock(device_mem_map_mutex);
   DCHECK(device_mem_map.find(&mem) != device_mem_map.end());

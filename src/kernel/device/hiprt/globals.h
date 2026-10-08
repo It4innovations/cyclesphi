@@ -52,12 +52,9 @@ using KernelGlobals = ccl_global KernelGlobalsGPU *ccl_restrict;
 struct KernelParamsHIPRT {
   KernelData data;
 #define KERNEL_DATA_ARRAY(type, name) const type *name;
+#define KERNEL_DATA_ARRAY_WRITABLE(type, name) type *name;
   KERNEL_DATA_ARRAY(int, user_instance_id)
   KERNEL_DATA_ARRAY(uint64_t, blas_ptr)
-  KERNEL_DATA_ARRAY(int2, custom_prim_info)
-  KERNEL_DATA_ARRAY(int2, custom_prim_info_offset)
-  KERNEL_DATA_ARRAY(float2, prims_time)
-  KERNEL_DATA_ARRAY(int, prim_time_offset)
 #include "kernel/data_arrays.h"
 
   /* Integrator state */
@@ -145,6 +142,7 @@ typedef hiprtEmptyInstanceStack Instance_Stack;
 /* Abstraction macros */
 #define kernel_data kernel_params.data
 #define kernel_data_fetch(name, index) kernel_params.name[(index)]
+#define kernel_data_write(name, index, value) kernel_params.name[(index)] = (value)
 #define kernel_data_array(name) (kernel_params.name)
 #define kernel_integrator_state kernel_params.integrator_state
 

@@ -99,10 +99,19 @@ OSL_DEVICE_STRING(u_aperture_size, "cam:aperture_size", 3708482920470008383ull)
 OSL_DEVICE_STRING(u_aperture_position, "cam:aperture_position", 12926784411960338650ull)
 OSL_DEVICE_STRING(u_focal_distance, "cam:focal_distance", 7162995161881858159ull)
 
+OSL_DEVICE_STRING(u_resolution, "resolution", 2307859618413965908ull)
+OSL_DEVICE_STRING(u_channels, "channels", 12748693449878651001ull)
+OSL_DEVICE_STRING(u_format, "format", 17018903787179094860ull)
+OSL_DEVICE_STRING(u_fileformat, "fileformat", 4858431823914058665ull)
+OSL_DEVICE_STRING(u_colorspace, "colorspace", 8710743381164964946ull)
+OSL_DEVICE_STRING(u_exists, "exists", 11446133498368803600ull)
+OSL_DEVICE_STRING(u_averagecolor, "averagecolor", 3004396188475227877ull)
+
 OSL_DEVICE_STRING(u_distance, "distance", 5661183123366514158ull)
 OSL_DEVICE_STRING(u_index, "index", 15907549540151602841ull)
 OSL_DEVICE_STRING(u_trace, "trace", 13264932728578201327ull)
 OSL_DEVICE_STRING(u_traceset_only_local, "__only_local__", 12891670648956128852ull)
+OSL_DEVICE_STRING(u_traceset_raycast, "__raycast__", 2367107625979882517ull)
 OSL_DEVICE_STRING(u_hit, "hit", 7529033939518063282ull)
 OSL_DEVICE_STRING(u_hitdist, "hitdist", 17066342024105335641ull)
 OSL_DEVICE_STRING(u_hitself, "hitself", 12209754783026028319ull)
@@ -112,6 +121,9 @@ OSL_DEVICE_STRING(u_P, "P", 6583699458582498608ull)
 OSL_DEVICE_STRING(u_I, "I", 939471844073562180ull)
 OSL_DEVICE_STRING(u_u, "u", 24377992418299859ull)
 OSL_DEVICE_STRING(u_v, "v", 5318568133543929321ull)
+
+OSL_DEVICE_STRING(u_scene_time, "scene:time", 18068208390528818485ull)
+OSL_DEVICE_STRING(u_scene_frame, "scene:frame", 4156453089429035495ull)
 
 }  // namespace DeviceStrings
 

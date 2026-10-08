@@ -27,7 +27,8 @@ The resulting binary will be at:
 
 ## Hydra Render Delegate with USD Repository
 
-This will make the render delegate work with usdview and other applications built using the USD repository. USD version 24.03 or newer is required.
+This will make the render delegate work with usdview and other applications built using the USD repository. USD version 25.11 or newer is required.
+
 
 USD includes a script to build itself and all required dependencies and then install the result a specified directory.
 
@@ -40,14 +41,8 @@ Get the Cycles source code:
     git clone https://projects.blender.org/blender/cycles.git
     cd cycles
 
-By default older precompiled libraries need to be used, for compatibility with older VFX platforms and TBB.
-Download the libraries and build pointing to the USD directory like this.
-
-    make update_legacy
-    cmake -B ./build -DPXR_ROOT="<path to USD install>" -DWITH_LEGACY_LIBRARIES=ON
-    make
-
-When using a newer VFX platform and USD was built with `--onetbb`, do this instead:
+At the moment, when using USD from the USD repository, Cycles will build without OSL and NanoVDB support.
+To build Cycles, download the Cycles dependency libraries and point CMake to the USD directory like this.
 
     make update
     cmake -B ./build -DPXR_ROOT="<path to USD install>"
@@ -59,8 +54,7 @@ Test in usdview.
 
 ## Hydra Render Delegate for Houdini
 
-For use in Houdini, Cycles must be built using Houdini's USD libraries. Houdini version 20 or newer is required.
-Currently older libraries must be used for compatibility. Future Houdini versions will not need the legacy options.
+For use in Houdini, Cycles must be built using Houdini's USD libraries. Houdini version 21+ is required. 
 
 Get the source code:
 
@@ -69,9 +63,21 @@ Get the source code:
 
 Download precompiled libraries and build.
 
-    make update_legacy
-    cmake -B ./build -DHOUDINI_ROOT="<path to Houdini>" -DWITH_LEGACY_LIBRARIES=ON
-    make
+Linux:
+```
+    make update
+    cmake -B ./build -DHOUDINI_ROOT="<path to Houdini>"
+    cmake --build build --config Release
+    cmake --install build
+```
+
+Windows:
+```
+    .\make.bat update
+    cmake -B .\build -DHOUDINI_ROOT="<path to Houdini>"
+    cmake --build build --config Release
+    cmake --install build
+```
 
 The path to Houdini depends on the operating system, typically:
 - Linux: `/opt/hfsX.Y`
@@ -83,6 +89,11 @@ Test in Houdini using an environment variable.
     PXR_PLUGINPATH_NAME=<path to cycles>/install/houdini/dso/usd_plugins houdini
 
 Or copy `install/houdini/packages/cycles.json` to the Houdini packages directory to make it always available.
+The packages directory can be found (or needs to be created) under:
+- Linux: `/home/[username]/houdiniX.Y`
+- macOS: `/Users/[username]/Library/Preferences/houdini/X.Y`
+- Windows: `C:/Users/[username]/Documents/houdiniX.Y`
+**Note:** If you move the Cycles installation folder to another place you need to adjust the path in `cycles.json`.
 
 ## Build System
 

@@ -5,6 +5,7 @@
 #pragma once
 
 #include "graph/node.h"
+#include "kernel/svm/node_types.h"
 #include "kernel/svm/types.h"
 #include "scene/image.h"
 #include "scene/shader_graph.h"
@@ -12,6 +13,7 @@
 #include "util/array.h"
 #include "util/string.h"
 #include "util/unique_ptr.h"
+#include "util/vector.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -27,12 +29,17 @@ class TextureMapping {
   TextureMapping();
   Transform compute_transform();
   bool skip();
-  void compile(SVMCompiler &compiler, const int offset_in, const int offset_out);
+  void compile(SVMCompiler &compiler,
+               const SVMStackOffset offset_in,
+               const SVMStackOffset offset_out,
+               ShaderNode *node);
   int compile(SVMCompiler &compiler, ShaderInput *vector_in);
   void compile(OSLCompiler &compiler);
 
-  int compile_begin(SVMCompiler &compiler, ShaderInput *vector_in);
-  void compile_end(SVMCompiler &compiler, ShaderInput *vector_in, const int vector_offset);
+  SVMStackOffset compile_begin(SVMCompiler &compiler, ShaderInput *vector_in, ShaderNode *node);
+  void compile_end(SVMCompiler &compiler,
+                   ShaderInput *vector_in,
+                   const SVMStackOffset vector_offset);
 
   float3 translation;
   float3 rotation;
@@ -470,6 +477,7 @@ class ConvertNode : public ShaderNode {
 
 public: //TODO: MJ
   static const NodeType *(&get_node_types())[MAX_TYPE][MAX_TYPE];
+  static bool register_on_init;
 };
 
 class BsdfBaseNode : public ShaderNode {
@@ -515,12 +523,7 @@ class BsdfNode : public BsdfBaseNode {
   explicit BsdfNode(const NodeType *node_type);
   SHADER_NODE_BASE_CLASS(BsdfNode)
 
-  void compile(SVMCompiler &compiler,
-               ShaderInput *bsdf_y,
-               ShaderInput *bsdf_z,
-               ShaderInput *data_y = nullptr,
-               ShaderInput *data_z = nullptr,
-               ShaderInput *data_w = nullptr);
+  template<typename T> void compile(SVMCompiler &compiler, const T &data);
 
   NODE_SOCKET_API(float3, color)
   NODE_SOCKET_API(float3, normal)
@@ -543,6 +546,8 @@ class PrincipledBsdfNode : public BsdfBaseNode {
  public:
   SHADER_NODE_CLASS(PrincipledBsdfNode)
 
+  bool is_thin_wall();
+  bool subsurface_has_positive_weight();
   bool has_surface_bssrdf() override;
   bool has_bssrdf_bump() override;
   void simplify_settings(Scene *scene) override;
@@ -551,6 +556,7 @@ class PrincipledBsdfNode : public BsdfBaseNode {
   NODE_SOCKET_API(float, metallic)
   NODE_SOCKET_API(float, roughness)
   NODE_SOCKET_API(float, ior)
+  NODE_SOCKET_API(int, thin_wall)
   NODE_SOCKET_API(float3, normal)
   NODE_SOCKET_API(float, alpha)
   NODE_SOCKET_API(float, diffuse_roughness)
@@ -1396,6 +1402,8 @@ class AttributeNode : public ShaderNode {
   }
   ShaderNodeType shader_node_type() const override;
 
+  static void add_named_attribute_request(AttributeRequestSet *attributes, ustring attribute);
+
   NODE_SOCKET_API(ustring, attribute)
 
   bool stochastic_sample = true;
@@ -1609,7 +1617,7 @@ class CurvesNode : public ShaderNode {
   explicit CurvesNode(const NodeType *node_type);
   SHADER_NODE_BASE_CLASS(CurvesNode)
 
-  NODE_SOCKET_API_ARRAY(array<float3>, curves)
+  NODE_SOCKET_API_ARRAY(array<packed_float3>, curves)
   NODE_SOCKET_API(float, min_x)
   NODE_SOCKET_API(float, max_x)
   NODE_SOCKET_API(float, fac)
@@ -1657,7 +1665,7 @@ class RGBRampNode : public ShaderNode {
   SHADER_NODE_CLASS(RGBRampNode)
   void constant_fold(const ConstantFolder &folder) override;
 
-  NODE_SOCKET_API_ARRAY(array<float3>, ramp)
+  NODE_SOCKET_API_ARRAY(array<packed_float3>, ramp)
   NODE_SOCKET_API_ARRAY(array<float>, ramp_alpha)
   NODE_SOCKET_API(float, fac)
   NODE_SOCKET_API(bool, interpolate)
@@ -1841,7 +1849,18 @@ class VectorDisplacementNode : public ShaderNode {
 
 class RaycastNode : public ShaderNode {
  public:
+  enum AttributeOutputType {
+    ATTR_OUTPUT_FLOAT3,
+    ATTR_OUTPUT_FLOAT,
+    ATTR_OUTPUT_FLOAT_ALPHA,
+  };
+
   SHADER_NODE_CLASS(RaycastNode)
+
+  /* Copy constructor for the purposes of the clone() functionality. */
+  RaycastNode(const RaycastNode &other);
+
+  void global_attributes(Shader *shader, AttributeRequestSet *attributes) override;
 
   bool has_spatial_varying() override
   {
@@ -1856,11 +1875,36 @@ class RaycastNode : public ShaderNode {
     return NODE_RAYCAST;
   }
 
+  /* Add an output socket to the instance of this node which provides access to specified attribute
+   * samples at the intersection. */
+  void add_output_attribute_socket(ustring attribute_name,
+                                   AttributeOutputType attribute_output_type,
+                                   ustring socket_id);
+
   NODE_SOCKET_API(float3, position)
   NODE_SOCKET_API(float3, direction)
   NODE_SOCKET_API(float, length)
 
   NODE_SOCKET_API(bool, only_local)
+
+ private:
+  struct AttributeOutput {
+    ustring attribute_name;
+    AttributeOutputType attribute_output_type;
+    ustring socket_id;
+  };
+  vector<AttributeOutput> attribute_outputs_;
+
+  /* Types for the dynamically registered output sockets. */
+  unique_ptr_vector<SocketType> socket_types_;
+};
+
+class SceneTimeNode : public ShaderNode {
+ public:
+  SHADER_NODE_CLASS(SceneTimeNode)
+
+  NODE_SOCKET_API(float, seconds)
+  NODE_SOCKET_API(float, frame)
 };
 
 CCL_NAMESPACE_END

@@ -256,6 +256,7 @@ string CUDADevice::compile_kernel_get_common_cflags(const uint kernel_features)
   const string source_path = path_get("source");
   const string include_path = source_path;
   string cflags = string_printf(
+      "-std=c++17 "
       "-m%d "
       "--ptxas-options=\"-v\" "
       "--use_fast_math "
@@ -299,11 +300,18 @@ string CUDADevice::compile_kernel(const string &common_cflags, const char *name,
   }
   /* Attempt to use kernel provided with Blender. */
   else if (!use_adaptive_compilation()) {
-    const string cubin = path_get(string_printf("lib/%s_sm_%d%d.cubin.zst", name, major, minor));
-    LOG_INFO << "Testing for pre-compiled kernel " << cubin << ".";
-    if (path_exists(cubin)) {
-      LOG_INFO << "Using precompiled kernel.";
-      return cubin;
+    /* Binaries within a major version are compatible, so find the closest one. */
+    int cubin_minor = minor;
+    while (cubin_minor >= 0) {
+      const string cubin = path_get(
+          string_printf("lib/%s_sm_%d%d.cubin.zst", name, major, cubin_minor));
+      LOG_INFO << "Testing for pre-compiled kernel " << cubin << ".";
+      if (path_exists(cubin)) {
+        LOG_INFO << "Using precompiled kernel.";
+        return cubin;
+      }
+
+      cubin_minor--;
     }
 
     /* The driver can JIT-compile PTX generated for older generations, so find the closest one. */
@@ -523,8 +531,6 @@ void CUDADevice::reserve_local_memory(const uint kernel_features)
     /* Use the biggest kernel for estimation. */
     const DeviceKernel test_kernel = (kernel_features & KERNEL_FEATURE_NODE_RAYTRACE) ?
                                          DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE_RAYTRACE :
-                                     (kernel_features & KERNEL_FEATURE_MNEE) ?
-                                         DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE_MNEE :
                                          DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE;
 
     /* Launch kernel, using just 1 block appears sufficient to reserve memory for all
@@ -1405,8 +1411,9 @@ void CUDADevice::image_alloc(device_image &mem)
     thread_scoped_lock lock(image_info_mutex);
     const uint image_info_id = mem.image_info_id;
     if (image_info_id >= image_info.size()) {
-      /* Allocate some image_info_ids in advance, to reduce amount of re-allocations. */
-      image_info.resize(image_info_id + 128);
+      /* Geometric growth to amortize reallocation cost. */
+      const size_t new_size = max(size_t(image_info_id) + 128, image_info.size() * 2);
+      image_info.host_only_resize(new_size);
     }
     image_info[image_info_id] = tex_info;
     need_image_info = true;

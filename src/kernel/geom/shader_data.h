@@ -61,7 +61,8 @@ ccl_device_inline
   sd->object = isect->object;
   sd->object_flag = kernel_data_fetch(object_flag, sd->object);
   sd->prim = isect->prim;
-  sd->flag = 0;
+  sd->runtime_flag = 0;
+  sd->shader_flag = 0;
 
   /* Read matrices and time. */
   sd->time = ray->time;
@@ -101,22 +102,22 @@ ccl_device_inline
 
     if (!(sd->object_flag & SD_OBJECT_TRANSFORM_APPLIED)) {
       /* instance transform */
-      object_normal_transform_auto(kg, sd, &sd->N);
-      object_normal_transform_auto(kg, sd, &sd->Ng);
+      object_normal_transform(kg, sd, &sd->N);
+      object_normal_transform(kg, sd, &sd->Ng);
 #ifdef __DPDU__
-      object_dir_transform_auto(kg, sd, &sd->dPdu);
-      object_dir_transform_auto(kg, sd, &sd->dPdv);
+      object_dir_transform(kg, sd, &sd->dPdu);
+      object_dir_transform(kg, sd, &sd->dPdv);
 #endif
     }
   }
 
-  sd->flag = kernel_data_fetch(shaders, (sd->shader & SHADER_MASK)).flags;
+  sd->shader_flag = kernel_data_fetch(shaders, (sd->shader & SHADER_MASK)).flags;
 
   /* backfacing test */
   const bool backfacing = (dot(sd->Ng, sd->wi) < 0.0f);
 
   if (backfacing) {
-    sd->flag |= SD_BACKFACING;
+    sd->runtime_flag |= SR_BACKFACING;
     sd->Ng = -sd->Ng;
     sd->N = -sd->N;
 #ifdef __DPDU__
@@ -174,8 +175,8 @@ ccl_device_inline void shader_setup_from_sample(KernelGlobals kg,
   sd->v = v;
   sd->time = time;
   sd->ray_length = t;
-
-  sd->flag = kernel_data_fetch(shaders, (sd->shader & SHADER_MASK)).flags;
+  sd->runtime_flag = 0;
+  sd->shader_flag = kernel_data_fetch(shaders, (sd->shader & SHADER_MASK)).flags;
   sd->object_flag = 0;
   if (sd->object != OBJECT_NONE) {
     sd->object_flag |= kernel_data_fetch(object_flag, sd->object);
@@ -186,10 +187,10 @@ ccl_device_inline void shader_setup_from_sample(KernelGlobals kg,
 
     /* transform into world space */
     if (object_space) {
-      object_position_transform_auto(kg, sd, &sd->P);
-      object_normal_transform_auto(kg, sd, &sd->Ng);
+      object_position_transform(kg, sd, &sd->P);
+      object_normal_transform(kg, sd, &sd->Ng);
       sd->N = sd->Ng;
-      object_dir_transform_auto(kg, sd, &sd->wi);
+      object_dir_transform(kg, sd, &sd->wi);
     }
 
     if (sd->type == PRIMITIVE_TRIANGLE) {
@@ -199,17 +200,17 @@ ccl_device_inline void shader_setup_from_sample(KernelGlobals kg,
             kg, Ng, sd->object, sd->object_flag, sd->prim, sd->u, sd->v);
 
         if (!(sd->object_flag & SD_OBJECT_TRANSFORM_APPLIED)) {
-          object_normal_transform_auto(kg, sd, &sd->N);
+          object_normal_transform(kg, sd, &sd->N);
         }
       }
 
       /* dPdu/dPdv */
 #ifdef __DPDU__
-      triangle_dPdudv(kg, sd->prim, &sd->dPdu, &sd->dPdv);
+      triangle_dPdudv(kg, sd->object, sd->prim, &sd->dPdu, &sd->dPdv);
 
       if (!(sd->object_flag & SD_OBJECT_TRANSFORM_APPLIED)) {
-        object_dir_transform_auto(kg, sd, &sd->dPdu);
-        object_dir_transform_auto(kg, sd, &sd->dPdv);
+        object_dir_transform(kg, sd, &sd->dPdu);
+        object_dir_transform(kg, sd, &sd->dPdv);
       }
 #endif
     }
@@ -232,7 +233,7 @@ ccl_device_inline void shader_setup_from_sample(KernelGlobals kg,
     const bool backfacing = (dot(sd->Ng, sd->wi) < 0.0f);
 
     if (backfacing) {
-      sd->flag |= SD_BACKFACING;
+      sd->runtime_flag |= SR_BACKFACING;
       sd->Ng = -sd->Ng;
       sd->N = -sd->N;
 #ifdef __DPDU__
@@ -287,6 +288,18 @@ ccl_device void shader_setup_from_displace(KernelGlobals kg,
 
   /* Assign some incoming direction to avoid division by zero. */
   sd->wi = sd->N;
+
+#ifdef __RAY_DIFFERENTIALS__
+  /* Set ray differentials based on triangle size for texture filtering.
+   * The parametric step across the triangle is 1.0, giving dPdx = dPdu
+   * and dPdy = dPdv.
+   * TODO: consider computing this based on all triangles adjacent to the vertex. */
+  sd->du.dx = 1.0f;
+  sd->du.dy = 0.0f;
+  sd->dv.dx = 0.0f;
+  sd->dv.dy = 1.0f;
+  sd->dP = 0.5f * (len(sd->dPdu) + len(sd->dPdv));
+#endif
 }
 
 /* ShaderData setup for point on curve. */
@@ -309,7 +322,8 @@ ccl_device void shader_setup_from_curve(KernelGlobals kg,
 
   /* Shader */
   sd->shader = kernel_data_fetch(curves, prim).shader_id;
-  sd->flag = kernel_data_fetch(shaders, (sd->shader & SHADER_MASK)).flags;
+  sd->runtime_flag = 0;
+  sd->shader_flag = kernel_data_fetch(shaders, (sd->shader & SHADER_MASK)).flags;
 
   /* Object */
   sd->object = object;
@@ -328,10 +342,11 @@ ccl_device void shader_setup_from_curve(KernelGlobals kg,
 
   float4 P_curve[4];
 
-  P_curve[0] = kernel_data_fetch(curve_keys, ka);
-  P_curve[1] = kernel_data_fetch(curve_keys, k0);
-  P_curve[2] = kernel_data_fetch(curve_keys, k1);
-  P_curve[3] = kernel_data_fetch(curve_keys, kb);
+  const int position_offset = kernel_data_fetch(objects, object).position_offset;
+  P_curve[0] = kernel_data_fetch(curve_keys, position_offset + ka);
+  P_curve[1] = kernel_data_fetch(curve_keys, position_offset + k0);
+  P_curve[2] = kernel_data_fetch(curve_keys, position_offset + k1);
+  P_curve[3] = kernel_data_fetch(curve_keys, position_offset + kb);
 
   /* Interpolate position and tangent. */
   sd->P = (sd->type & PRIMITIVE_CURVE) == PRIMITIVE_CURVE_THICK_LINEAR ?
@@ -345,9 +360,9 @@ ccl_device void shader_setup_from_curve(KernelGlobals kg,
 
   /* Transform into world space */
   if (!(sd->object_flag & SD_OBJECT_TRANSFORM_APPLIED)) {
-    object_position_transform_auto(kg, sd, &sd->P);
+    object_position_transform(kg, sd, &sd->P);
 #  ifdef __DPDU__
-    object_dir_transform_auto(kg, sd, &sd->dPdu);
+    object_dir_transform(kg, sd, &sd->dPdu);
 #  endif
   }
 
@@ -387,7 +402,8 @@ ccl_device_inline void shader_setup_from_background(KernelGlobals kg,
   sd->Ng = -ray_D;
   sd->wi = -ray_D;
   sd->shader = kernel_data.background.surface_shader;
-  sd->flag = kernel_data_fetch(shaders, (sd->shader & SHADER_MASK)).flags;
+  sd->runtime_flag = 0;
+  sd->shader_flag = kernel_data_fetch(shaders, (sd->shader & SHADER_MASK)).flags;
   sd->object_flag = 0;
   sd->time = ray_time;
   sd->ray_length = FLT_MAX;
@@ -428,7 +444,8 @@ ccl_device_inline void shader_setup_from_volume(ccl_private ShaderData *ccl_rest
   sd->Ng = -ray->D;
   sd->wi = -ray->D;
   sd->shader = SHADER_NONE;
-  sd->flag = 0;
+  sd->runtime_flag = 0;
+  sd->shader_flag = 0;
   sd->object_flag = 0;
   sd->time = ray->time;
   sd->ray_length = 0.0f; /* todo: can we set this to some useful value? */

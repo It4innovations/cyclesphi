@@ -26,6 +26,7 @@ if(WITH_USD)
   if(HOUDINI_ROOT)
     find_package(USDHoudini)
   elseif(PXR_ROOT)
+    find_package(OpenGL)
     find_package(USDPixar)
   endif()
 endif()
@@ -71,7 +72,7 @@ set(_cycles_lib_dir "${CMAKE_CURRENT_SOURCE_DIR}/lib/${_cycles_lib_platform}")
 
 # Use legacy libraries for compatibility with Houdini or USD without oneTBB.
 set(_cycles_lib_dir_legacy "${CMAKE_CURRENT_SOURCE_DIR}/lib/legacy/${_cycles_lib_platform}")
-if((HOUDINI_ROOT AND HOUDINI_VERSION_MAJOR VERSION_LESS 21) OR WITH_LEGACY_LIBRARIES)
+if((HOUDINI_FOUND AND HOUDINI_VERSION_MAJOR VERSION_LESS 21) OR WITH_LEGACY_LIBRARIES)
   set(_cycles_use_legacy_libs ON)
   set(_cycles_lib_dir "${_cycles_lib_dir_legacy}")
 else()
@@ -99,20 +100,16 @@ if(EXISTS ${_cycles_lib_dir} AND WITH_LIBS_PRECOMPILED)
   _set_default(OPENEXR_ROOT_DIR "${_cycles_lib_dir}/openexr")
   _set_default(OPENIMAGEDENOISE_ROOT_DIR "${_cycles_lib_dir}/openimagedenoise")
   _set_default(OPENIMAGEIO_ROOT_DIR "${_cycles_lib_dir}/openimageio")
-  _set_default(OPENJPEG_ROOT_DIR "${_cycles_lib_dir}/openjpeg")
   _set_default(openjph_ROOT "${_cycles_lib_dir}/openjph")
   _set_default(OPENSUBDIV_ROOT_DIR "${_cycles_lib_dir}/opensubdiv")
   _set_default(OPENVDB_ROOT_DIR "${_cycles_lib_dir}/openvdb")
   _set_default(OSL_ROOT_DIR "${_cycles_lib_dir}/osl")
-  _set_default(PNG_ROOT "${_cycles_lib_dir}/png")
   _set_default(PUGIXML_ROOT_DIR "${_cycles_lib_dir}/pugixml")
   _set_default(PYTHON_ROOT_DIR "${_cycles_lib_dir}/python")
   _set_default(SSE2NEON_ROOT_DIR "${_cycles_lib_dir}/sse2neon")
   _set_default(TBB_ROOT_DIR "${_cycles_lib_dir}/tbb")
-  _set_default(TIFF_ROOT "${_cycles_lib_dir}/tiff")
   _set_default(USD_ROOT_DIR "${_cycles_lib_dir}/usd")
   _set_default(VULKAN_ROOT_DIR "${_cycles_lib_dir}/vulkan")
-  _set_default(WEBP_ROOT_DIR "${_cycles_lib_dir}/webp")
   _set_default(ZLIB_ROOT "${_cycles_lib_dir}/zlib")
   _set_default(ZFP_ROOT_DIR "${_cycles_lib_dir}/zfp")
   _set_default(ZSTD_ROOT_DIR "${_cycles_lib_dir}/zstd")
@@ -156,13 +153,26 @@ macro(add_bundled_libraries library_dir)
 
     list(APPEND PLATFORM_BUNDLED_LIBRARY_DIRS ${_library_dir})
     if(WIN32)
+      set(_bundled_libs_have_debug_variant FALSE)
       foreach(_bundled_lib ${_bundled_libs})
         if((${_bundled_lib} MATCHES "_d.dll$") OR (${_bundled_lib} MATCHES "_debug.dll$"))
+          set(_bundled_libs_have_debug_variant TRUE)
+          break()
+        endif()
+      endforeach()
+
+      foreach(_bundled_lib ${_bundled_libs})
+        if((${_bundled_lib} MATCHES "_d.dll$") OR (${_bundled_lib} MATCHES "_debug.dll$"))
+          list(APPEND PLATFORM_BUNDLED_LIBRARIES_DEBUG ${_bundled_lib})
+        elseif(NOT _bundled_libs_have_debug_variant)
+          list(APPEND PLATFORM_BUNDLED_LIBRARIES_RELEASE ${_bundled_lib})
           list(APPEND PLATFORM_BUNDLED_LIBRARIES_DEBUG ${_bundled_lib})
         else()
           list(APPEND PLATFORM_BUNDLED_LIBRARIES_RELEASE ${_bundled_lib})
         endif()
       endforeach()
+
+      unset(_bundled_libs_have_debug_variant)
     else()
       list(APPEND PLATFORM_BUNDLED_LIBRARIES_RELEASE ${_bundled_libs})
       list(APPEND PLATFORM_BUNDLED_LIBRARIES_DEBUG ${_bundled_libs})
@@ -182,7 +192,7 @@ set(CMAKE_FIND_FRAMEWORK NEVER)
 ###########################################################################
 
 if(WITH_USD)
-  if(NOT HOUDINI_ROOT AND NOT PXR_ROOT)
+  if(NOT HOUDINI_FOUND AND NOT PXR_ROOT)
     find_package(USD)
     add_bundled_libraries(usd/lib)
   endif()
@@ -191,20 +201,22 @@ if(WITH_USD)
 
   set(WITH_PYTHON ON)
 
-  if(WIN32)
-    set(PYTHON_VERSION 3.13)
-    string(REPLACE "." "" PYTHON_VERSION_NO_DOTS ${PYTHON_VERSION})
-    set(PYTHON_INCLUDE_DIR ${PYTHON_ROOT_DIR}/${PYTHON_VERSION_NO_DOTS}/include)
-    set(PYTHON_INCLUDE_DIRS ${PYTHON_INCLUDE_DIR})
-    set(PYTHON_LIBRARIES
-      optimized ${PYTHON_ROOT_DIR}/${PYTHON_VERSION_NO_DOTS}/libs/python${PYTHON_VERSION_NO_DOTS}.lib
-      debug ${PYTHON_ROOT_DIR}/${PYTHON_VERSION_NO_DOTS}/libs/python${PYTHON_VERSION_NO_DOTS}_d.lib)
-    link_directories(${PYTHON_ROOT_DIR}/${PYTHON_VERSION_NO_DOTS}/libs)
-    if(NOT HOUDINI_ROOT AND NOT PXR_ROOT)
-      add_bundled_libraries(python/${PYTHON_VERSION_NO_DOTS}/bin)
+  if(NOT USD_OVERRIDE_PYTHON)
+    if(WIN32)
+      set(PYTHON_VERSION 3.13)
+      string(REPLACE "." "" PYTHON_VERSION_NO_DOTS ${PYTHON_VERSION})
+      set(PYTHON_INCLUDE_DIR ${PYTHON_ROOT_DIR}/${PYTHON_VERSION_NO_DOTS}/include)
+      set(PYTHON_INCLUDE_DIRS ${PYTHON_INCLUDE_DIR})
+      set(PYTHON_LIBRARIES
+        optimized ${PYTHON_ROOT_DIR}/${PYTHON_VERSION_NO_DOTS}/libs/python${PYTHON_VERSION_NO_DOTS}.lib
+        debug ${PYTHON_ROOT_DIR}/${PYTHON_VERSION_NO_DOTS}/libs/python${PYTHON_VERSION_NO_DOTS}_d.lib)
+      link_directories(${PYTHON_ROOT_DIR}/${PYTHON_VERSION_NO_DOTS}/libs)
+      if(NOT HOUDINI_FOUND AND NOT PXR_ROOT)
+        add_bundled_libraries(python/${PYTHON_VERSION_NO_DOTS}/bin)
+      endif()
+    else()
+      find_package(PythonLibsUnix REQUIRED)
     endif()
-  else()
-    find_package(PythonLibsUnix REQUIRED)
   endif()
 endif()
 
@@ -239,49 +251,33 @@ endif()
 ###########################################################################
 # OpenImageIO and image libraries
 ###########################################################################
+if(NOT USD_OVERRIDE_OPENIMAGEIO)
+  if(MSVC AND EXISTS ${_cycles_lib_dir})
+    set(OpenImageIO_ROOT ${OPENIMAGEIO_ROOT_DIR})
+    find_package(OpenImageIO REQUIRED CONFIG)
 
-if(MSVC AND EXISTS ${_cycles_lib_dir})
-  set(OpenImageIO_ROOT ${OPENIMAGEIO_ROOT_DIR})
-  find_package(OpenImageIO REQUIRED CONFIG)
-
-  set(PUGIXML_INCLUDE_DIR ${PUGIXML_ROOT_DIR}/include)
-  set(PUGIXML_LIBRARIES
-    optimized ${PUGIXML_ROOT_DIR}/lib/pugixml.lib
-    debug ${PUGIXML_ROOT_DIR}/lib/pugixml_d.lib
-  )
-else()
-  find_package(OpenImageIO REQUIRED CONFIG)
-  if(OPENIMAGEIO_PUGIXML_FOUND)
-    set(PUGIXML_INCLUDE_DIR "${OPENIMAGEIO_INCLUDE_DIR}/OpenImageIO")
-    set(PUGIXML_LIBRARIES "")
+    set(PUGIXML_INCLUDE_DIR ${PUGIXML_ROOT_DIR}/include)
+    set(PUGIXML_LIBRARIES
+      optimized ${PUGIXML_ROOT_DIR}/lib/pugixml.lib
+      debug ${PUGIXML_ROOT_DIR}/lib/pugixml_d.lib
+    )
   else()
-    find_package(PugiXML REQUIRED)
+    find_package(OpenImageIO REQUIRED CONFIG)
+  endif()
+
+  if(WIN32)
+    add_bundled_libraries(openimageio/bin)
+    add_bundled_libraries(aom/bin)
+  else()
+    add_bundled_libraries(openimageio/lib)
   endif()
 endif()
 
-# Dependencies
-if(MSVC AND EXISTS ${_cycles_lib_dir})
-  set(OPENJPEG_INCLUDE_DIR ${OPENJPEG}/include/openjpeg-2.3)
-  set(OPENJPEG_LIBRARIES ${_cycles_lib_dir}/openjpeg/lib/openjp2.lib)
+if(OPENIMAGEIO_PUGIXML_FOUND)
+  set(PUGIXML_INCLUDE_DIR "${OPENIMAGEIO_INCLUDE_DIR}/OpenImageIO")
+  set(PUGIXML_LIBRARIES "")
 else()
-  find_package(OpenJPEG REQUIRED)
-endif()
-
-find_package(JPEG REQUIRED)
-find_package(TIFF REQUIRED)
-find_package(fmt REQUIRED)
-find_package(WebP)
-
-if(EXISTS ${_cycles_lib_dir})
-  set(PNG_NAMES png16 libpng16 png libpng)
-endif()
-find_package(PNG REQUIRED)
-
-if(WIN32)
-  add_bundled_libraries(openimageio/bin)
-  add_bundled_libraries(aom/bin)
-else()
-  add_bundled_libraries(openimageio/lib)
+  find_package(PugiXML REQUIRED)
 endif()
 
 ###########################################################################
@@ -289,50 +285,48 @@ endif()
 ###########################################################################
 
 set(WITH_IMAGE_OPENEXR ON)
+if(NOT USD_OVERRIDE_OPENEXR)
+  if(MSVC AND EXISTS ${_cycles_lib_dir})
+    set(OpenEXR_ROOT ${OPENEXR_ROOT_DIR})
+    set(Imath_ROOT ${IMATH_ROOT_DIR})
+    find_package(OpenEXR REQUIRED CONFIG)
+  else()
+    find_package(OpenEXR REQUIRED)
+  endif()
 
-if(MSVC AND EXISTS ${_cycles_lib_dir})
-  set(OpenEXR_ROOT ${OPENEXR_ROOT_DIR})
-  set(Imath_ROOT ${IMATH_ROOT_DIR})
-  find_package(OpenEXR REQUIRED CONFIG)
-else()
-  find_package(OpenEXR REQUIRED)
-endif()
-
-if(WIN32)
-	add_bundled_libraries(openexr/bin)
-	add_bundled_libraries(imath/bin)
-else()
-	add_bundled_libraries(openexr/lib)
-	add_bundled_libraries(imath/lib)
-endif()
-if(WIN32)
-  add_bundled_libraries(openjph/bin)
-else()
-  add_bundled_libraries(openjph/lib)
+  if(WIN32)
+    add_bundled_libraries(openexr/bin)
+    add_bundled_libraries(imath/bin)
+    add_bundled_libraries(openjph/bin)
+  else()
+    add_bundled_libraries(openexr/lib)
+    add_bundled_libraries(imath/lib)
+    add_bundled_libraries(openjph/lib)
+  endif()
 endif()
 
 ###########################################################################
 # OpenShadingLanguage
 ###########################################################################
 
-if(WITH_CYCLES_OSL)
-	if(MSVC AND EXISTS ${_cycles_lib_dir})
-		set(OSL_ROOT ${OSL_ROOT_DIR})
-		find_package(OSL REQUIRED CONFIG)
-
-		set(OSL_SHADER_DIR ${OSL_ROOT_DIR}/shaders)
-		if(NOT EXISTS "${OSL_SHADER_DIR}")
-			set(OSL_SHADER_DIR ${OSL_ROOT_DIR}/share/OSL/shaders)
-		endif()
-	else()
+if(WITH_CYCLES_OSL AND NOT USD_OVERRIDE_OSL)
+  if(MSVC AND EXISTS ${_cycles_lib_dir})
+    set(OSL_ROOT ${OSL_ROOT_DIR})
     find_package(OSL REQUIRED CONFIG)
-	endif()
-endif()
 
-if(WIN32)
-  add_bundled_libraries(osl/bin)
-else()
-  add_bundled_libraries(osl/lib)
+    set(OSL_SHADER_DIR ${OSL_ROOT_DIR}/shaders)
+    if(NOT EXISTS "${OSL_SHADER_DIR}")
+      set(OSL_SHADER_DIR ${OSL_ROOT_DIR}/share/OSL/shaders)
+    endif()
+  else()
+    find_package(OSL REQUIRED CONFIG)
+  endif()
+
+  if(WIN32)
+    add_bundled_libraries(osl/bin)
+  else()
+    add_bundled_libraries(osl/lib)
+  endif()
 endif()
 
 ###########################################################################
@@ -363,26 +357,19 @@ endif()
 # OpenColorIO
 ###########################################################################
 
-if(WITH_CYCLES_OPENCOLORIO)
-	set(WITH_OPENCOLORIO ON)
+if(NOT USD_OVERRIDE_OPENCOLORIO)
+  if(MSVC AND EXISTS ${_cycles_lib_dir})
+    set(OpenColorIO_ROOT ${OPENCOLORIO_ROOT_DIR})
+    find_package(OpenColorIO REQUIRED CONFIG)
+  else()
+    find_package(OpenColorIO REQUIRED)
+  endif()
 
-	if(NOT USD_OVERRIDE_OPENCOLORIO)
-		if(MSVC AND EXISTS ${_cycles_lib_dir})
-			set(OPENCOLORIO_INCLUDE_DIRS ${OPENCOLORIO_ROOT_DIR}/include)
-			set(OPENCOLORIO_LIBRARIES
-				optimized ${OPENCOLORIO_ROOT_DIR}/lib/OpenColorIO.lib
-				debug ${OPENCOLORIO_ROOT_DIR}/lib/OpencolorIO_d.lib
-				)
-		else()
-			find_package(OpenColorIO REQUIRED)
-		endif()
-	endif()
-endif()
-
-if(WIN32)
-	add_bundled_libraries(opencolorio/bin)
-else()
-	add_bundled_libraries(opencolorio/lib)
+  if(WIN32)
+    add_bundled_libraries(opencolorio/bin)
+  else()
+    add_bundled_libraries(opencolorio/lib)
+  endif()
 endif()
 
 ###########################################################################
@@ -514,13 +501,15 @@ if(WITH_CYCLES_EMBREE)
   else()
     find_package(Embree 3.8.0 REQUIRED)
   endif()
+  
+  if(WIN32)
+    add_bundled_libraries(embree/bin)
+  else()
+    add_bundled_libraries(embree/lib)
+  endif()
 endif()
 
-if(WIN32)
-  add_bundled_libraries(embree/bin)
-else()
-  add_bundled_libraries(embree/lib)
-endif()
+
 
 ###########################################################################
 # Logging
@@ -550,10 +539,10 @@ if(WITH_CYCLES_OPENSUBDIV)
     else()
       find_package(OpenSubdiv REQUIRED)
     endif()
+    
+    add_bundled_libraries(opensubdiv/lib)
   endif()
 endif()
-
-add_bundled_libraries(opensubdiv/lib)
 
 ###########################################################################
 # OpenVDB
@@ -564,13 +553,13 @@ if(WITH_CYCLES_OPENVDB)
 
   if(NOT USD_OVERRIDE_OPENVDB)
     find_package(OpenVDB REQUIRED)
-  endif()
-endif()
 
-if(WIN32)
-  add_bundled_libraries(openvdb/bin)
-else()
-  add_bundled_libraries(openvdb/lib)
+    if(WIN32)
+      add_bundled_libraries(openvdb/bin)
+    else()
+      add_bundled_libraries(openvdb/lib)
+    endif()
+  endif()
 endif()
 
 ###########################################################################
@@ -579,12 +568,13 @@ endif()
 
 if(WITH_CYCLES_NANOVDB)
   set(WITH_NANOVDB ON)
-
-  if(MSVC AND EXISTS ${_cycles_lib_dir})
-    set(NANOVDB_INCLUDE_DIR ${NANOVDB_ROOT_DIR}/include)
-    set(NANOVDB_INCLUDE_DIRS ${NANOVDB_INCLUDE_DIR})
-  else()
-    find_package(NanoVDB REQUIRED)
+  if (NOT USD_OVERRIDE_NANOVDB)
+    if(MSVC AND EXISTS ${_cycles_lib_dir})
+      set(NANOVDB_INCLUDE_DIR ${NANOVDB_ROOT_DIR}/include)
+      set(NANOVDB_INCLUDE_DIRS ${NANOVDB_INCLUDE_DIR})
+    else()
+      find_package(NanoVDB REQUIRED)
+    endif()
   endif()
 endif()
 
@@ -626,14 +616,13 @@ endif()
 if(WITH_CYCLES_OPENIMAGEDENOISE)
   set(WITH_OPENIMAGEDENOISE ON)
   find_package(OpenImageDenoise REQUIRED)
-endif()
 
-if(WIN32)
-  add_bundled_libraries(openimagedenoise/bin)
-else()
-  add_bundled_libraries(openimagedenoise/lib)
+  if(WIN32)
+    add_bundled_libraries(openimagedenoise/bin)
+  else()
+    add_bundled_libraries(openimagedenoise/lib)
+  endif()
 endif()
-
 ###########################################################################
 # TBB
 ###########################################################################
@@ -657,12 +646,12 @@ if(NOT USD_OVERRIDE_TBB)
   else()
     find_package(TBB REQUIRED)
   endif()
-endif()
 
-if(WIN32)
-  add_bundled_libraries(tbb/bin)
-else()
-  add_bundled_libraries(tbb/lib)
+  if(WIN32)
+    add_bundled_libraries(tbb/bin)
+  else()
+    add_bundled_libraries(tbb/lib)
+  endif()
 endif()
 
 ###########################################################################
@@ -677,10 +666,11 @@ if((WITH_CYCLES_STANDALONE AND WITH_CYCLES_STANDALONE_GUI) OR
   else()
     find_package(Epoxy REQUIRED)
   endif()
-endif()
 
-if(WIN32)
-  add_bundled_libraries(epoxy/bin)
+  if(WIN32)
+    add_bundled_libraries(epoxy/bin)
+  endif()
+
 endif()
 
 ###########################################################################
@@ -704,13 +694,7 @@ endif()
 # MaterialX
 ###########################################################################
 
-if(WIN32)
-  add_bundled_libraries(MaterialX/bin)
-else()
-  add_bundled_libraries(materialx/lib)
-endif()
-
-if(WITH_USD)
+if(WITH_USD AND NOT HOUDINI_FOUND)
   if(WIN32)
     add_bundled_libraries(vulkan/bin)
   elseif(UNIX AND NOT APPLE)
@@ -718,7 +702,7 @@ if(WITH_USD)
   endif()
 endif()
 
-if(WITH_USD)
+if(WITH_USD AND NOT USD_OVERRIDE_MATERIALX)
   if(DEFINED _cycles_lib_dir)
     # USD linking needs to be able to find MaterialX libraries.
     link_directories(${MATERIALX_ROOT_DIR}/lib)
@@ -738,6 +722,12 @@ if(WITH_USD)
         list(APPEND USD_LIBRARIES ${VULKAN_LIBRARIES})
       endif()
     endif()
+  endif()
+
+  if(WIN32)
+    add_bundled_libraries(MaterialX/bin)
+  else()
+    add_bundled_libraries(materialx/lib)
   endif()
 endif()
 
@@ -805,24 +795,6 @@ if(WITH_SPACE_CONVERTER)
         set(SPACE_CONVERTER_INCLUDE_DIRS ${SPACE_CONVERTER_INCLUDE_DIR})
       endif()
     endif()
-  endif()
-endif()
-
-###########################################################################
-# SDL
-###########################################################################
-
-if(WITH_CYCLES_STANDALONE AND WITH_CYCLES_STANDALONE_GUI)
-  # We can't use the version from the Blender precompiled libraries because
-  # it does not include the video subsystem.
-  find_package(SDL2 REQUIRED)
-  set_and_warn_library_found("SDL" SDL2_FOUND WITH_CYCLES_STANDALONE_GUI)
-
-  if(SDL2_FOUND)
-    include_directories(
-      SYSTEM
-      ${SDL2_INCLUDE_DIRS}
-    )
   endif()
 endif()
 
@@ -907,10 +879,13 @@ if(DEFINED SYCL_ROOT_DIR)
       ${_sycl_library_dir}/ur_*.dll
     )
     foreach(_bundled_lib ${_sycl_runtime_libraries})
-      if(${_bundled_lib} MATCHES "_d.dll$")
+      if(${_bundled_lib} MATCHES "(_d|d)\\.dll$")
         list(APPEND PLATFORM_BUNDLED_LIBRARIES_DEBUG ${_bundled_lib})
       else()
+        # Some Debug consumers, like OpenImageDenoise SYCL runtime DLLs, still
+        # import the non-debug SYCL loader/runtime names.
         list(APPEND PLATFORM_BUNDLED_LIBRARIES_RELEASE ${_bundled_lib})
+        list(APPEND PLATFORM_BUNDLED_LIBRARIES_DEBUG ${_bundled_lib})
       endif()
     endforeach()
   else()
@@ -990,7 +965,7 @@ if(WITH_CYCLES_DEVICE_ONEAPI AND WITH_CYCLES_ONEAPI_BINARIES)
   # dependencies at the path:
   # <DPCPP_ROOT_DIRECTORY>/lib/igc/
   if(NOT IGC_INSTALL_DIR)
-    if (WIN32)
+    if(WIN32)
       set(IGC_INSTALL_DIR "${OCLOC_INSTALL_DIR}")
     else()
       get_filename_component(_sycl_compiler_root ${SYCL_COMPILER} DIRECTORY)
@@ -1024,7 +999,7 @@ if(WITH_CYCLES_DEVICE_ONEAPI AND WITH_CYCLES_ONEAPI_BINARIES)
   if(NOT EXISTS ${OCLOC_INSTALL_DIR})
     set(OCLOC_FOUND OFF)
     set(_ocloc_missing_error_msg "oneAPI ocloc directory not found as ${OCLOC_INSTALL_DIR}.")
-  elseif (NOT EXISTS ${OCLOC_BINARY_FULL_FILEPATH})
+  elseif(NOT EXISTS ${OCLOC_BINARY_FULL_FILEPATH})
     set(OCLOC_FOUND OFF)
     set(_ocloc_missing_error_msg
       "oneAPI ocloc directory ${OCLOC_INSTALL_DIR} was found."
@@ -1090,7 +1065,11 @@ endif()
 ###########################################################################
 
 if(WIN32)
-  set(PLATFORM_LIB_INSTALL_DIR ".")
+  if(HOUDINI_FOUND)
+    set(PLATFORM_LIB_INSTALL_DIR "houdini/bin")
+  else()
+    set(PLATFORM_LIB_INSTALL_DIR ".")
+  endif()
   # Environment variables to run precompiled executables that needed libraries.
   list(JOIN PLATFORM_BUNDLED_LIBRARY_DIRS "\;" _library_paths)
   set(PLATFORM_ENV_BUILD_DIRS "${_library_paths}\;${PATH}")
@@ -1102,9 +1081,14 @@ if(WIN32)
   set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)
   set(CMAKE_INSTALL_OPENMP_LIBRARIES FALSE)
   include(InstallRequiredSystemLibraries)
-  install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION . COMPONENT Libraries)
+  install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION ${PLATFORM_LIB_INSTALL_DIR} COMPONENT Libraries)
 elseif(APPLE)
-  set(PLATFORM_LIB_INSTALL_DIR "lib")
+  if(HOUDINI_FOUND)
+    set(PLATFORM_LIB_INSTALL_DIR "houdini/lib")
+  else()
+    set(PLATFORM_LIB_INSTALL_DIR "lib")
+  endif()
+
   # For install step, set rpath relative to where shared libs will be copied.
   set(CMAKE_SKIP_INSTALL_RPATH FALSE)
   list(APPEND CMAKE_INSTALL_RPATH "@loader_path/${PLATFORM_LIB_INSTALL_DIR}")
@@ -1116,10 +1100,14 @@ elseif(APPLE)
 
   # Environment variables to run precompiled executables that needed libraries.
   list(JOIN PLATFORM_BUNDLED_LIBRARY_DIRS ":" _library_paths)
-  set(PLATFORM_ENV_BUILD "DYLD_LIBRARY_PATH=\"${_library_paths};${DYLD_LIBRARY_PATH}\"")
+  set(PLATFORM_ENV_BUILD "DYLD_LIBRARY_PATH=\"${_library_paths}:$$DYLD_LIBRARY_PATH\"")
   unset(_library_paths)
 elseif(UNIX)
-  set(PLATFORM_LIB_INSTALL_DIR "lib")
+  if(HOUDINI_FOUND)
+    set(PLATFORM_LIB_INSTALL_DIR "houdini/lib")
+  else()
+    set(PLATFORM_LIB_INSTALL_DIR "lib")
+  endif()
   # For install step, set rpath relative to where shared libs will be copied.
   set(CMAKE_SKIP_INSTALL_RPATH FALSE)
   list(APPEND CMAKE_INSTALL_RPATH $ORIGIN/${PLATFORM_LIB_INSTALL_DIR})

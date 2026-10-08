@@ -17,11 +17,11 @@ CCL_NAMESPACE_BEGIN
 
 ccl_device void volume_extinction_setup(ccl_private ShaderData *sd, Spectrum weight)
 {
-  if (sd->flag & SD_EXTINCTION) {
+  if (sd->runtime_flag & SR_EXTINCTION) {
     sd->closure_transparent_extinction += weight;
   }
   else {
-    sd->flag |= SD_EXTINCTION;
+    sd->runtime_flag |= SR_EXTINCTION;
     sd->closure_transparent_extinction = weight;
   }
 }
@@ -70,6 +70,14 @@ ccl_device int volume_phase_sample(const ccl_private ShaderData *sd,
       *pdf = 0.0f;
       return 0;
   }
+}
+
+/* Widen the compact ray differential dD after a phase function scatter to
+ * match the lobe's angular spread. See bsdf_widen_dD for details. */
+ccl_device_forceinline float volume_phase_widen_dD(const float prev_dD,
+                                                   const float sampled_roughness)
+{
+  return max(prev_dD, sampled_roughness);
 }
 
 ccl_device bool volume_phase_equal(const ccl_private ShaderClosure *c1,

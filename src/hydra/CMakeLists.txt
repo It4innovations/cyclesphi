@@ -22,7 +22,6 @@ set(LIB
 cycles_external_libraries_append(LIB)
 
 set(SRC_HD_CYCLES_HEADERS
-  attribute.h
   camera.h
   config.h
   curves.h
@@ -41,11 +40,11 @@ set(SRC_HD_CYCLES_HEADERS
   render_delegate.h
   render_pass.h
   session.h
+  util.h
   volume.h
 )
 
 set(SRC_HD_CYCLES
-  attribute.cpp
   curves.cpp
   camera.cpp
   field.cpp
@@ -62,6 +61,7 @@ set(SRC_HD_CYCLES
   render_delegate.cpp
   render_pass.cpp
   session.cpp
+  util.cpp
   volume.cpp
 )
 
@@ -162,14 +162,21 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
   if(WITH_CYCLES_BLENDER)
     # Install inside add-on
     set(CYCLES_HYDRA_INSTALL_PATH ${CYCLES_INSTALL_PATH}/hydra)
+  elseif(HOUDINI_FOUND)
+    set(CYCLES_HYDRA_INSTALL_PATH ${CYCLES_INSTALL_PATH}/houdini/dso)
   else()
     # Install next to cycles executable
     set(CYCLES_HYDRA_INSTALL_PATH ${CMAKE_INSTALL_PREFIX}/hydra)
   endif()
 
-  # Put the root `plugInfo.json` one level up.
-  delayed_install("${CMAKE_CURRENT_SOURCE_DIR}" "plugInfo.json" ${CYCLES_HYDRA_INSTALL_PATH})
-  delayed_install("" $<TARGET_FILE:${HdCyclesPluginName}> ${CYCLES_HYDRA_INSTALL_PATH})
+  if(HOUDINI_FOUND)
+    delayed_install("${CMAKE_CURRENT_SOURCE_DIR}" "plugInfo.json" ${CYCLES_HYDRA_INSTALL_PATH}/usd_plugins)
+    delayed_install("" $<TARGET_FILE:${HdCyclesPluginName}> ${CYCLES_HYDRA_INSTALL_PATH}/usd)
+  else()
+    # Put the root `plugInfo.json` one level up.
+    delayed_install("${CMAKE_CURRENT_SOURCE_DIR}" "plugInfo.json" ${CYCLES_HYDRA_INSTALL_PATH})
+    delayed_install("" $<TARGET_FILE:${HdCyclesPluginName}> ${CYCLES_HYDRA_INSTALL_PATH})
+  endif()
 
   set_target_properties(${HdCyclesPluginName}
     PROPERTIES
@@ -184,13 +191,23 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     set(PLUG_INFO_LIBRARY_PATH "../${HdCyclesPluginName}${CMAKE_SHARED_LIBRARY_SUFFIX}")
     set(PLUG_INFO_RESOURCE_PATH "../..")
   else()
-    file(RELATIVE_PATH
-      PLUG_INFO_LIBRARY_PATH
-      "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesPluginName}"
-      "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesPluginName}${CMAKE_SHARED_LIBRARY_SUFFIX}")
-    file(RELATIVE_PATH PLUG_INFO_RESOURCE_PATH
-      "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesPluginName}"
-      "${CYCLES_INSTALL_PATH}")
+    if (HOUDINI_FOUND)
+      file(RELATIVE_PATH
+        PLUG_INFO_LIBRARY_PATH
+        "${CYCLES_HYDRA_INSTALL_PATH}/usd_plugins/${HdCyclesPluginName}"
+        "${CYCLES_HYDRA_INSTALL_PATH}/usd/${HdCyclesPluginName}${CMAKE_SHARED_LIBRARY_SUFFIX}")
+      file(RELATIVE_PATH PLUG_INFO_RESOURCE_PATH
+        "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesPluginName}"
+        "${CYCLES_INSTALL_PATH}")
+    else()
+      file(RELATIVE_PATH
+        PLUG_INFO_LIBRARY_PATH
+        "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesPluginName}"
+        "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesPluginName}${CMAKE_SHARED_LIBRARY_SUFFIX}")
+      file(RELATIVE_PATH PLUG_INFO_RESOURCE_PATH
+        "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesPluginName}"
+        "${CYCLES_INSTALL_PATH}")
+    endif()
   endif()
 
   configure_file(resources/plugInfo.json
@@ -198,5 +215,25 @@ if(WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     @ONLY
   )
 
-  delayed_install("${CMAKE_CURRENT_BINARY_DIR}/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesPluginName}/resources")
+  configure_file(resources/cycles.json.in
+    ${CMAKE_CURRENT_BINARY_DIR}/resources/cycles.json
+    @ONLY
+  )
+
+  if (HOUDINI_FOUND)
+    delayed_install("${CMAKE_CURRENT_BINARY_DIR}/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/usd_plugins/${HdCyclesPluginName}/resources")
+    delayed_install("${CMAKE_CURRENT_BINARY_DIR}/resources" "cycles.json" "${CMAKE_INSTALL_PREFIX}/houdini/packages")
+  else()
+    delayed_install("${CMAKE_CURRENT_BINARY_DIR}/resources" "plugInfo.json" "${CYCLES_HYDRA_INSTALL_PATH}/${HdCyclesPluginName}/resources")
+  endif()
+
+  if(WITH_CYCLES_BLENDER)
+    get_filename_component(_addons_core_dir "${CYCLES_INSTALL_PATH}" DIRECTORY)
+    delayed_install(
+      "${CMAKE_CURRENT_SOURCE_DIR}/addon"
+      "__init__.py"
+      "${_addons_core_dir}/hydra_cycles"
+    )
+    unset(_addons_core_dir)
+  endif()
 endif()

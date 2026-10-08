@@ -17,9 +17,19 @@
 #include "kernel/geom/primitive.h"
 #include "kernel/geom/triangle.h"
 
+#include "kernel/image.h"
 #include "kernel/osl/strings.h"
+#include "kernel/util/differential.h"
+#include "kernel/util/ies.h"
+#include "kernel/util/image_2d.h"
+#include "kernel/util/image_3d.h"
 
 #include "util/hash.h"
+
+#ifndef __KERNEL_GPU__
+#  include "kernel/svm/ao.h"
+#  include "kernel/svm/bevel.h"
+#endif
 
 CCL_NAMESPACE_BEGIN
 
@@ -521,7 +531,7 @@ ccl_device bool attribute_bump_map_normal(KernelGlobals kg,
     return false;
   }
 
-  const bool backfacing = (sd->flag & SD_BACKFACING);
+  const bool backfacing = (sd->runtime_flag & SR_BACKFACING);
 
   /* Fallback when the smooth normal is zero. */
   float3 Ng = backfacing ? -sd->Ng : sd->Ng;
@@ -574,7 +584,294 @@ ccl_device_forceinline void rgba_to_nchannels(const float4 rgba,
   }
 }
 
-/* Object Attributes */
+ccl_device bool osl_shared_get_texture_info(KernelGlobals kg,
+                                            ccl_private void *texture_handle,
+                                            const float2 uv,
+                                            const bool use_uv,
+                                            DeviceString dataname,
+                                            const TypeDesc datatype,
+                                            void *data)
+{
+  const OSLTextureHandleType texture_type = OSL_TEXTURE_HANDLE_TYPE(texture_handle);
+  const int image_texture_or_udim_id = OSL_TEXTURE_HANDLE_ID(texture_handle);
+
+  if (texture_type != OSLTextureHandleType::IMAGE) {
+    return false;
+  }
+
+  int image_texture_id = image_texture_or_udim_id;
+  if (use_uv) {
+    float2 local_uv = uv;
+    image_texture_id = kernel_image_udim_map(kg, image_texture_or_udim_id, local_uv);
+  }
+  if (image_texture_id == KERNEL_IMAGE_NONE) {
+    return false;
+  }
+
+  const ccl_global KernelImageTexture &tex = kernel_data_fetch(image_textures, image_texture_id);
+  if (tex.image_info_id == KERNEL_IMAGE_NONE) {
+    return false;
+  }
+
+  if (dataname == DeviceStrings::u_resolution) {
+    if (is_type_int2(datatype)) {
+      int *res = static_cast<int *>(data);
+      res[0] = int(tex.width);
+      res[1] = int(tex.height);
+      return true;
+    }
+    if (is_type_float2(datatype)) {
+      float *res = static_cast<float *>(data);
+      res[0] = float(tex.width);
+      res[1] = float(tex.height);
+      return true;
+    }
+    if (is_type_int3(datatype)) {
+      int *res = static_cast<int *>(data);
+      res[0] = int(tex.width);
+      res[1] = int(tex.height);
+      res[2] = 1;
+      return true;
+    }
+    if (is_type_float3(datatype)) {
+      float *res = static_cast<float *>(data);
+      res[0] = float(tex.width);
+      res[1] = float(tex.height);
+      res[2] = 1.0f;
+      return true;
+    }
+  }
+  else if (dataname == DeviceStrings::u_channels) {
+    if (datatype == TypeInt) {
+      const int image_info_id = tex.image_info_id;
+      const ccl_global KernelImageInfo &info = kernel_data_fetch(image_info, image_info_id);
+      int channels = 4;
+      switch (info.data_type) {
+        case IMAGE_DATA_TYPE_FLOAT4:
+        case IMAGE_DATA_TYPE_BYTE4:
+        case IMAGE_DATA_TYPE_HALF4:
+        case IMAGE_DATA_TYPE_USHORT4:
+        case IMAGE_DATA_TYPE_NANOVDB_FLOAT4:
+          channels = 4;
+          break;
+        case IMAGE_DATA_TYPE_NANOVDB_FLOAT3:
+          channels = 3;
+          break;
+        case IMAGE_DATA_TYPE_FLOAT:
+        case IMAGE_DATA_TYPE_BYTE:
+        case IMAGE_DATA_TYPE_HALF:
+        case IMAGE_DATA_TYPE_USHORT:
+        case IMAGE_DATA_TYPE_NANOVDB_FLOAT:
+        case IMAGE_DATA_TYPE_NANOVDB_FPN:
+        case IMAGE_DATA_TYPE_NANOVDB_FP16:
+          channels = 1;
+          break;
+        case IMAGE_DATA_TYPE_NANOVDB_EMPTY:
+          channels = 0;
+          break;
+      }
+      *static_cast<int *>(data) = channels;
+      return true;
+    }
+  }
+  else if (dataname == DeviceStrings::u_exists) {
+    if (datatype == TypeInt) {
+      *static_cast<int *>(data) = 1;
+      return true;
+    }
+  }
+  else if (dataname == DeviceStrings::u_averagecolor) {
+    if (is_type_float3(datatype) || is_type_float4(datatype)) {
+      float *res = (float *)data;
+      res[0] = tex.average_color.x;
+      res[1] = tex.average_color.y;
+      res[2] = tex.average_color.z;
+      if (is_type_float4(datatype)) {
+        res[3] = tex.average_color.w;
+      }
+      return true;
+    }
+  }
+
+  return false;
+}
+
+ccl_device bool osl_shared_texture(KernelGlobals kg,
+                                   ccl_private ShaderGlobals *sg,
+                                   ccl_private void *texture_handle,
+                                   ccl_private void *opt_void,
+                                   float s,
+                                   float t,
+                                   float dsdx,
+                                   float dtdx,
+                                   float dsdy,
+                                   float dtdy,
+                                   int nchannels,
+                                   float *result)
+{
+  const OSLTextureHandleType type = OSL_TEXTURE_HANDLE_TYPE(texture_handle);
+  const int image_texture_or_udim_id = OSL_TEXTURE_HANDLE_ID(texture_handle);
+
+  ccl_private ShaderData *sd = sg->sd;
+  bool status = false;
+
+  switch (type) {
+    case OSLTextureHandleType::IMAGE: {
+      const dual2 uv({s, t}, {dsdx, dtdx}, {dsdy, dtdy});
+      const float4 rgba = kernel_image_interp_with_udim(kg, sd, image_texture_or_udim_id, uv);
+
+      rgba_to_nchannels(rgba, nchannels, result);
+
+      status = true;
+      break;
+    }
+    case OSLTextureHandleType::IES: {
+      if (nchannels > 0) {
+        result[0] = kernel_ies_interp(kg, image_texture_or_udim_id, s, t);
+      }
+      status = true;
+      break;
+    }
+    case OSLTextureHandleType::BEVEL: {
+#if !defined(__KERNEL_GPU__) && defined(__SHADER_RAYTRACE__)
+      /* Bevel shader hack. */
+      ConstIntegratorState state = sg->path_state;
+      if (nchannels >= 3 && state != nullptr) {
+        const int num_samples = int(s);
+        const float radius = t;
+        const float3 N = svm_bevel(kg, state, sd, radius, num_samples);
+        result[0] = N.x;
+        result[1] = N.y;
+        result[2] = N.z;
+        status = true;
+      }
+#else
+      if (nchannels >= 3) {
+        result[0] = sd->N.x;
+        result[1] = sd->N.y;
+        result[2] = sd->N.z;
+        status = true;
+      }
+#endif
+      break;
+    }
+    case OSLTextureHandleType::AO: {
+#if !defined(__KERNEL_GPU__) && defined(__SHADER_RAYTRACE__)
+      /* AO shader hack. */
+      ConstIntegratorState state = sg->path_state;
+      const OSL::TextureOpt *options = static_cast<const OSL::TextureOpt *>(opt_void);
+      if (state != nullptr) {
+        const int num_samples = int(s);
+        const float radius = t;
+        const float3 N = make_float3(dsdx, dtdx, dsdy);
+        int flags = 0;
+        if (int(dtdy)) {
+          flags |= NODE_AO_INSIDE;
+        }
+        if (int(options->sblur)) {
+          flags |= NODE_AO_ONLY_LOCAL;
+        }
+        if (int(options->tblur)) {
+          flags |= NODE_AO_GLOBAL_RADIUS;
+        }
+        result[0] = svm_ao(kg, state, sd, N, radius, num_samples, flags);
+        status = true;
+      }
+#else
+      result[0] = 1.0f;
+      status = true;
+#endif
+      break;
+    }
+  }
+
+  if (!status) {
+    rgba_to_nchannels(IMAGE_MISSING_RGBA, nchannels, result);
+  }
+
+  return status;
+}
+
+ccl_device bool osl_shared_texture3d(KernelGlobals kg,
+                                     ccl_private ShaderGlobals *sg,
+                                     ccl_private void *texture_handle,
+                                     float3 P,
+                                     float3 /*dPdx*/,
+                                     float3 /*dPdy*/,
+                                     float3 /*dPdz*/,
+                                     int nchannels,
+                                     float *result)
+{
+  const OSLTextureHandleType type = OSL_TEXTURE_HANDLE_TYPE(texture_handle);
+  const int image_texture_id = OSL_TEXTURE_HANDLE_ID(texture_handle);
+
+  bool status = false;
+
+  switch (type) {
+    case OSLTextureHandleType::IMAGE: {
+      const float4 rgba = kernel_image_interp_3d(
+          kg, sg->sd, image_texture_id, P, INTERPOLATION_NONE, false);
+
+      rgba_to_nchannels(rgba, nchannels, result);
+      status = true;
+      break;
+    }
+    default:
+      break;
+  }
+
+  if (!status) {
+    rgba_to_nchannels(IMAGE_MISSING_RGBA, nchannels, result);
+  }
+
+  return status;
+}
+
+ccl_device bool osl_shared_environment(KernelGlobals kg,
+                                       ccl_private ShaderGlobals *sg,
+                                       ccl_private void *texture_handle,
+                                       float3 R,
+                                       float3 dRdx,
+                                       float3 dRdy,
+                                       int nchannels,
+                                       float *result)
+{
+  const OSLTextureHandleType type = OSL_TEXTURE_HANDLE_TYPE(texture_handle);
+  const int image_texture_or_udim_id = OSL_TEXTURE_HANDLE_ID(texture_handle);
+
+  if (type == OSLTextureHandleType::IMAGE) {
+    ccl_private ShaderData *sd = sg->sd;
+    const dual3 R_dual(R, dRdx, dRdy);
+    /* Environment call is always equirectangular. */
+    const dual2 uv(direction_to_equirectangular(R_dual.val));
+    const float4 rgba = kernel_image_interp_with_udim(kg, sd, image_texture_or_udim_id, uv);
+    rgba_to_nchannels(rgba, nchannels, result);
+    return true;
+  }
+
+  rgba_to_nchannels(IMAGE_MISSING_RGBA, nchannels, result);
+
+  return false;
+}
+
+/* Scene Attributes */
+
+ccl_device_inline bool osl_shared_get_scene_attribute(KernelGlobals kg,
+                                                      DeviceString name,
+                                                      const TypeDesc type,
+                                                      bool derivatives,
+                                                      ccl_private void *val)
+{
+  if (name == DeviceStrings::u_scene_time) {
+    return set_attribute(kernel_data.scene_time.time, type, derivatives, val);
+  }
+  if (name == DeviceStrings::u_scene_frame) {
+    return set_attribute(kernel_data.scene_time.frame, type, derivatives, val);
+  }
+  return false;
+}
+
+/* Object Attribute Retrieval */
 
 template<typename T>
 ccl_device_inline bool osl_shared_get_object_attribute_impl(KernelGlobals kg,
@@ -666,7 +963,9 @@ ccl_device_inline bool osl_shared_get_background_attribute(KernelGlobals kg,
     /* Read bounce from different locations depending on if this is a shadow path. For background,
      * light emission and shadow evaluation from a surface or volume we are effectively one bounce
      * further. */
-    if (sg->raytype & (PATH_RAY_SHADOW | PATH_RAY_EMISSION)) {
+    if ((OSL_RAYTYPE_TO_VISIBILITY(sg->raytype) & PATH_RAY_VISIBILITY_SHADOW) ||
+        (OSL_RAYTYPE_TO_PARTIAL_PATH_FLAG(sg->raytype) & PATH_RAY_EMISSION))
+    {
       f += 1;
     }
 
@@ -704,8 +1003,8 @@ ccl_device_inline bool osl_shared_get_background_attribute(KernelGlobals kg,
     /* NDC coordinates with special exception for orthographic projection. */
     dual3 ndc;
 
-    if ((sg->raytype & PATH_RAY_CAMERA) && sd->object == OBJECT_NONE &&
-        kernel_data.cam.type == CAMERA_ORTHOGRAPHIC)
+    if ((OSL_RAYTYPE_TO_VISIBILITY(sg->raytype) & PATH_RAY_VISIBILITY_CAMERA) &&
+        sd->object == OBJECT_NONE && kernel_data.cam.type == CAMERA_ORTHOGRAPHIC)
     {
       ndc = dual3(camera_world_to_ndc(kg, sd, sd->ray_P));
     }
@@ -722,7 +1021,7 @@ ccl_device_inline bool osl_shared_get_background_attribute(KernelGlobals kg,
     return set_attribute(ndc, type, derivatives, val);
   }
 
-  return false;
+  return osl_shared_get_scene_attribute(kg, name, type, derivatives, val);
 }
 
 /* Object Standard Attributes */
@@ -836,7 +1135,7 @@ ccl_device_inline bool osl_shared_get_object_standard_attribute(KernelGlobals kg
       motion_triangle_vertices(kg, sd->object, sd->prim, sd->time, P);
     }
     else {
-      triangle_vertices(kg, sd->prim, P);
+      triangle_vertices(kg, sd->object, sd->prim, P);
     }
 
     if (!(sd->object_flag & SD_OBJECT_TRANSFORM_APPLIED)) {
@@ -899,7 +1198,7 @@ ccl_device_inline bool osl_shared_get_object_standard_attribute(KernelGlobals kg
     if (sd->type & PRIMITIVE_TRIANGLE) {
       const AttributeDescriptor desc = find_attribute(
           kg, sd->object, sd->prim, ATTR_STD_NORMAL_UNDISPLACED);
-      if (desc.offset != ATTR_STD_NOT_FOUND) {
+      if (is_attribute_found(desc)) {
         return osl_shared_get_object_attribute(kg, sd, desc, type, derivatives, val);
       }
       const float3 f = triangle_smooth_normal_unnormalized_object_space(kg, sd);
@@ -949,7 +1248,7 @@ ccl_device_inline bool osl_shared_get_camera_attribute(KernelGlobals kg,
   if (name == DeviceStrings::u_focal_distance) {
     return set_attribute(kernel_data.cam.focaldistance, type, derivatives, val);
   }
-  return false;
+  return osl_shared_get_scene_attribute(kg, name, type, derivatives, val);
 }
 
 CCL_NAMESPACE_END

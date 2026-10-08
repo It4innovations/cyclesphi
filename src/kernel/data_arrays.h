@@ -7,6 +7,9 @@
 #ifndef KERNEL_DATA_ARRAY
 #  define KERNEL_DATA_ARRAY(type, name)
 #endif
+#ifndef KERNEL_DATA_ARRAY_WRITABLE
+#  define KERNEL_DATA_ARRAY_WRITABLE(type, name) KERNEL_DATA_ARRAY(type, name)
+#endif
 
 /* BVH2, not used for OptiX or Embree. */
 KERNEL_DATA_ARRAY(float4, bvh_nodes)
@@ -68,7 +71,7 @@ KERNEL_DATA_ARRAY(uint, triangle_to_tree)
 KERNEL_DATA_ARRAY(KernelParticle, particles)
 
 /* shaders */
-KERNEL_DATA_ARRAY(uint4, svm_nodes)
+KERNEL_DATA_ARRAY(uint, svm_nodes)
 KERNEL_DATA_ARRAY(KernelShader, shaders)
 
 /* lookup tables */
@@ -88,7 +91,10 @@ KERNEL_DATA_ARRAY(float, volume_step_size)
 
 /* image textures */
 KERNEL_DATA_ARRAY(KernelImageTexture, image_textures)
+KERNEL_DATA_ARRAY_WRITABLE(KernelTileDescriptor, image_texture_tile_descriptors)
+KERNEL_DATA_ARRAY_WRITABLE(uint8_t, image_texture_tile_access_state)
 KERNEL_DATA_ARRAY(KernelImageUDIM, image_texture_udims)
 KERNEL_DATA_ARRAY(KernelImageInfo, image_info)
 
 #undef KERNEL_DATA_ARRAY
+#undef KERNEL_DATA_ARRAY_WRITABLE
