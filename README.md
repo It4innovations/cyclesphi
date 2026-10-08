@@ -25,8 +25,6 @@ For the OSL scene you need to enable the OSL shading system:
 
     ./cycles --shadingsys osl scene_osl_stripes.xml
 
-## Contact
+## Development
 
-For help building or running Cycles, see the channels listed here:
-
-https://www.cycles-renderer.org/development/
+AI agent harnesses were used for selected development, testing, and optimization tasks
