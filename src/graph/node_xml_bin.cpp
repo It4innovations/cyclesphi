@@ -190,12 +190,18 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 	case SocketType::VECTOR_ARRAY:
 	case SocketType::POINT_ARRAY:
 	case SocketType::NORMAL_ARRAY: {
+		/* Stored as 16 byte float3 for compatibility with existing files. */
 		array<float3> value;
 		if (is_file_open(reader))
 			read_array_from_binary_file(reader, value, attr.value());
 		else
 			xml_read_float_array<4>(value, attr);
-		node->set(socket, value);
+		array<packed_float3> packed_value;
+		packed_value.resize(value.size());
+		for (size_t i = 0; i < value.size(); i++) {
+			packed_value[i] = value[i];
+		}
+		node->set(socket, packed_value);
 		break;
 	}
 	case SocketType::POINT2: {
@@ -467,7 +473,7 @@ xml_node xml_write_node(Node* node, xml_node xml_root)
 		case SocketType::POINT_ARRAY:
 		case SocketType::NORMAL_ARRAY: {
 			std::stringstream ss;
-			const array<float3>& value = node->get_float3_array(socket);
+			const array<packed_float3>& value = node->get_float3_array(socket);
 			for (size_t i = 0; i < value.size(); i++) {
 				ss << string_printf(
 					"%g %g %g", (double)value[i].x, (double)value[i].y, (double)value[i].z);

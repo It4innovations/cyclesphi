@@ -342,7 +342,9 @@ NanoVDBImageLoader::~NanoVDBImageLoader()
 {
 }
 
-bool NanoVDBImageLoader::load_metadata(ImageMetaData& metadata)
+bool NanoVDBImageLoader::load_metadata(ImageMetaData& metadata,
+                                   const ImageLoaderParams& /*params*/,
+                                   Progress& /*progress*/)
 {
     metadata.channels = (get_nanogrid()->gridType() == nanovdb::GridType::Float) ? 1 : 3; // TODO
 
@@ -504,7 +506,9 @@ NanoVDBMultiResImageLoader::~NanoVDBMultiResImageLoader()
 {
 }
 
-bool NanoVDBMultiResImageLoader::load_metadata(ImageMetaData& metadata)
+bool NanoVDBMultiResImageLoader::load_metadata(ImageMetaData& metadata,
+                                   const ImageLoaderParams& /*params*/,
+                                   Progress& /*progress*/)
 {
     metadata.channels = (get_nanogrid(0)->gridType() == nanovdb::GridType::Float) ? 1 : 3; // TODO
 
@@ -786,7 +790,9 @@ NanoVDBDerivatesImageLoader::~NanoVDBDerivatesImageLoader()
 {
 }
 
-bool NanoVDBDerivatesImageLoader::load_metadata(ImageMetaData& metadata)
+bool NanoVDBDerivatesImageLoader::load_metadata(ImageMetaData& metadata,
+                                   const ImageLoaderParams& /*params*/,
+                                   Progress& /*progress*/)
 {
     if (file_header.magic != 0x4E56444D || file_header.gridCount == 0) {
         return false;
@@ -1034,7 +1040,9 @@ RAWImageLoader::~RAWImageLoader()
 {
 }
 
-bool RAWImageLoader::load_metadata(ImageMetaData& metadata)
+bool RAWImageLoader::load_metadata(ImageMetaData& metadata,
+                                   const ImageLoaderParams& /*params*/,
+                                   Progress& /*progress*/)
 {
     metadata.channels = channels;
     metadata.width = dim.x;
@@ -1298,7 +1306,9 @@ void ZFPImageLoader::deserialize_zfp_array()
     }
 }
 
-bool ZFPImageLoader::load_metadata(ImageMetaData& metadata)
+bool ZFPImageLoader::load_metadata(ImageMetaData& metadata,
+                                   const ImageLoaderParams& /*params*/,
+                                   Progress& /*progress*/)
 {
     if (!zfp_array) {
         printf("ZFPImageLoader: ZFP array not initialized\n");
@@ -1534,7 +1544,9 @@ void CUBImageLoader::deserialize_cub_array()
     //}
 }
 
-bool CUBImageLoader::load_metadata(ImageMetaData& metadata)
+bool CUBImageLoader::load_metadata(ImageMetaData& metadata,
+                                   const ImageLoaderParams& /*params*/,
+                                   Progress& /*progress*/)
 {
     //if (!dev_array_storage) {
     //    printf("CUBImageLoader: CUB array not initialized\n");

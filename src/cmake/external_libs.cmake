@@ -79,6 +79,12 @@ else()
   set(_cycles_use_legacy_libs OFF)
 endif()
 
+# Use an explicitly given precompiled library directory, for example the libraries of the
+# Blender build the Cycles libraries end up in the same process with.
+if(CYCLES_LIB_DIR)
+  set(_cycles_lib_dir "${CYCLES_LIB_DIR}")
+endif()
+
 if(EXISTS ${_cycles_lib_dir} AND WITH_LIBS_PRECOMPILED)
   message(STATUS "Using precompiled libraries at ${_cycles_lib_dir}")
 

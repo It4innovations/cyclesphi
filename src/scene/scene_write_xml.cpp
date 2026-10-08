@@ -867,7 +867,15 @@ void scene_write_xml_geom(XMLWriteState& state, xml_node node)
 #endif				
 				}
 				else {
-					ss << write_vector_to_binary_file(state, attr.buffer);
+					/* All motion steps in one buffer, the center step first. */
+					const size_t step_bytes = size_t(attr.size) * attr.data_sizeof();
+					vector<char> buffer(step_bytes * attr.num_motion_steps());
+					for (int step = 0; step < attr.num_motion_steps(); step++) {
+						if (step_bytes && attr.data(step)) {
+							memcpy(buffer.data() + step * step_bytes, attr.data(step), step_bytes);
+						}
+					}
+					ss << write_vector_to_binary_file(state, buffer);
 				}
 
 				attr_buffer = ss.str().c_str();

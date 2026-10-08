@@ -883,6 +883,16 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
                                         (InterpolationType)info.interpolation :
                                         interp;
 
+  /* RAW3D and ZFP grids pack their object to voxel index mapping into transform_3d (dimensions,
+   * scale, translation and bounding box minimum in the columns) rather than storing a matrix. Map
+   * P to voxel index space before the stochastic jitter, which works in index space. */
+  const ImageDataType packed_type = (ImageDataType)info.data_type;
+  if (packed_type == IMAGE_DATA_TYPE_RAW3D_FLOAT || packed_type == IMAGE_DATA_TYPE_ZFP_FLOAT) {
+    P = make_float3((P.x - tex.transform_3d.x.w - tex.transform_3d.x.z) / tex.transform_3d.x.y,
+                    (P.y - tex.transform_3d.y.w - tex.transform_3d.y.z) / tex.transform_3d.y.y,
+                    (P.z - tex.transform_3d.z.w - tex.transform_3d.z.z) / tex.transform_3d.z.y);
+  }
+
   if (stochastic) {
     float3 rand = lcg_step_float3(&sd->lcg_state);
     P = interp_stochastic(P, interpolation, rand);
@@ -929,21 +939,10 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     const size_t dimy = (size_t)tex.transform_3d.y.x;
     const size_t dimz = (size_t)tex.transform_3d.z.x;
 
-    float scale_x = tex.transform_3d.x.y;
-    float scale_y = tex.transform_3d.y.y;
-    float scale_z = tex.transform_3d.z.y;
-
-    float trans_x = tex.transform_3d.x.z;
-    float trans_y = tex.transform_3d.y.z;
-    float trans_z = tex.transform_3d.z.z;
-
-    float bbox_min_x = tex.transform_3d.x.w;
-    float bbox_min_y = tex.transform_3d.y.w;
-    float bbox_min_z = tex.transform_3d.z.w;
-
-    float px = (P.x - bbox_min_x - trans_x) / scale_x;
-    float py = (P.y - bbox_min_y - trans_y) / scale_y;
-    float pz = (P.z - bbox_min_z - trans_z) / scale_z;
+    /* P is in voxel index space already. */
+    float px = P.x;
+    float py = P.y;
+    float pz = P.z;
 
     if (px < 0.0f || py < 0.0f || pz < 0.0f)
       return zero_float4();
@@ -1021,21 +1020,10 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
     const size_t dimy = (size_t)tex.transform_3d.y.x;
     const size_t dimz = (size_t)tex.transform_3d.z.x;
 
-    float scale_x = tex.transform_3d.x.y;
-    float scale_y = tex.transform_3d.y.y;
-    float scale_z = tex.transform_3d.z.y;
-
-    float trans_x = tex.transform_3d.x.z;
-    float trans_y = tex.transform_3d.y.z;
-    float trans_z = tex.transform_3d.z.z;
-
-    float bbox_min_x = tex.transform_3d.x.w;
-    float bbox_min_y = tex.transform_3d.y.w;
-    float bbox_min_z = tex.transform_3d.z.w;
-
-    float px = (P.x - bbox_min_x - trans_x) / scale_x;
-    float py = (P.y - bbox_min_y - trans_y) / scale_y;
-    float pz = (P.z - bbox_min_z - trans_z) / scale_z;
+    /* P is in voxel index space already. */
+    float px = P.x;
+    float py = P.y;
+    float pz = P.z;
 
     if (px < 0.0f || py < 0.0f || pz < 0.0f)
       return zero_float4();

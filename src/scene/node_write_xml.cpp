@@ -371,7 +371,13 @@ void xml_write_node_socket(XMLWriter& writer, Node* node, xml_node xml_root, con
     case SocketType::POINT_ARRAY:
     case SocketType::NORMAL_ARRAY: {
         std::stringstream ss;
-        const array<float3>& value = node->get_float3_array(socket);
+        /* Stored as 16 byte float3 for compatibility with existing files. */
+        const array<packed_float3>& packed_value = node->get_float3_array(socket);
+        array<float3> value;
+        value.resize(packed_value.size());
+        for (size_t i = 0; i < packed_value.size(); i++) {
+          value[i] = make_float3(packed_value[i]);
+        }
         //for (size_t i = 0; i < value.size(); i++) {
         //  ss << string_printf(
         //      "%g %g %g %g", (double)value[i].x, (double)value[i].y, (double)value[i].z, (double)value[i].w);

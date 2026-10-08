@@ -8,6 +8,7 @@
 
 #include "util/cache_limiter.h"
 #include "util/image.h"
+#include "util/image_metadata.h"
 #include "util/progress.h"
 #include "util/string.h"
 

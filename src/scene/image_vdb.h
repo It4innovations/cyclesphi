@@ -108,7 +108,9 @@ public:
     NanoVDBImageLoader(vector<char> &g);
     ~NanoVDBImageLoader();
 
-    virtual bool load_metadata(ImageMetaData& metadata) override;
+    virtual bool load_metadata(ImageMetaData& metadata,
+                               const ImageLoaderParams& params,
+                               Progress& progress) override;
 
     virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
 
@@ -143,7 +145,9 @@ public:
     NanoVDBMultiResImageLoader(vector<char> &g, NanoVDBMultiResImageLoaderType t);
     ~NanoVDBMultiResImageLoader();
 
-    virtual bool load_metadata(ImageMetaData& metadata) override;
+    virtual bool load_metadata(ImageMetaData& metadata,
+                               const ImageLoaderParams& params,
+                               Progress& progress) override;
 
     virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
 
@@ -179,7 +183,9 @@ public:
     NanoVDBDerivatesImageLoader(vector<char> &g);
     ~NanoVDBDerivatesImageLoader();
 
-    virtual bool load_metadata(ImageMetaData& metadata) override;
+    virtual bool load_metadata(ImageMetaData& metadata,
+                               const ImageLoaderParams& params,
+                               Progress& progress) override;
 
     virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
 
@@ -233,7 +239,9 @@ public:
     RAWImageLoader(vector<char> &g, int3 d, float3 s, float3 tr, int3 bmin, int3 bmax, RAWImageLoaderType type, int c);
     ~RAWImageLoader();
 
-    virtual bool load_metadata(ImageMetaData& metadata) override;
+    virtual bool load_metadata(ImageMetaData& metadata,
+                               const ImageLoaderParams& params,
+                               Progress& progress) override;
 
     virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
 
@@ -274,7 +282,9 @@ public:
                 size_t cache_size_bytes);
     ~ZFPImageLoader();
 
-    virtual bool load_metadata(ImageMetaData& metadata) override;
+    virtual bool load_metadata(ImageMetaData& metadata,
+                               const ImageLoaderParams& params,
+                               Progress& progress) override;
 
     virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
 
@@ -312,7 +322,9 @@ public:
     CUBImageLoader(vector<char> &g);
     ~CUBImageLoader();
 
-    virtual bool load_metadata(ImageMetaData& metadata) override;
+    virtual bool load_metadata(ImageMetaData& metadata,
+                               const ImageLoaderParams& params,
+                               Progress& progress) override;
 
     virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
 

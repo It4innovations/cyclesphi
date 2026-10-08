@@ -759,7 +759,7 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);
 
-          attr->data_voxel() = state.scene->image_manager->add_image(std::move(loader), params);
+          attr->data_voxel_for_write() = state.scene->image_manager->add_image(std::move(loader), params);
 
           //if (attr->data_voxel().vdb_loader()) {
           //  attr->data_voxel().vdb_loader()->set_image_params(params);
@@ -791,7 +791,7 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);
 
-          attr->data_voxel() = state.scene->image_manager->add_image(
+          attr->data_voxel_for_write() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
 
           //if (attr->data_voxel().vdb_loader()) {
@@ -844,7 +844,7 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);
 
-          attr->data_voxel() = state.scene->image_manager->add_image(
+          attr->data_voxel_for_write() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
 
           //if (attr->data_voxel().vdb_loader()) {
@@ -882,7 +882,7 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);
 
-          attr->data_voxel() = state.scene->image_manager->add_image(
+          attr->data_voxel_for_write() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
 
           //if (attr->data_voxel().vdb_loader()) {
@@ -988,7 +988,7 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);
 
-          attr->data_voxel() = state.scene->image_manager->add_image(
+          attr->data_voxel_for_write() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
 
           //if (attr->data_voxel().vdb_loader()) {
@@ -1114,7 +1114,7 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);
 
-          attr->data_voxel() = state.scene->image_manager->add_image(
+          attr->data_voxel_for_write() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
 
           //if (attr->data_voxel().vdb_loader()) {
@@ -1151,7 +1151,7 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);
 
-          attr->data_voxel() = state.scene->image_manager->add_image(
+          attr->data_voxel_for_write() = state.scene->image_manager->add_image(
               std::move(loader), params, false);
 
           //if (attr->data_voxel().vdb_loader()) {
@@ -1162,7 +1162,22 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
       else {
         std::string filename = attr_buffer.value();
         if (xml_is_digit(filename)) {
-          read_vector_from_binary_file(state, attr->buffer, filename.c_str());
+          /* All motion steps in one buffer, the center step first. */
+          vector<char> buffer;
+          read_vector_from_binary_file(state, buffer, filename.c_str());
+          const size_t step_bytes = size_t(attr->size) * attr->data_sizeof();
+          if (step_bytes > 0 && buffer.size() >= step_bytes) {
+            memcpy(attr->data_for_write(), buffer.data(), step_bytes);
+            const size_t num_steps = buffer.size() / step_bytes;
+            if (num_steps > 1) {
+              attr->add_motion(geom);
+              for (int step = 1; step < attr->num_motion_steps() && size_t(step) < num_steps;
+                   step++)
+              {
+                memcpy(attr->data_for_write(step), buffer.data() + step * step_bytes, step_bytes);
+              }
+            }
+          }
         }
         else {
           fprintf(stderr, "attr_volume_type is empty\n");
@@ -1509,7 +1524,7 @@ void xml_set_volume_to_attr(Scene *scene,
             params = attr.data_voxel().vdb_image_single()->params;
           }
 
-          attr.data_voxel() = scene->image_manager->add_image(std::move(loader), params);
+          attr.data_voxel_for_write() = scene->image_manager->add_image(std::move(loader), params);
 
           if (attr.data_voxel().vdb_image_single()) {
             attr.data_voxel().vdb_image_single()->need_metadata = true;

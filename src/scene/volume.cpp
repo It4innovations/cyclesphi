@@ -647,7 +647,7 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
     //const int3 resolution = make_int3(max[0] - min[0] + 1, max[1] - min[1] + 1, max[2] - min[2] + 1);
     const int3 resolution = make_int3(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
 
-    unordered_map<size_t, int> used_verts;
+    VertHashMap used_verts;
 
     //int3 min = make_int3(bbox_index.min().x(), bbox_index.min().y(), bbox_index.min().z());
     //int3 max = make_int3(bbox_index.max().x(), bbox_index.max().y(), bbox_index.max().z());
@@ -663,12 +663,12 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
         make_int3(min[0], max[1], max[2]),
     };
     
-    create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_X_MIN);
-    create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_X_MAX);
-    create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_Y_MIN);
-    create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_Y_MAX);
-    create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_Z_MIN);
-    create_quad(corners, vertices_is, quads, resolution, used_verts, QUAD_Z_MAX);
+    create_quad(corners, vertices_is, quads, used_verts, QUAD_X_MIN);
+    create_quad(corners, vertices_is, quads, used_verts, QUAD_X_MAX);
+    create_quad(corners, vertices_is, quads, used_verts, QUAD_Y_MIN);
+    create_quad(corners, vertices_is, quads, used_verts, QUAD_Y_MAX);
+    create_quad(corners, vertices_is, quads, used_verts, QUAD_Z_MIN);
+    create_quad(corners, vertices_is, quads, used_verts, QUAD_Z_MAX);
 
     ///////////////////////////////convert_object_space(vertices_is, vertices, face_overlap_avoidance);
       /* compute the offset for the face overlap avoidance */
@@ -709,10 +709,7 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
     const size_t num_triangles = indices.size() / 3;
     volume->resize_mesh((int)vertices.size(), (int)num_triangles);
 
-    ccl::array<ccl::float3> mesh_verts;
-    mesh_verts.resize(vertices.size());
-    std::copy(cbegin(vertices), cend(vertices), mesh_verts.begin());
-    volume->set_verts(mesh_verts);
+    std::ranges::copy(vertices, volume->get_position_for_write());
 
     ccl::array<int> triangles;
     triangles.resize(indices.size());
@@ -737,7 +734,17 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
     //}
 #else
     ImageMetaData metadata;
-    vdb_loader->load_metadata(metadata);
+    std::atomic<int> load_failure_num = 0;
+    std::atomic<int> tx_failure_num = 0;
+    const ImageLoaderParams loader_params = {.use_texture_cache = false,
+                                             .auto_texture_cache = false,
+                                             .texture_cache_path = "",
+                                             .colorspace = u_colorspace_scene_linear,
+                                             .alpha_type = IMAGE_ALPHA_AUTO,
+                                             .load_failure_num = load_failure_num,
+                                             .tx_failure_num = tx_failure_num};
+    Progress progress;
+    vdb_loader->load_metadata(metadata, loader_params, progress);
     auto v_min = make_float3(0.5, 0.5f, 0.5f);
     auto v_max = make_float3(metadata.width - 0.5f, metadata.height - 0.5f, metadata.height - 0.5f);
     auto vertices = std::vector<float3>{
@@ -750,10 +757,6 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
         {v_min.x, v_max.y, v_min.z},
         {v_max.x, v_max.y, v_min.z}
     };
-    ccl::array<ccl::float3> P;
-    P.resize(8);
-    std::copy(cbegin(vertices), cend(vertices), P.begin());
-    volume->set_verts(P);
 
     auto faces = std::vector<int3>{
         {0, 1, 2},
@@ -771,6 +774,7 @@ void GeometryManager::create_volume_mesh_cube(const Scene* /*scene*/, Volume* vo
     };
     auto numTriangles = faces.size();
     volume->resize_mesh((int)vertices.size(), (int)numTriangles);
+    std::ranges::copy(vertices, volume->get_position_for_write());
 
     ccl::array<int> triangles;
     triangles.resize(numTriangles * 3);

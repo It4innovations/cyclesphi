@@ -224,6 +224,8 @@ const char* enum_to_str(AttributeStandard a)
 {
   switch (a) {
   case ATTR_STD_NONE:                     return "ATTR_STD_NONE";
+  case ATTR_STD_POSITION:                 return "ATTR_STD_POSITION";
+  case ATTR_STD_RADIUS:                   return "ATTR_STD_RADIUS";
   case ATTR_STD_VERTEX_NORMAL:            return "ATTR_STD_VERTEX_NORMAL";
   case ATTR_STD_CORNER_NORMAL:            return "ATTR_STD_CORNER_NORMAL";
   case ATTR_STD_UV:                       return "ATTR_STD_UV";
@@ -238,9 +240,6 @@ const char* enum_to_str(AttributeStandard a)
   case ATTR_STD_POSITION_UNDEFORMED:      return "ATTR_STD_POSITION_UNDEFORMED";
   case ATTR_STD_POSITION_UNDISPLACED:     return "ATTR_STD_POSITION_UNDISPLACED";
   case ATTR_STD_NORMAL_UNDISPLACED:       return "ATTR_STD_NORMAL_UNDISPLACED";
-  case ATTR_STD_MOTION_VERTEX_POSITION:   return "ATTR_STD_MOTION_VERTEX_POSITION";
-  case ATTR_STD_MOTION_VERTEX_NORMAL:     return "ATTR_STD_MOTION_VERTEX_NORMAL";
-  case ATTR_STD_MOTION_CORNER_NORMAL:     return "ATTR_STD_MOTION_CORNER_NORMAL";
   case ATTR_STD_PARTICLE:                 return "ATTR_STD_PARTICLE";
   case ATTR_STD_CURVE_INTERCEPT:          return "ATTR_STD_CURVE_INTERCEPT";
   case ATTR_STD_CURVE_LENGTH:             return "ATTR_STD_CURVE_LENGTH";
@@ -291,9 +290,13 @@ bool str_to_enum(const char* str, AttributeStandard& out)
   else if (std::strcmp(str, "ATTR_STD_POSITION_UNDEFORMED") == 0)      out = ATTR_STD_POSITION_UNDEFORMED;
   else if (std::strcmp(str, "ATTR_STD_POSITION_UNDISPLACED") == 0)     out = ATTR_STD_POSITION_UNDISPLACED;
   else if (std::strcmp(str, "ATTR_STD_NORMAL_UNDISPLACED") == 0)       out = ATTR_STD_NORMAL_UNDISPLACED;
-  else if (std::strcmp(str, "ATTR_STD_MOTION_VERTEX_POSITION") == 0)   out = ATTR_STD_MOTION_VERTEX_POSITION;
-  else if (std::strcmp(str, "ATTR_STD_MOTION_VERTEX_NORMAL") == 0)     out = ATTR_STD_MOTION_VERTEX_NORMAL;
-  else if (std::strcmp(str, "ATTR_STD_MOTION_CORNER_NORMAL") == 0)     out = ATTR_STD_MOTION_CORNER_NORMAL;
+  else if (std::strcmp(str, "ATTR_STD_POSITION") == 0)                 out = ATTR_STD_POSITION;
+  else if (std::strcmp(str, "ATTR_STD_RADIUS") == 0)                   out = ATTR_STD_RADIUS;
+  /* Motion attributes of Cycles before 5.0 are now the regular attributes stored with
+   * ATTR_ELEMENT_IS_MOTION elements. */
+  else if (std::strcmp(str, "ATTR_STD_MOTION_VERTEX_POSITION") == 0)   out = ATTR_STD_POSITION;
+  else if (std::strcmp(str, "ATTR_STD_MOTION_VERTEX_NORMAL") == 0)     out = ATTR_STD_VERTEX_NORMAL;
+  else if (std::strcmp(str, "ATTR_STD_MOTION_CORNER_NORMAL") == 0)     out = ATTR_STD_CORNER_NORMAL;
   else if (std::strcmp(str, "ATTR_STD_PARTICLE") == 0)                 out = ATTR_STD_PARTICLE;
   else if (std::strcmp(str, "ATTR_STD_CURVE_INTERCEPT") == 0)          out = ATTR_STD_CURVE_INTERCEPT;
   else if (std::strcmp(str, "ATTR_STD_CURVE_LENGTH") == 0)             out = ATTR_STD_CURVE_LENGTH;
@@ -331,20 +334,20 @@ const char* enum_to_str(AttributeElement e)
   case ATTR_ELEMENT_MESH:               return "ATTR_ELEMENT_MESH";
   case ATTR_ELEMENT_FACE:               return "ATTR_ELEMENT_FACE";
   case ATTR_ELEMENT_VERTEX:             return "ATTR_ELEMENT_VERTEX";
-  case ATTR_ELEMENT_VERTEX_MOTION:      return "ATTR_ELEMENT_VERTEX_MOTION";
+  case ATTR_ELEMENT_VERTEX | ATTR_ELEMENT_IS_MOTION:      return "ATTR_ELEMENT_VERTEX_MOTION";
   case ATTR_ELEMENT_VERTEX_NORMAL:      return "ATTR_ELEMENT_VERTEX_NORMAL";
-  case ATTR_ELEMENT_VERTEX_NORMAL_MOTION:
+  case ATTR_ELEMENT_VERTEX_NORMAL | ATTR_ELEMENT_IS_MOTION:
     return "ATTR_ELEMENT_VERTEX_NORMAL_MOTION";
   case ATTR_ELEMENT_CORNER:              return "ATTR_ELEMENT_CORNER";
   case ATTR_ELEMENT_CORNER_BYTE:         return "ATTR_ELEMENT_CORNER_BYTE";
   case ATTR_ELEMENT_CORNER_NORMAL:       return "ATTR_ELEMENT_CORNER_NORMAL";
-  case ATTR_ELEMENT_CORNER_NORMAL_MOTION:
+  case ATTR_ELEMENT_CORNER_NORMAL | ATTR_ELEMENT_IS_MOTION:
     return "ATTR_ELEMENT_CORNER_NORMAL_MOTION";
   case ATTR_ELEMENT_CURVE:               return "ATTR_ELEMENT_CURVE";
   case ATTR_ELEMENT_CURVE_KEY:           return "ATTR_ELEMENT_CURVE_KEY";
-  case ATTR_ELEMENT_CURVE_KEY_MOTION:    return "ATTR_ELEMENT_CURVE_KEY_MOTION";
+  case ATTR_ELEMENT_CURVE_KEY | ATTR_ELEMENT_IS_MOTION:    return "ATTR_ELEMENT_CURVE_KEY_MOTION";
   case ATTR_ELEMENT_CURVE_KEY_NORMAL:    return "ATTR_ELEMENT_CURVE_KEY_NORMAL";
-  case ATTR_ELEMENT_CURVE_KEY_NORMAL_MOTION:
+  case ATTR_ELEMENT_CURVE_KEY_NORMAL | ATTR_ELEMENT_IS_MOTION:
     return "ATTR_ELEMENT_CURVE_KEY_NORMAL_MOTION";
   case ATTR_ELEMENT_VOXEL:               return "ATTR_ELEMENT_VOXEL";
   case ATTR_ELEMENT_IS_MOTION:           return "ATTR_ELEMENT_IS_MOTION";
@@ -368,21 +371,21 @@ bool str_to_enum(const char* str, AttributeElement& out)
   else if (std::strcmp(str, "ATTR_ELEMENT_MESH") == 0)                out = ATTR_ELEMENT_MESH;
   else if (std::strcmp(str, "ATTR_ELEMENT_FACE") == 0)                out = ATTR_ELEMENT_FACE;
   else if (std::strcmp(str, "ATTR_ELEMENT_VERTEX") == 0)              out = ATTR_ELEMENT_VERTEX;
-  else if (std::strcmp(str, "ATTR_ELEMENT_VERTEX_MOTION") == 0)       out = ATTR_ELEMENT_VERTEX_MOTION;
+  else if (std::strcmp(str, "ATTR_ELEMENT_VERTEX_MOTION") == 0)       out = AttributeElement(ATTR_ELEMENT_VERTEX | ATTR_ELEMENT_IS_MOTION);
   else if (std::strcmp(str, "ATTR_ELEMENT_VERTEX_NORMAL") == 0)       out = ATTR_ELEMENT_VERTEX_NORMAL;
   else if (std::strcmp(str, "ATTR_ELEMENT_VERTEX_NORMAL_MOTION") == 0)
-    out = ATTR_ELEMENT_VERTEX_NORMAL_MOTION;
+    out = AttributeElement(ATTR_ELEMENT_VERTEX_NORMAL | ATTR_ELEMENT_IS_MOTION);
   else if (std::strcmp(str, "ATTR_ELEMENT_CORNER") == 0)               out = ATTR_ELEMENT_CORNER;
   else if (std::strcmp(str, "ATTR_ELEMENT_CORNER_BYTE") == 0)          out = ATTR_ELEMENT_CORNER_BYTE;
   else if (std::strcmp(str, "ATTR_ELEMENT_CORNER_NORMAL") == 0)        out = ATTR_ELEMENT_CORNER_NORMAL;
   else if (std::strcmp(str, "ATTR_ELEMENT_CORNER_NORMAL_MOTION") == 0)
-    out = ATTR_ELEMENT_CORNER_NORMAL_MOTION;
+    out = AttributeElement(ATTR_ELEMENT_CORNER_NORMAL | ATTR_ELEMENT_IS_MOTION);
   else if (std::strcmp(str, "ATTR_ELEMENT_CURVE") == 0)                out = ATTR_ELEMENT_CURVE;
   else if (std::strcmp(str, "ATTR_ELEMENT_CURVE_KEY") == 0)            out = ATTR_ELEMENT_CURVE_KEY;
-  else if (std::strcmp(str, "ATTR_ELEMENT_CURVE_KEY_MOTION") == 0)     out = ATTR_ELEMENT_CURVE_KEY_MOTION;
+  else if (std::strcmp(str, "ATTR_ELEMENT_CURVE_KEY_MOTION") == 0)     out = AttributeElement(ATTR_ELEMENT_CURVE_KEY | ATTR_ELEMENT_IS_MOTION);
   else if (std::strcmp(str, "ATTR_ELEMENT_CURVE_KEY_NORMAL") == 0)     out = ATTR_ELEMENT_CURVE_KEY_NORMAL;
   else if (std::strcmp(str, "ATTR_ELEMENT_CURVE_KEY_NORMAL_MOTION") == 0)
-    out = ATTR_ELEMENT_CURVE_KEY_NORMAL_MOTION;
+    out = AttributeElement(ATTR_ELEMENT_CURVE_KEY_NORMAL | ATTR_ELEMENT_IS_MOTION);
   else if (std::strcmp(str, "ATTR_ELEMENT_VOXEL") == 0)                out = ATTR_ELEMENT_VOXEL;
   else if (std::strcmp(str, "ATTR_ELEMENT_IS_MOTION") == 0)            out = ATTR_ELEMENT_IS_MOTION;
   else if (std::strcmp(str, "ATTR_ELEMENT_IS_NORMAL") == 0)            out = ATTR_ELEMENT_IS_NORMAL;
