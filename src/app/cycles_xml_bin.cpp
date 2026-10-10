@@ -260,7 +260,29 @@ static void xml_read_camera(XMLReadState &state, const xml_node node, Camera *ca
 
 /* Shader */
 
-static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml_node graph_node)
+static bool xml_shader_graph_has_cycle(ShaderNode *node, vector<char> &visit_state)
+{
+  /* 0: not visited, 1: on the stack, 2: done. */
+  if (visit_state[node->id] != 0) {
+    return visit_state[node->id] == 1;
+  }
+
+  visit_state[node->id] = 1;
+  for (ShaderInput *input : node->inputs) {
+    if (input->link && xml_shader_graph_has_cycle(input->link->parent, visit_state)) {
+      return true;
+    }
+  }
+  visit_state[node->id] = 2;
+
+  return false;
+}
+
+/* Read the sockets of the <shader> element into the shader and build its graph. The graph is
+ * returned without being set on the shader. */
+static unique_ptr<ShaderGraph> xml_read_shader_graph_nodes(XMLReadState &state,
+                                                           Shader *shader,
+                                                           const xml_node graph_node)
 {
   xml_read_node(state, shader, graph_node);
 
@@ -273,6 +295,7 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml
   graph_reader.node_map[ustring("output")] = graph->output();
   graph_reader.node_map[ustring("Material Output")] = graph->output();
   graph_reader.file = state.file;
+  graph_reader.report = state.report;
 
   for (const xml_node node : graph_node.children()) {
     ustring node_name(node.name());
@@ -318,11 +341,15 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml
           }
 
           if (!output) {
-            fprintf(stderr, "Unknown output socket name \"%s\".\n", from_node_name.c_str());
+            xml_report(state,
+                       false,
+                       "Unknown output socket \"%s\" of shader node \"%s\".",
+                       (from_socket) ? from_socket.value() : from_socket_ui.value(),
+                       from_node_name.c_str());
           }
         }
         else {
-          fprintf(stderr, "Unknown shader node name \"%s\".\n", from_node_name.c_str());
+          xml_report(state, true, "Unknown shader node name \"%s\".", from_node_name.c_str());
         }
 
         if (graph_reader.node_map.find(to_node_name) != graph_reader.node_map.end()) {
@@ -344,20 +371,33 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml
           }
 
           if (!input) {
-            fprintf(stderr, "Unknown input socket name \"%s\".\n", to_node_name.c_str());
+            xml_report(state,
+                       false,
+                       "Unknown input socket \"%s\" of shader node \"%s\".",
+                       (to_socket) ? to_socket.value() : to_socket_ui.value(),
+                       to_node_name.c_str());
           }
         }
         else {
-          fprintf(stderr, "Unknown shader node name \"%s\".\n", to_node_name.c_str());
+          xml_report(state, true, "Unknown shader node name \"%s\".", to_node_name.c_str());
         }
 
         /* connect */
         if (output && input) {
-          graph->connect(output, input);
+          if (input->link) {
+            xml_report(state,
+                       false,
+                       "Input socket \"%s\" of shader node \"%s\" is already connected.",
+                       input->socket_type.name.c_str(),
+                       to_node_name.c_str());
+          }
+          else {
+            graph->connect(output, input);
+          }
         }
       }
       else {
-        fprintf(stderr, "Invalid from or to value for connect node.\n");
+        xml_report(state, true, "Invalid from or to value for connect node.");
       }
     }
     else {
@@ -371,21 +411,28 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml
       const NodeType *node_type = NodeType::find(node_name);
 
       if (!node_type) {
-        fprintf(stderr, "Unknown shader node \"%s\".\n", node.name());
+        xml_report(state, true, "Unknown shader node \"%s\".", node.name());
         continue;
       }
       else if (node_type->type != NodeType::SHADER) {
-        fprintf(stderr, "Node type \"%s\" is not a shader node.\n", node_type->name.c_str());
+        xml_report(state, true, "Node type \"%s\" is not a shader node.", node_type->name.c_str());
         continue;
       }
       else if (node_type->create == nullptr) {
-        fprintf(stderr, "Can't create abstract node type \"%s\".\n", node_type->name.c_str());
+        xml_report(
+            state, true, "Can't create abstract node type \"%s\".", node_type->name.c_str());
         continue;
       }
 
       // snode = (ShaderNode*)node_type->create(node_type);
       // snode->set_owner(graph);
-      snode = graph->create_node(node_type);
+      if (node_type == OutputNode::get_node_type()) {
+        /* A graph has one output node, which exists already. */
+        snode = graph->output();
+      }
+      else {
+        snode = graph->create_node(node_type);
+      }
       // snode->set_owner(graph.get());
       // }
 
@@ -398,7 +445,7 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml
 
         std::string filename = img->get_filename().string();
 
-        if (xml_is_digit(filename) && img->handle.empty()) {
+        if (xml_is_digit(filename) && img->handle.empty() && is_file_open(state)) {
           ImageManager *image_manager = state.scene->image_manager.get();
 
           vector<char> image_buffer;
@@ -455,7 +502,7 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml
 
         std::string filename = img->get_filename().string();
 
-        if (xml_is_digit(filename) && img->handle.empty()) {
+        if (xml_is_digit(filename) && img->handle.empty() && is_file_open(state)) {
           ImageManager *image_manager = state.scene->image_manager.get();
 
           vector<char> image_buffer;
@@ -509,6 +556,23 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml
       // }
     }
   }
+
+  /* Cycles breaks cycles when it simplifies the graph, but some code which runs before that
+   * (the displacement hash) does not terminate on them. */
+  vector<char> visit_state(graph->num_node_ids, 0);
+  for (ShaderNode *node : graph->nodes) {
+    if (xml_shader_graph_has_cycle(node, visit_state)) {
+      xml_report(state, true, "The shader graph has a cyclic connection.");
+      break;
+    }
+  }
+
+  return graph;
+}
+
+static void xml_read_shader_graph(XMLReadState &state, Shader *shader, const xml_node graph_node)
+{
+  unique_ptr<ShaderGraph> graph = xml_read_shader_graph_nodes(state, shader, graph_node);
 
   // shader->set_graph(graph);
   shader->set_graph(std::move(graph));
@@ -1735,27 +1799,58 @@ void xml_set_material_to_shader(Scene *scene, const char *file_content)
   }
 }
 
+unique_ptr<ShaderGraph> xml_read_shader_graph_from_string(Scene *scene,
+                                                          Shader *shader,
+                                                          const char *xml_text,
+                                                          const size_t xml_size,
+                                                          const XMLReportFunc &report)
+{
+  register_all_nodes();
+
+  XMLReadState state;
+  state.scene = scene;
+  state.report = report;
+
+  if (xml_text == nullptr || xml_size == 0) {
+    xml_report(state, true, "The shader XML text is empty.");
+    return nullptr;
+  }
+
+  xml_document doc;
+  const xml_parse_result parse_result = doc.load_buffer(xml_text, xml_size);
+  if (!parse_result) {
+    xml_report(state,
+               true,
+               "Shader XML read error at offset %d: %s",
+               (int)parse_result.offset,
+               parse_result.description());
+    return nullptr;
+  }
+
+  const xml_node xnode_shader = doc.child("shader");
+  if (!xnode_shader) {
+    xml_report(state, true, "The shader XML text has no <shader> root element.");
+    return nullptr;
+  }
+
+  return xml_read_shader_graph_nodes(state, shader, xnode_shader);
+}
+
 void xml_set_material_to_shader2(Scene *scene, Shader *shader, const char *file_content)
 {
   if (file_content == nullptr || strlen(file_content) == 0)
     return;
 
-  xml_document doc;
   // xml_parse_result parse_result;
   // parse_result = doc.load_string(file_content);
   std::ifstream in(file_content, std::ios::binary);
   std::string file_data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
-  xml_parse_result parse_result = doc.load_buffer(file_data.data(), file_data.size());
-  if (parse_result) {
-    xml_node xnode_shader = doc.child("shader");
-    XMLReader graph_reader;
-    xml_read_node(graph_reader, shader, xnode_shader);
-
-    XMLReadState state;
-    state.scene = scene;
-
-    xml_read_shader_graph(state, shader, xnode_shader);
+  unique_ptr<ShaderGraph> graph = xml_read_shader_graph_from_string(
+      scene, shader, file_data.data(), file_data.size());
+  if (graph) {
+    shader->set_graph(std::move(graph));
+    shader->tag_update(scene);
   }
 }
 

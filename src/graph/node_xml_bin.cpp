@@ -11,7 +11,25 @@
 #  include "util/transform.h"
 #  include "util/path.h"
 
+#  include <cstdarg>
+
 CCL_NAMESPACE_BEGIN
+
+void xml_report(const XMLReader& reader, bool error, const char* format, ...)
+{
+	char message[1024];
+	va_list args;
+	va_start(args, format);
+	vsnprintf(message, sizeof(message), format, args);
+	va_end(args);
+
+	if (reader.report) {
+		reader.report(error, message);
+	}
+	else {
+		fprintf(stderr, "%s\n", message);
+	}
+}
 
 bool is_file_open(XMLReader& reader) {
 	if (!reader.file || !reader.file->is_open()) {
@@ -25,7 +43,11 @@ template<typename T>
 static void read_array_from_binary_file(XMLReader& reader, array<T>& data, const char* attr)
 {
 	if (attr == nullptr) {
-		fprintf(stderr,	"read_array_from_binary_file: attr is null.\n");
+		xml_report(reader, false, "read_array_from_binary_file: attr is null.");
+		return;
+	}
+	if (!is_file_open(reader)) {
+		xml_report(reader, false, "read_array_from_binary_file: no binary file is open.");
 		return;
 	}
 
@@ -75,16 +97,17 @@ static const char* xml_write_boolean(bool value)
 }
 
 template<int VECTOR_SIZE, typename T>
-static void xml_read_float_array(T& value, xml_attribute attr)
+static void xml_read_float_array(XMLReader& reader, const SocketType& socket, T& value, xml_attribute attr)
 {
 	vector<string> tokens;
 	string_split(tokens, attr.value());
 
 	if (tokens.size() % VECTOR_SIZE != 0) {
-		fprintf(stderr,
-			"Wrong VECTOR_SIZE \"%d\" for attribute \"%s\".\n",
+		xml_report(reader, false,
+			"Wrong number of values (%d, expected a multiple of %d) for socket \"%s\".",
+			(int)tokens.size(),
 			VECTOR_SIZE,
-			attr.value());
+			socket.name.c_str());
 		return;
 	}
 
@@ -96,6 +119,21 @@ static void xml_read_float_array(T& value, xml_attribute attr)
 			value_float[j] = (float)atof(tokens[i * VECTOR_SIZE + j].c_str());
 		}
 	}
+}
+
+/* Sockets holding one value are read as an array, which must have exactly one element. */
+template<typename T>
+static bool xml_is_single_value(XMLReader& reader, const SocketType& socket, const T& value)
+{
+	if (value.size() == 1) {
+		return true;
+	}
+	if (value.size() > 1) {
+		xml_report(reader, false,
+			"Too many values for socket \"%s\".",
+			socket.name.c_str());
+	}
+	return false;
 }
 
 bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root, const SocketType& socket, xml_attribute attr_name, xml_attribute attr_name_ui, xml_attribute attr)
@@ -125,15 +163,19 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 		break;
 	}
 	case SocketType::BOOLEAN_ARRAY: {
-		//vector<string> tokens;
-		//string_split(tokens, attr.value());
-
 		array<bool> value;
-		//value.resize(tokens.size());
-		//for (size_t i = 0; i < value.size(); i++) {
-		//  value[i] = xml_read_boolean(tokens[i].c_str());
-		//}
-		read_array_from_binary_file(reader, value, attr.value());
+		if (is_file_open(reader)) {
+			read_array_from_binary_file(reader, value, attr.value());
+		}
+		else {
+			vector<string> tokens;
+			string_split(tokens, attr.value());
+
+			value.resize(tokens.size());
+			for (size_t i = 0; i < value.size(); i++) {
+				value[i] = xml_read_boolean(tokens[i].c_str());
+			}
+		}
 		node->set(socket, value);
 		break;
 	}
@@ -146,7 +188,7 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 		if (is_file_open(reader))
 			read_array_from_binary_file(reader, value, attr.value());
 		else
-			xml_read_float_array<1>(value, attr);
+			xml_read_float_array<1>(reader, socket, value, attr);
 		node->set(socket, value);
 		break;
 	}
@@ -163,15 +205,19 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 		break;
 	}
 	case SocketType::INT_ARRAY: {
-		//vector<string> tokens;
-		//string_split(tokens, attr.value());
-
 		array<int> value;
-		//value.resize(tokens.size());
-		//for (size_t i = 0; i < value.size(); i++) {
-		//  value[i] = (int)atoi(tokens[i].c_str());
-		//}
-		read_array_from_binary_file(reader, value, attr.value());
+		if (is_file_open(reader)) {
+			read_array_from_binary_file(reader, value, attr.value());
+		}
+		else {
+			vector<string> tokens;
+			string_split(tokens, attr.value());
+
+			value.resize(tokens.size());
+			for (size_t i = 0; i < value.size(); i++) {
+				value[i] = (int)atoi(tokens[i].c_str());
+			}
+		}
 		node->set(socket, value);
 		break;
 	}
@@ -180,8 +226,8 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 	case SocketType::POINT:
 	case SocketType::NORMAL: {
 		array<float3> value;
-		xml_read_float_array<4>(value, attr);
-		if (value.size() == 1) {
+		xml_read_float_array<4>(reader, socket, value, attr);
+		if (xml_is_single_value(reader, socket, value)) {
 			node->set(socket, value[0]);
 		}
 		break;
@@ -195,7 +241,7 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 		if (is_file_open(reader))
 			read_array_from_binary_file(reader, value, attr.value());
 		else
-			xml_read_float_array<4>(value, attr);
+			xml_read_float_array<4>(reader, socket, value, attr);
 		array<packed_float3> packed_value;
 		packed_value.resize(value.size());
 		for (size_t i = 0; i < value.size(); i++) {
@@ -206,8 +252,8 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 	}
 	case SocketType::POINT2: {
 		array<float2> value;
-		xml_read_float_array<2>(value, attr);
-		if (value.size() == 1) {
+		xml_read_float_array<2>(reader, socket, value, attr);
+		if (xml_is_single_value(reader, socket, value)) {
 			node->set(socket, value[0]);
 		}
 		break;
@@ -217,7 +263,7 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 		if (is_file_open(reader))
 			read_array_from_binary_file(reader, value, attr.value());
 		else
-			xml_read_float_array<2>(value, attr);
+			xml_read_float_array<2>(reader, socket, value, attr);
 		node->set(socket, value);
 		break;
 	}
@@ -242,8 +288,8 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 		}
 
 		if (!res) {
-			fprintf(stderr,
-				"SocketType::ENUM: Unknown value \"%s\" for attribute \"%s\".\n",
+			xml_report(reader, false,
+				"SocketType::ENUM: Unknown value \"%s\" for attribute \"%s\".",
 				value.c_str(),
 				socket.ui_name.c_str());
 		}
@@ -263,8 +309,8 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 	}
 	case SocketType::TRANSFORM: {
 		array<Transform> value;
-		xml_read_float_array<12>(value, attr);
-		if (value.size() == 1) {
+		xml_read_float_array<12>(reader, socket, value, attr);
+		if (xml_is_single_value(reader, socket, value)) {
 			node->set(socket, value[0]);
 		}
 		break;
@@ -274,7 +320,7 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 		if (is_file_open(reader))
 			read_array_from_binary_file(reader, value, attr.value());
 		else
-			xml_read_float_array<12>(value, attr);
+			xml_read_float_array<12>(reader, socket, value, attr);
 		node->set(socket, value);
 		break;
 	}
@@ -312,8 +358,8 @@ bool xml_read_node_socket(XMLReader& reader, Node* node, const xml_node xml_root
 		bool null_values = false;
 		for (size_t i = 0; i < value.size(); i++) {
 			if (value[i] == NULL) {
-				fprintf(stderr,
-					"SocketType::NODE_ARRAY: Node \"%s\" was not found in attribute \"%s\".\n",
+				xml_report(reader, false,
+					"SocketType::NODE_ARRAY: Node \"%s\" was not found in attribute \"%s\".",
 					tokens[i].c_str(),
 					socket.ui_name.c_str());
 
@@ -354,6 +400,14 @@ void xml_read_node(XMLReader& reader, Node* node, const xml_node xml_root)
 		xml_attribute attr_name_ui = xml_node_socket.attribute("ui_name");	
 		xml_attribute attr = xml_node_socket.attribute("value");
 
+		if (!attr_name && !attr_name_ui) {
+			xml_report(reader, false,
+				"Socket without a name in \"%s\" (%s).",
+				node->name.c_str(),
+				node->type->name.c_str());
+			continue;
+		}
+
 		for(const SocketType & socket: node->type->inputs) {
 			socket_found |= xml_read_node_socket(reader, node, xml_root, socket, attr_name, attr_name_ui, attr);
 
@@ -371,10 +425,13 @@ void xml_read_node(XMLReader& reader, Node* node, const xml_node xml_root)
 		}
 
 		if (!socket_found) {
-			fprintf(stderr,
-				"Unknown attribute %s in \"%s\".\n",
-				(attr) ? attr.value() : "empty",
-				node->name.c_str());
+			const char* socket_name = (attr_name) ? attr_name.value() : attr_name_ui.value();
+			xml_report(reader, false,
+				(attr) ? "Unknown socket \"%s\" in \"%s\" (%s)." :
+				         "Socket \"%s\" in \"%s\" (%s) has no value.",
+				socket_name,
+				node->name.c_str(),
+				node->type->name.c_str());
 		}
 	}
 
