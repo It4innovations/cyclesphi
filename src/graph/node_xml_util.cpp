@@ -430,6 +430,18 @@ const char* typedesc_to_cstr(const OIIO::TypeDesc& t)
 
 OIIO::TypeDesc str_to_typedesc(OIIO::string_view s)
 {
+  /* The attribute types of Cycles, by the names typedesc_to_cstr() gives them. OpenImageIO
+   * does not parse all of its own names back: a 4 component color is written as "color4" and
+   * read as something else, which left vertex colors unusable by the shaders. */
+  static const OIIO::TypeDesc known_types[] = {
+      TypeRGBA, TypeFloat4, TypeColor, TypePoint, TypeVector, TypeNormal, TypeFloat2, TypeFloat,
+      TypeMatrix};
+  for (const OIIO::TypeDesc &type : known_types) {
+    if (s == type.c_str()) {
+      return type;
+    }
+  }
+
   // If parsing fails, TypeDesc will become UNKNOWN (per comment in the header).
   return OIIO::TypeDesc(s);
 }

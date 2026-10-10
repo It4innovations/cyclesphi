@@ -62,8 +62,16 @@
 #define READ_ATTR_ENUM(name, type) \
   const xml_attribute attr_##name = node_attribute.attribute(#name); \
   type name = (type)0; \
-  if (attr_##name) \
-    str_to_enum(attr_##name.value(), name);
+  if (attr_##name) { \
+    /* Older files store the number of the enum, newer ones its name. */ \
+    const char *value_##name = attr_##name.value(); \
+    if (value_##name[0] >= '0' && value_##name[0] <= '9') { \
+      name = (type)atoi(value_##name); \
+    } \
+    else { \
+      str_to_enum(value_##name, name); \
+    } \
+  }
 
 #define READ_ATTR_ULL(name, type) \
   const xml_attribute attr_##name = node_attribute.attribute(#name); \
@@ -706,6 +714,12 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
     attr->std = std;
     attr->flags = flags;
 
+    /* Positions define the element count of the geometry, so they can not be sized from it. */
+    READ_ATTR_ULL(size, size_t);
+    if (size > 0 && attr->size == 0 && !(element & ATTR_ELEMENT_VOXEL)) {
+      attr->resize(size);
+    }
+
     // Attribute* attr = nullptr;
 
     // AttributeStandard std_volume = ATTR_STD_NONE;
@@ -1229,6 +1243,10 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
           /* All motion steps in one buffer, the center step first. */
           vector<char> buffer;
           read_vector_from_binary_file(state, buffer, filename.c_str());
+          if (attr->size == 0 && std == ATTR_STD_POSITION) {
+            /* No size stored in the file, assume a single motion step. */
+            attr->resize(buffer.size() / attr->data_sizeof());
+          }
           const size_t step_bytes = size_t(attr->size) * attr->data_sizeof();
           if (step_bytes > 0 && buffer.size() >= step_bytes) {
             memcpy(attr->data_for_write(), buffer.data(), step_bytes);
@@ -1242,6 +1260,18 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
               }
             }
           }
+          else if (step_bytes != buffer.size()) {
+            /* The data is not copied: say so instead of rendering zeros. */
+            fprintf(stderr,
+                    "Attribute \"%s\" of \"%s\": %zu bytes in the file, %zu expected "
+                    "(%zu elements, the file says %zu), not read.\n",
+                    name.c_str(),
+                    xml_node_geom.attribute("ui_name").value(),
+                    buffer.size(),
+                    step_bytes,
+                    size_t(attr->size),
+                    size);
+          }
         }
         else {
           fprintf(stderr, "attr_volume_type is empty\n");
@@ -1251,6 +1281,17 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
       // geom->tag_modified();
       // geom->tag_update(state.scene, true);
     }
+  }
+
+  /* Geometry exported with the object transform already in its vertices: the object carries
+   * the matrix all the same (negative scale flag, object space coordinates), so mark it as
+   * applied or the scene update applies it again. Set last, replacing attributes resets it.
+   * Files without the attribute have no transform on such objects. */
+  const xml_attribute attr_applied = xml_node_geom.attribute("transform_applied");
+  if (attr_applied) {
+    geom->transform_applied = attr_applied.as_bool();
+    geom->transform_negative_scaled =
+        xml_node_geom.attribute("transform_negative_scaled").as_bool();
   }
 }
 
@@ -1327,8 +1368,14 @@ static void xml_read_object(XMLReadState &state, const xml_node xml_node_obj)
     object->attributes.push_back(param_value);
   }
 
-  if (object->get_geometry() == nullptr)
-    return;  // TODO
+  if (object->get_geometry() == nullptr) {
+    /* An object without geometry crashes the scene update (Scene::has_shadow_catcher). */
+    fprintf(stderr,
+            "Object \"%s\" has no geometry (its geometry node was not read), skipped.\n",
+            xml_node_obj.attribute("ui_name").value());
+    state.scene->delete_nodes(set<Object *>{object});
+    return;
+  }
 
   // scene->objects.push_back(object);
 }
@@ -1358,7 +1405,8 @@ static void xml_read_scene(XMLReadState &state, const xml_node scene_node)
     else if (string_iequals(node.name(), "background")) {
       xml_read_background(state, node);
     }
-    else if (string_iequals(node.name(), "pointlight") || 
+    else if (string_iequals(node.name(), "pointlight") ||
+             string_iequals(node.name(), "spotlight") ||
              string_iequals(node.name(), "arealight") ||
              string_iequals(node.name(), "sunlight") ||
              string_iequals(node.name(), "backgroundlight") ||

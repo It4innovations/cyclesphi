@@ -4,8 +4,16 @@
 
 #pragma once
 
-#include "kernel/device/cpu/compat.h"
-#include "kernel/device/cpu/globals.h"
+#ifdef __KERNEL_GPU__
+/* Software image sampling inside GPU kernels (WITH_GPU_CPUIMAGE), for devices
+ * without texture units. */
+#  include "kernel/globals.h"
+#  undef ccl_always_inline
+#  define ccl_always_inline ccl_device_forceinline
+#else
+#  include "kernel/device/cpu/compat.h"
+#  include "kernel/device/cpu/globals.h"
+#endif
 #include "kernel/util/image_2d.h"
 
 #include "util/defines.h"
@@ -395,7 +403,7 @@ ccl_device float4 kernel_image_interp(KernelGlobals kg,
     case IMAGE_DATA_TYPE_FLOAT4:
       return ImageInterpolator<float4>::interp(*info, xy.x, xy.y);
     default:
-      assert(0);
+      kernel_assert(0);
       return IMAGE_MISSING_RGBA;
   }
 }

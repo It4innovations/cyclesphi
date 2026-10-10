@@ -65,6 +65,14 @@ if(WITH_CYCLES_HIP_BINARIES AND WITH_CYCLES_DEVICE_HIP)
       set(hip_opt_flags "")
     endif()
 
+    # -ffast-math miscompiles volume scattering for the MI200 series (gfx90a) with
+    # ROCm 6.3.4: light scattered in volumes comes out darker than on the CPU.
+    if(${arch} STREQUAL "gfx90a")
+      set(hip_math_flags "")
+    else()
+      set(hip_math_flags "-ffast-math")
+    endif()
+
     set(hip_flags
       ${hip_flags}
       --offload-arch=${arch}
@@ -78,7 +86,7 @@ if(WITH_CYCLES_HIP_BINARIES AND WITH_CYCLES_DEVICE_HIP)
       -I ${CMAKE_CURRENT_SOURCE_DIR}/../../..
       -Wno-parentheses-equality
       -Wno-unused-value
-      -ffast-math
+      ${hip_math_flags}
       -std=c++17
       ${hip_opt_flags}
       -o ${CMAKE_CURRENT_BINARY_DIR}/${hip_file})

@@ -113,6 +113,14 @@ static void scene_init()
     xml_read_file(options.scene, options.filepath.c_str());
   }
 
+  /* The viewplane and resolution as read from the file. */
+  Camera *cam = options.scene->camera;
+  const int file_width = cam->get_full_width();
+  const int file_height = cam->get_full_height();
+  const bool file_has_viewplane = file_width > 0 && file_height > 0 &&
+                                  cam->get_viewplane_right() > cam->get_viewplane_left() &&
+                                  cam->get_viewplane_top() > cam->get_viewplane_bottom();
+
   /* Camera width/height override? */
   if (!(options.width == 0 || options.height == 0)) {
     options.scene->camera->set_full_width(options.width);
@@ -123,8 +131,15 @@ static void scene_init()
     options.height = options.scene->camera->get_full_height();
   }
 
-  /* Calculate Viewplane */
-  options.scene->camera->compute_auto_viewplane();
+  /* Calculate Viewplane. A viewplane from the file is kept when the file is rendered at its
+   * own aspect ratio: it carries the lens shift and sensor fit of the application that wrote
+   * it, which the automatic one (symmetric, fitted to the longer side) would drop. */
+  const bool same_aspect = file_has_viewplane &&
+                           int64_t(file_width) * options.height ==
+                               int64_t(file_height) * options.width;
+  if (!same_aspect) {
+    options.scene->camera->compute_auto_viewplane();
+  }
 }
 
 static void session_init()
@@ -167,13 +182,18 @@ static void session_init()
 
 static void session_exit()
 {
+  double total_time = 0.0;
+  double render_time = 0.0;
+
   if (options.session) {
+    options.session->progress.get_time(total_time, render_time);
     options.session.reset();
   }
 
   if (options.session_params.background && !options.quiet) {
     session_print("Finished Rendering.");
     printf("\n");
+    printf("Total time: %.3f s, render time: %.3f s\n", total_time, render_time);
   }
 }
 
@@ -387,6 +407,7 @@ static void options_parse(const int argc, const char **argv)
   /* device names */
   string device_names;
   string devicename = "CPU";
+  int num_devices = 1;
   bool list = false;
 
   /* List devices for which support is compiled in. */
@@ -414,6 +435,9 @@ static void options_parse(const int argc, const char **argv)
   ap.arg("--device %s:DEVICE").help("Devices to use: " + device_names).action([&](auto argv) {
     parse_string(argv, &devicename);
   });
+  ap.arg("--num-devices %d:NUM_DEVICES")
+      .help("Number of devices of the given type to render with, 0 for all (default 1)")
+      .action([&](auto argv) { parse_int(argv, &num_devices); });
 #ifdef WITH_OSL
   ap.arg("--shadingsys %s:SHADINGSYSTEM")
       .help("Shading system to use: svm, osl")
@@ -503,7 +527,11 @@ static void options_parse(const int argc, const char **argv)
 
   bool device_available = false;
   if (!devices.empty()) {
-    options.session_params.device = devices.front();
+    if (num_devices > 0 && size_t(num_devices) < devices.size()) {
+      devices.resize(num_devices);
+    }
+    options.session_params.device = Device::get_multi_device(
+        devices, options.session_params.threads, options.session_params.background);
     device_available = true;
   }
 
