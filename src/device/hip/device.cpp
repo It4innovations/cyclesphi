@@ -183,8 +183,13 @@ void device_hip_info(vector<DeviceInfo> &devices)
     info.has_nanovdb = true;
 
     info.has_gpu_queue = true;
-    /* Check if the device has P2P access to any other device in the system. */
-    for (int peer_num = 0; peer_num < count && !info.has_peer_memory; peer_num++) {
+    /* Check if the device has P2P access to any other device in the system.
+     * Not on the MI200 series (gfx90a): ROCm reports peer access as supported, but kernels
+     * fault when reading memory owned by another device, so every device keeps its own copy. */
+    const bool allow_peer_memory = hipDeviceArch(num) != "gfx90a";
+    for (int peer_num = 0; allow_peer_memory && peer_num < count && !info.has_peer_memory;
+         peer_num++)
+    {
       if (num != peer_num) {
         if (hipSupportsDevice(peer_num)) {
           int can_access = 0;

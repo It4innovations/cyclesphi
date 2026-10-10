@@ -823,6 +823,9 @@ void scene_write_xml_geom(XMLWriteState& state, xml_node node)
 				//uint flags;
 				ADD_ATTR(flags);
 
+				/* Element count: positions define it for the geometry, so the reader needs it. */
+				ADD_ATTR(size);
+
 				//vector<char> buffer;
 				xml_attribute attr_buffer = node_attribute.append_attribute("buffer");
 

@@ -226,6 +226,11 @@ ccl_device_forceinline void film_write_denoising_features_surface_volume(
     const ccl_private ShaderData *sd,
     ccl_global float *ccl_restrict render_buffer)
 {
+  /* The denoising feature state is only allocated on GPUs when denoising passes are used. */
+  if (!(kernel_data.kernel_features & KERNEL_FEATURE_DENOISING)) {
+    return;
+  }
+
   ccl_global float *buffer = film_pass_pixel_render_buffer(kg, state, render_buffer);
 
   const bool follow_reflections = (kernel_data.film.denoising_pass_options_flag &
