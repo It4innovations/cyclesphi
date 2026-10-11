@@ -9,8 +9,11 @@
 #pragma once
 
 #include "util/defines.h"
+#include "util/math_base.h"
+#include "util/math_float3.h"
 #include "util/math_int3.h"
 #include "util/types_base.h"
+#include "util/types_float3.h"
 #include "util/types_int3.h"
 
 #ifndef __KERNEL_GPU__
@@ -31,6 +34,24 @@ const ccl_device ccl_global DstT *PtrAdd(const ccl_global SrcT *p, int64_t offse
 {
   return reinterpret_cast<const ccl_global DstT *>(reinterpret_cast<const ccl_global char *>(p) +
                                                    offset);
+}
+
+/* The value of an IEEE 754 double, given as its bits, rounded to float. For reading the
+ * doubles which a grid stores on devices without a double type (Metal). Values outside
+ * of the float range become zero or infinity. */
+ccl_device_inline float DoubleBitsAsFloat(const uint64_t bits)
+{
+  const uint32_t sign = uint32_t(bits >> 63) << 31;
+  const int exponent = int((bits >> 52) & 0x7ff) - 1023 + 127;
+  if (exponent <= 0) {
+    return __uint_as_float(sign);
+  }
+  if (exponent >= 255) {
+    return __uint_as_float(sign | 0x7f800000u);
+  }
+  const uint32_t mantissa = uint32_t((bits >> 29) & 0x7fffffu);
+  const uint32_t round = uint32_t((bits >> 28) & 1u);
+  return __uint_as_float((sign | (uint32_t(exponent) << 23) | mantissa) + round);
 }
 
 /* Coord */
@@ -76,6 +97,44 @@ template<typename TreeT> struct alignas(NANOVDB_DATA_ALIGNMENT) Grid {
   const ccl_device_inline_method ccl_global TreeT &tree() const ccl_global
   {
     return *reinterpret_cast<const ccl_global TreeT *>(this + 1);
+  }
+
+  /* The index <-> world transform of the grid, in single precision.
+   *
+   * `mMap` is a `nanovdb::Map`, which stores the transform twice: as floats
+   * (`float mMatF[9], mInvMatF[9], mVecF[3], mTaperF`, at the start) and as doubles after
+   * them. Only the float copy is readable on Metal, which has no doubles. These are the
+   * single precision counterparts of `worldToIndexF`, `indexToWorldF` and `voxelSize` of
+   * `nanovdb::Grid`, for kernel code which has to compile on every device. */
+  ccl_device_inline_method float mapF(const int i) const ccl_global
+  {
+    return reinterpret_cast<const ccl_global float *>(mMap)[i];
+  }
+
+  ccl_device_inline_method float3 worldToIndexF(const float3 P) const ccl_global
+  {
+    /* `Map::applyInverseMapF`: mInvMatF * (P - mVecF). */
+    const float3 p = P - make_float3(mapF(18), mapF(19), mapF(20));
+    return make_float3(p.x * mapF(9) + p.y * mapF(10) + p.z * mapF(11),
+                       p.x * mapF(12) + p.y * mapF(13) + p.z * mapF(14),
+                       p.x * mapF(15) + p.y * mapF(16) + p.z * mapF(17));
+  }
+
+  ccl_device_inline_method float3 indexToWorldF(const float3 P) const ccl_global
+  {
+    /* `Map::applyMapF`: mMatF * P + mVecF. */
+    return make_float3(P.x * mapF(0) + P.y * mapF(1) + P.z * mapF(2) + mapF(18),
+                       P.x * mapF(3) + P.y * mapF(4) + P.z * mapF(5) + mapF(19),
+                       P.x * mapF(6) + P.y * mapF(7) + P.z * mapF(8) + mapF(20));
+  }
+
+  ccl_device_inline_method float3 voxelSizeF() const ccl_global
+  {
+    /* `mVoxelSize` is `double[3]`. Read as bits and rounded to float. */
+    const ccl_global uint64_t *size = reinterpret_cast<const ccl_global uint64_t *>(mVoxelSize);
+    return make_float3(DoubleBitsAsFloat(size[0]),
+                       DoubleBitsAsFloat(size[1]),
+                       DoubleBitsAsFloat(size[2]));
   }
 };
 

@@ -4,10 +4,14 @@
 
 // clang-format off
 
-#  ifdef WITH_NANOVDB
-//#    include "kernel/util/nanovdb.h"
-#  include <nanovdb/NanoVDB.h>
-#  endif
+/* NanoVDB grids are read with the extract in `kernel/util/nanovdb.h`: the NanoVDB headers
+ * are not valid Metal Shading Language (no address space qualifiers, doubles). The volume
+ * formats of `kernel/util/image_3d.h` use it on Metal as well. Their headers are included
+ * here, before the kernel context class is opened. */
+#ifdef WITH_NANOVDB
+#  include "kernel/util/nanovdb.h"
+#endif
+#include "kernel/util/image_3d_derivates.h"
 
 /* Open the Metal kernel context class
  * Necessary to access resource bindings */
