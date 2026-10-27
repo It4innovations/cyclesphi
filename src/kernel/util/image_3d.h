@@ -920,70 +920,16 @@ ccl_device_forceinline float srnxr_mod1(const float value)
   return value - floorf(value);
 }
 
-#if defined(__KERNEL_CUDA__) || defined(__KERNEL_HIP__)
-#  define SRNXR_UNROLL _Pragma("unroll")
-#else
-#  define SRNXR_UNROLL
-#endif
-
-/* Network of one block with a compile time width, so the activations stay in registers.
- * Layers: sine [W, 3], (hidden_layer_count - 1) x sine [W, W], linear head [1, W]. */
-template<int W>
+/* Network of one block: sine [width, 3], (hidden_layer_count - 1) x sine [width, width],
+ * linear head [1, width]. */
 ccl_device_forceinline float srnxr_eval_block(const ccl_global float *weights,
                                               const ccl_global float *biases,
+                                              const uint32_t width,
                                               const uint32_t hidden_layer_count,
                                               const float w0,
                                               const float in0,
                                               const float in1,
                                               const float in2)
-{
-  float activation[W];
-
-  SRNXR_UNROLL
-  for (int o = 0; o < W; ++o) {
-    const ccl_global float *row = weights + o * 3;
-    activation[o] = srnxr_sin(w0 * (row[0] * in0 + row[1] * in1 + row[2] * in2 + biases[o]));
-  }
-  weights += W * 3;
-  biases += W;
-
-  for (uint32_t layer = 1; layer < hidden_layer_count; ++layer) {
-    float next[W];
-    SRNXR_UNROLL
-    for (int o = 0; o < W; ++o) {
-      const ccl_global float *row = weights + o * W;
-      float sum = biases[o];
-      SRNXR_UNROLL
-      for (int i = 0; i < W; ++i) {
-        sum += row[i] * activation[i];
-      }
-      next[o] = srnxr_sin(w0 * sum);
-    }
-    SRNXR_UNROLL
-    for (int o = 0; o < W; ++o) {
-      activation[o] = next[o];
-    }
-    weights += W * W;
-    biases += W;
-  }
-
-  float value = biases[0];
-  SRNXR_UNROLL
-  for (int i = 0; i < W; ++i) {
-    value += weights[i] * activation[i];
-  }
-  return value;
-}
-
-/* Same network for any width up to SRNXR_MAX_WIDTH. */
-ccl_device_inline float srnxr_eval_block_generic(const ccl_global float *weights,
-                                                 const ccl_global float *biases,
-                                                 const uint32_t width,
-                                                 const uint32_t hidden_layer_count,
-                                                 const float w0,
-                                                 const float in0,
-                                                 const float in1,
-                                                 const float in2)
 {
   float activation[SRNXR_MAX_WIDTH];
   float next[SRNXR_MAX_WIDTH];
@@ -1098,20 +1044,9 @@ ccl_device_noinline float kernel_image_interp_srnxr(const ccl_global KernelImage
     const float in1 = xi1 / overlap;
     const float in2 = xi2 / overlap;
 
-    // Block network, specialized for the common widths
-    float value;
-    if (width == 32) {
-      value = srnxr_eval_block<32>(
-          block_weights, block_biases, hidden_layer_count, w0, in0, in1, in2);
-    }
-    else if (width == 16) {
-      value = srnxr_eval_block<16>(
-          block_weights, block_biases, hidden_layer_count, w0, in0, in1, in2);
-    }
-    else {
-      value = srnxr_eval_block_generic(
-          block_weights, block_biases, width, hidden_layer_count, w0, in0, in1, in2);
-    }
+    // Block network
+    float value = srnxr_eval_block(
+        block_weights, block_biases, width, hidden_layer_count, w0, in0, in1, in2);
 
     // Per-block denormalization
     const ccl_global float *stats = block_stats + block * SRNXR_BLOCK_STATS_FIELDS;
