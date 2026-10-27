@@ -28,6 +28,7 @@
 
 #include "util/transform.h"
 #include "kernel/util/image_3d_derivates.h"
+#include "kernel/util/image_3d_srnxr.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -355,6 +356,45 @@ protected:
     //  }
     //  return (SerializableCUBData *)cub_data.data();
     //}
+};
+
+// Loader of the .srnxr (SIREN octree) format: the file is parsed and validated
+// on the host, the device blob (see image_3d_srnxr.h) holds the network
+// weights in FP32 and the kernel evaluates the density from them directly.
+class SRNXRImageLoader : public VDBImageLoader {
+public:
+    SRNXRImageLoader(vector<char> &g);
+    ~SRNXRImageLoader();
+
+    virtual bool load_metadata(ImageMetaData& metadata,
+                               const ImageLoaderParams& params,
+                               Progress& progress) override;
+
+    virtual bool load_pixels(const ImageMetaData& metadata, void* pixels) override;
+
+    virtual string name() const override;
+
+    virtual bool equals(const ImageLoader& other) const override;
+
+    virtual void cleanup() override;
+
+    virtual bool is_vdb_loader() const override;
+
+    virtual bool is_simple_mesh() const override;
+
+    virtual void get_bbox(int3& min_bbox, int3& max_bbox) override;
+
+    virtual float3 index_to_world(float3 in) override;
+
+protected:
+    // SRNXRDeviceHeader followed by the arrays, empty when the file is invalid
+    vector<char> device_data;
+
+    const SRNXRDeviceHeader* get_header() const {
+        return reinterpret_cast<const SRNXRDeviceHeader*>(device_data.data());
+    }
+
+    bool build_device_data(const vector<char>& file);
 };
 
 CCL_NAMESPACE_END

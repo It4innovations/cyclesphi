@@ -332,6 +332,7 @@ device_image *ImageCache::load_image_full(Device &device,
     case IMAGE_DATA_TYPE_RAW3D_FLOAT3:
     case IMAGE_DATA_TYPE_ZFP_FLOAT:
     case IMAGE_DATA_TYPE_CUB_FLOAT:
+    case IMAGE_DATA_TYPE_SRNXR_FLOAT:
     {
 #ifdef WITH_NANOVDB
       mem = &alloc_full(

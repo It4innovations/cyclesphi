@@ -56,6 +56,8 @@ static const char *name_from_type(ImageDataType type)
     return "zfp_float";
   case IMAGE_DATA_TYPE_CUB_FLOAT:
     return "cub_float";
+  case IMAGE_DATA_TYPE_SRNXR_FLOAT:
+    return "srnxr_float";
   case IMAGE_DATA_NUM_TYPES:
       assert(!"System enumerator type, should never be used");
       return "";
@@ -264,6 +266,7 @@ device_image::device_image(Device *device,
     case IMAGE_DATA_TYPE_RAW3D_FLOAT3:
     case IMAGE_DATA_TYPE_ZFP_FLOAT:
     case IMAGE_DATA_TYPE_CUB_FLOAT:
+    case IMAGE_DATA_TYPE_SRNXR_FLOAT:
       data_type = TYPE_UCHAR;
       data_elements = 1;
       break;

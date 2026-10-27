@@ -4,6 +4,7 @@
 
 #include "scene/image_vdb.h"
 
+#include "util/half.h"
 #include "util/image_metadata.h"
 #include "util/log.h"
 #include "util/nanovdb.h"
@@ -1674,6 +1675,476 @@ float3 CUBImageLoader::index_to_world(float3 in)
     float z = header->transform[8] * in.x + header->transform[9] * in.y + 
               header->transform[10] * in.z + header->transform[11];
     return make_float3(x, y, z);
+}
+
+///////////////////// SRNXRImageLoader
+// .srnxr file (little-endian):
+// Header (152 bytes, padded to 192)
+// Section table (64 bytes per section: name[32], dtype, element_count, byte_offset, byte_length, crc32)
+// Section data (each 64-byte aligned)
+namespace {
+
+const char srnxr_file_magic[8] = {'S', 'R', 'N', 'X', 'R', '\0', '\x01', '\0'};
+const uint32_t srnxr_file_version = 1;
+const uint32_t srnxr_endian_marker = 0x01020304u;
+const size_t srnxr_header_struct_size = 152;
+const size_t srnxr_header_crc_offset = srnxr_header_struct_size - 8;
+const size_t srnxr_file_crc_offset = srnxr_header_struct_size - 4;
+const size_t srnxr_section_entry_size = 64;
+
+enum SRNXRDType : uint32_t {
+    SRNXR_DTYPE_FLOAT32 = 1,
+    SRNXR_DTYPE_FLOAT16 = 2,
+    SRNXR_DTYPE_UINT32 = 3,
+};
+
+struct SRNXRSection {
+    string name;
+    uint32_t dtype;
+    uint64_t element_count;
+    uint64_t byte_offset;
+    uint64_t byte_length;
+};
+
+template<typename T> T srnxr_read(const char* data, const size_t offset)
+{
+    T value;
+    memcpy(&value, data + offset, sizeof(T));
+    return value;
+}
+
+// CRC-32 (zlib polynomial), as written by the exporter
+uint32_t srnxr_crc32_update(uint32_t crc, const uint8_t* data, const size_t size)
+{
+    static uint32_t table[256] = {0};
+    static bool table_init = false;
+    if (!table_init) {
+        for (uint32_t i = 0; i < 256; ++i) {
+            uint32_t c = i;
+            for (int bit = 0; bit < 8; ++bit) {
+                c = (c & 1u) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+            }
+            table[i] = c;
+        }
+        table_init = true;
+    }
+    for (size_t i = 0; i < size; ++i) {
+        crc = table[(crc ^ data[i]) & 0xFFu] ^ (crc >> 8);
+    }
+    return crc;
+}
+
+uint32_t srnxr_crc32(const char* data, const size_t size)
+{
+    return srnxr_crc32_update(0xFFFFFFFFu, (const uint8_t*)data, size) ^ 0xFFFFFFFFu;
+}
+
+const SRNXRSection* srnxr_find_section(const vector<SRNXRSection>& sections, const char* name)
+{
+    for (const SRNXRSection& section : sections) {
+        if (section.name == name) {
+            return &section;
+        }
+    }
+    printf("SRNXRImageLoader: Missing section %s\n", name);
+    return nullptr;
+}
+
+bool srnxr_read_floats(const vector<char>& file,
+                       const vector<SRNXRSection>& sections,
+                       const char* name,
+                       const uint64_t expected_count,
+                       vector<float>& result)
+{
+    const SRNXRSection* section = srnxr_find_section(sections, name);
+    if (!section) {
+        return false;
+    }
+    if (expected_count != 0 && section->element_count != expected_count) {
+        printf("SRNXRImageLoader: Section %s has %llu elements, expected %llu\n",
+               name, (unsigned long long)section->element_count, (unsigned long long)expected_count);
+        return false;
+    }
+
+    const char* base = file.data() + section->byte_offset;
+    result.resize(section->element_count);
+
+    if (section->dtype == SRNXR_DTYPE_FLOAT32 &&
+        section->byte_length == section->element_count * sizeof(float))
+    {
+        memcpy(result.data(), base, result.size() * sizeof(float));
+        return true;
+    }
+    if (section->dtype == SRNXR_DTYPE_FLOAT16 &&
+        section->byte_length == section->element_count * sizeof(uint16_t))
+    {
+        for (size_t i = 0; i < result.size(); ++i) {
+            result[i] = half_to_float(half(srnxr_read<uint16_t>(base, i * sizeof(uint16_t))));
+        }
+        return true;
+    }
+
+    printf("SRNXRImageLoader: Section %s is not a float section (dtype=%u)\n", name, section->dtype);
+    return false;
+}
+
+bool srnxr_read_uints(const vector<char>& file,
+                      const vector<SRNXRSection>& sections,
+                      const char* name,
+                      const uint64_t expected_count,
+                      vector<uint32_t>& result)
+{
+    const SRNXRSection* section = srnxr_find_section(sections, name);
+    if (!section) {
+        return false;
+    }
+    if (expected_count != 0 && section->element_count != expected_count) {
+        printf("SRNXRImageLoader: Section %s has %llu elements, expected %llu\n",
+               name, (unsigned long long)section->element_count, (unsigned long long)expected_count);
+        return false;
+    }
+    if (section->dtype != SRNXR_DTYPE_UINT32 ||
+        section->byte_length != section->element_count * sizeof(uint32_t))
+    {
+        printf("SRNXRImageLoader: Section %s is not a uint32 section (dtype=%u)\n", name, section->dtype);
+        return false;
+    }
+
+    result.resize(section->element_count);
+    memcpy(result.data(), file.data() + section->byte_offset, result.size() * sizeof(uint32_t));
+    return true;
+}
+
+template<typename T> uint64_t srnxr_append(vector<char>& blob, const vector<T>& values)
+{
+    const uint64_t offset = align_up(blob.size(), SRNXR_DEVICE_ALIGNMENT);
+    blob.resize(offset + values.size() * sizeof(T), 0);
+    if (!values.empty()) {
+        memcpy(blob.data() + offset, values.data(), values.size() * sizeof(T));
+    }
+    return offset;
+}
+
+}  // namespace
+
+SRNXRImageLoader::SRNXRImageLoader(vector<char>& g)
+    : VDBImageLoader("")
+{
+    if (!build_device_data(g)) {
+        device_data.clear();
+    }
+}
+
+SRNXRImageLoader::~SRNXRImageLoader()
+{
+}
+
+bool SRNXRImageLoader::build_device_data(const vector<char>& file)
+{
+    const char* data = file.data();
+
+    // Header
+    if (file.size() < srnxr_header_struct_size) {
+        printf("SRNXRImageLoader: Invalid file size: %zu\n", file.size());
+        return false;
+    }
+    if (memcmp(data, srnxr_file_magic, sizeof(srnxr_file_magic)) != 0) {
+        printf("SRNXRImageLoader: Invalid magic\n");
+        return false;
+    }
+
+    const uint32_t format_version = srnxr_read<uint32_t>(data, 12);
+    const uint32_t endian_marker = srnxr_read<uint32_t>(data, 16);
+    if (endian_marker != srnxr_endian_marker) {
+        printf("SRNXRImageLoader: Endian mismatch: 0x%08X\n", endian_marker);
+        return false;
+    }
+    if (format_version != srnxr_file_version) {
+        printf("SRNXRImageLoader: Unsupported format version: %u\n", format_version);
+        return false;
+    }
+
+    const uint32_t header_crc = srnxr_read<uint32_t>(data, srnxr_header_crc_offset);
+    if (srnxr_crc32(data, srnxr_header_crc_offset) != header_crc) {
+        printf("SRNXRImageLoader: Header checksum mismatch\n");
+        return false;
+    }
+
+    const uint64_t file_size = srnxr_read<uint64_t>(data, 136);
+    if (file_size != file.size()) {
+        printf("SRNXRImageLoader: Truncated file: header declares %llu bytes, found %zu\n",
+               (unsigned long long)file_size, file.size());
+        return false;
+    }
+
+    // The file checksum is computed with its own field zeroed
+    {
+        const uint8_t zero[4] = {0, 0, 0, 0};
+        uint32_t crc = srnxr_crc32_update(0xFFFFFFFFu, (const uint8_t*)data, srnxr_file_crc_offset);
+        crc = srnxr_crc32_update(crc, zero, sizeof(zero));
+        crc = srnxr_crc32_update(crc,
+                                 (const uint8_t*)data + srnxr_header_struct_size,
+                                 file.size() - srnxr_header_struct_size);
+        if ((crc ^ 0xFFFFFFFFu) != srnxr_read<uint32_t>(data, srnxr_file_crc_offset)) {
+            printf("SRNXRImageLoader: File checksum mismatch\n");
+            return false;
+        }
+    }
+
+    SRNXRDeviceHeader header;
+    memset(&header, 0, sizeof(header));
+    header.magic = SRNXR_DEVICE_MAGIC;
+    header.version = SRNXR_DEVICE_VERSION;
+    header.block_count = srnxr_read<uint32_t>(data, 20);
+    header.hidden_layer_count = srnxr_read<uint32_t>(data, 24);
+    header.max_width = srnxr_read<uint32_t>(data, 28);
+    const uint32_t input_dim = srnxr_read<uint32_t>(data, 32);
+    const uint32_t output_dim = srnxr_read<uint32_t>(data, 36);
+    header.grid_dim_x = srnxr_read<uint32_t>(data, 40);
+    header.grid_dim_y = srnxr_read<uint32_t>(data, 44);
+    header.grid_dim_z = srnxr_read<uint32_t>(data, 48);
+    header.domain_min_x = srnxr_read<float>(data, 52);
+    header.domain_min_y = srnxr_read<float>(data, 56);
+    header.domain_min_z = srnxr_read<float>(data, 60);
+    header.domain_max_x = srnxr_read<float>(data, 64);
+    header.domain_max_y = srnxr_read<float>(data, 68);
+    header.domain_max_z = srnxr_read<float>(data, 72);
+    header.w0 = srnxr_read<float>(data, 76);
+    header.overlap = srnxr_read<float>(data, 80);
+    header.blend_sigma = srnxr_read<float>(data, 84);
+    header.weight_sum_epsilon = srnxr_read<float>(data, 88);
+    header.shift_x = srnxr_read<float>(data, 92);
+    header.shift_y = srnxr_read<float>(data, 96);
+    header.shift_z = srnxr_read<float>(data, 100);
+    header.value_mean = srnxr_read<float>(data, 104);
+    header.value_std = srnxr_read<float>(data, 108);
+    const uint64_t section_table_offset = srnxr_read<uint64_t>(data, 120);
+    const uint64_t section_count = srnxr_read<uint64_t>(data, 128);
+
+    if (input_dim != 3 || output_dim != 1) {
+        printf("SRNXRImageLoader: Unsupported network shape: input_dim=%u, output_dim=%u\n",
+               input_dim, output_dim);
+        return false;
+    }
+    if (header.block_count == 0 || header.hidden_layer_count == 0 || header.max_width == 0 ||
+        header.max_width > SRNXR_MAX_WIDTH)
+    {
+        printf("SRNXRImageLoader: Unsupported network: blocks=%u, layers=%u, width=%u (max %d)\n",
+               header.block_count, header.hidden_layer_count, header.max_width, SRNXR_MAX_WIDTH);
+        return false;
+    }
+    if (header.grid_dim_x == 0 || header.grid_dim_y == 0 || header.grid_dim_z == 0 ||
+        !(header.domain_max_x > header.domain_min_x) || !(header.domain_max_y > header.domain_min_y) ||
+        !(header.domain_max_z > header.domain_min_z) || !(header.overlap > 0.0f) ||
+        !(header.blend_sigma > 0.0f))
+    {
+        printf("SRNXRImageLoader: Invalid grid or domain\n");
+        return false;
+    }
+
+    // Section table
+    vector<SRNXRSection> sections;
+    for (uint64_t i = 0; i < section_count; ++i) {
+        const uint64_t entry = section_table_offset + i * srnxr_section_entry_size;
+        if (entry + srnxr_section_entry_size > file.size()) {
+            printf("SRNXRImageLoader: Incomplete section table\n");
+            return false;
+        }
+
+        SRNXRSection section;
+        section.name = string(data + entry, strnlen(data + entry, 32));
+        section.dtype = srnxr_read<uint32_t>(data, entry + 32);
+        section.element_count = srnxr_read<uint64_t>(data, entry + 36);
+        section.byte_offset = srnxr_read<uint64_t>(data, entry + 44);
+        section.byte_length = srnxr_read<uint64_t>(data, entry + 52);
+        const uint32_t section_crc = srnxr_read<uint32_t>(data, entry + 60);
+
+        if (section.byte_offset > file.size() || section.byte_length > file.size() - section.byte_offset) {
+            printf("SRNXRImageLoader: Section %s extends past the end of the file\n", section.name.c_str());
+            return false;
+        }
+        if (srnxr_crc32(data + section.byte_offset, section.byte_length) != section_crc) {
+            printf("SRNXRImageLoader: Section %s checksum mismatch\n", section.name.c_str());
+            return false;
+        }
+        sections.push_back(section);
+    }
+
+    const uint64_t block_count = header.block_count;
+    const uint64_t cell_count = uint64_t(header.grid_dim_x) * header.grid_dim_y * header.grid_dim_z;
+
+    vector<float> block_centers, block_scales, block_stats, siren_weights, siren_biases;
+    vector<uint32_t> block_layout, grid_offsets, grid_indices;
+
+    if (!srnxr_read_floats(file, sections, "BLOCK_CENTERS", block_count * 3, block_centers) ||
+        !srnxr_read_floats(file, sections, "BLOCK_SCALES", block_count * 3, block_scales) ||
+        !srnxr_read_floats(file, sections, "BLOCK_STATS", block_count * SRNXR_BLOCK_STATS_FIELDS, block_stats) ||
+        !srnxr_read_uints(file, sections, "BLOCK_LAYOUT", block_count * SRNXR_BLOCK_LAYOUT_FIELDS, block_layout) ||
+        !srnxr_read_floats(file, sections, "SIREN_WEIGHTS", 0, siren_weights) ||
+        !srnxr_read_floats(file, sections, "SIREN_BIASES", 0, siren_biases) ||
+        !srnxr_read_uints(file, sections, "GRID_OFFSETS", cell_count + 1, grid_offsets) ||
+        !srnxr_read_uints(file, sections, "GRID_BLOCK_INDICES", 0, grid_indices))
+    {
+        return false;
+    }
+
+    // The kernel trusts the layout, check every block's weights and biases are in range
+    for (uint64_t block = 0; block < block_count; ++block) {
+        const uint64_t width = block_layout[block * SRNXR_BLOCK_LAYOUT_FIELDS + 0];
+        const uint64_t weight_offset = block_layout[block * SRNXR_BLOCK_LAYOUT_FIELDS + 2];
+        const uint64_t bias_offset = block_layout[block * SRNXR_BLOCK_LAYOUT_FIELDS + 3];
+        const uint64_t weight_count = width * 3 + (header.hidden_layer_count - 1) * width * width + width;
+        const uint64_t bias_count = header.hidden_layer_count * width + 1;
+
+        if (width == 0 || width > header.max_width ||
+            weight_offset + weight_count > siren_weights.size() ||
+            bias_offset + bias_count > siren_biases.size())
+        {
+            printf("SRNXRImageLoader: Block %llu has an invalid layout\n", (unsigned long long)block);
+            return false;
+        }
+    }
+
+    // CSR grid: monotonic offsets ending at the index count, indices referencing blocks
+    if (grid_offsets[0] != 0 || grid_offsets[cell_count] != grid_indices.size()) {
+        printf("SRNXRImageLoader: Invalid acceleration grid offsets\n");
+        return false;
+    }
+    for (uint64_t cell = 0; cell < cell_count; ++cell) {
+        if (grid_offsets[cell] > grid_offsets[cell + 1]) {
+            printf("SRNXRImageLoader: Invalid acceleration grid offsets\n");
+            return false;
+        }
+    }
+    for (const uint32_t block : grid_indices) {
+        if (block >= block_count) {
+            printf("SRNXRImageLoader: Invalid acceleration grid block index %u\n", block);
+            return false;
+        }
+    }
+
+    // Device blob
+    vector<char> blob(align_up(sizeof(SRNXRDeviceHeader), SRNXR_DEVICE_ALIGNMENT), 0);
+    header.block_centers_offset = srnxr_append(blob, block_centers);
+    header.block_scales_offset = srnxr_append(blob, block_scales);
+    header.block_stats_offset = srnxr_append(blob, block_stats);
+    header.block_layout_offset = srnxr_append(blob, block_layout);
+    header.siren_weights_offset = srnxr_append(blob, siren_weights);
+    header.siren_biases_offset = srnxr_append(blob, siren_biases);
+    header.grid_offsets_offset = srnxr_append(blob, grid_offsets);
+    header.grid_indices_offset = srnxr_append(blob, grid_indices);
+    blob.resize(align_up(blob.size(), SRNXR_DEVICE_ALIGNMENT), 0);
+    header.total_size = blob.size();
+    memcpy(blob.data(), &header, sizeof(header));
+
+    device_data = std::move(blob);
+
+    printf("SRNXRImageLoader: Loaded SIREN octree\n");
+    printf("  Blocks: %u, layers: %u, max width: %u, w0: %f\n",
+           header.block_count, header.hidden_layer_count, header.max_width, header.w0);
+    printf("  Grid: %u x %u x %u, candidates: %zu\n",
+           header.grid_dim_x, header.grid_dim_y, header.grid_dim_z, grid_indices.size());
+    printf("  Domain: [%f %f %f] - [%f %f %f]\n",
+           header.domain_min_x, header.domain_min_y, header.domain_min_z,
+           header.domain_max_x, header.domain_max_y, header.domain_max_z);
+    printf("  File size: %zu bytes, device size: %zu bytes\n", file.size(), device_data.size());
+
+    return true;
+}
+
+bool SRNXRImageLoader::load_metadata(ImageMetaData& metadata,
+                                     const ImageLoaderParams& /*params*/,
+                                     Progress& /*progress*/)
+{
+    if (device_data.empty()) {
+        return false;
+    }
+
+    const SRNXRDeviceHeader* header = get_header();
+
+    metadata.channels = 1;
+    metadata.width = header->grid_dim_x;
+    metadata.height = header->grid_dim_y;
+    metadata.nanovdb_byte_size = device_data.size();
+    metadata.type = IMAGE_DATA_TYPE_SRNXR_FLOAT;
+
+    // The kernel evaluates the network in object space, the domain bounds are in the blob
+    metadata.transform_3d = transform_identity();
+    metadata.use_transform_3d = false;
+
+    return true;
+}
+
+bool SRNXRImageLoader::load_pixels(const ImageMetaData&, void* pixels)
+{
+    if (device_data.size() > 0) {
+        memcpy(pixels, device_data.data(), device_data.size());
+    }
+
+    return true;
+}
+
+string SRNXRImageLoader::name() const
+{
+    if (!device_data.empty()) {
+        return string_printf("SRNXR_%uB_%ux%ux%u",
+                             get_header()->block_count,
+                             get_header()->grid_dim_x,
+                             get_header()->grid_dim_y,
+                             get_header()->grid_dim_z);
+    }
+    return "SRNXR";
+}
+
+bool SRNXRImageLoader::equals(const ImageLoader& other) const
+{
+    const SRNXRImageLoader& other_loader = (const SRNXRImageLoader&)other;
+
+    if (device_data.size() == 0 || device_data.size() != other_loader.device_data.size()) {
+        return false;
+    }
+
+    return !memcmp(device_data.data(), other_loader.device_data.data(), device_data.size());
+}
+
+void SRNXRImageLoader::cleanup()
+{
+}
+
+bool SRNXRImageLoader::is_vdb_loader() const
+{
+    return true;
+}
+
+bool SRNXRImageLoader::is_simple_mesh() const
+{
+    return true;
+}
+
+// The index space of the volume mesh is the acceleration grid, the mesh is the domain box
+void SRNXRImageLoader::get_bbox(int3& min_bbox, int3& max_bbox)
+{
+    if (device_data.empty()) {
+        min_bbox = max_bbox = make_int3(0, 0, 0);
+        return;
+    }
+
+    const SRNXRDeviceHeader* header = get_header();
+    min_bbox = make_int3(0, 0, 0);
+    max_bbox = make_int3(header->grid_dim_x, header->grid_dim_y, header->grid_dim_z);
+}
+
+float3 SRNXRImageLoader::index_to_world(float3 in)
+{
+    if (device_data.empty()) {
+        return make_float3(0.0f, 0.0f, 0.0f);
+    }
+
+    const SRNXRDeviceHeader* header = get_header();
+    return make_float3(
+        header->domain_min_x + in.x * (header->domain_max_x - header->domain_min_x) / header->grid_dim_x,
+        header->domain_min_y + in.y * (header->domain_max_y - header->domain_min_y) / header->grid_dim_y,
+        header->domain_min_z + in.z * (header->domain_max_z - header->domain_min_z) / header->grid_dim_z);
 }
 
 CCL_NAMESPACE_END

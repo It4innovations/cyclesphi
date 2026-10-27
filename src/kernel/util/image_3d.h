@@ -9,6 +9,7 @@
 
 #include "util/types_image.h"
 #include "kernel/util/image_3d_derivates.h"
+#include "kernel/util/image_3d_srnxr.h"
 
 #if !defined(__KERNEL_METAL__) && !defined(__KERNEL_ONEAPI__)
 #  ifdef WITH_NANOVDB
@@ -889,6 +890,167 @@ ccl_device_noinline OutT kernel_tex_image_interp_nanovdb_derivates_vec4(
 #endif /* WITH_NANOVDB */
 
 // ============================================================================
+// SRNXR (SIREN octree) Format
+// ============================================================================
+// The density is evaluated at P directly from the network weights in device
+// memory, there is no voxel data:
+//   q  = shift(P)                          off-grid modulo shift of the domain
+//   xi = (q - center) / scale              for every candidate block of P's grid
+//                                          cell, the block contains P when
+//                                          max|xi| <= overlap
+//   y  = MLP(xi / overlap) * sigma + mu    sine layers, linear head, block denorm
+//   w  = exp(-0.5 |xi|^2 / blend_sigma^2)  blending weight
+//   density = clamp(sum(w y) / sum(w) * value_std + value_mean, 0, 1)
+// The density is 0 where sum(w) is below weight_sum_epsilon or P is outside
+// the domain.
+// ============================================================================
+
+ccl_device_forceinline float srnxr_sin(const float x)
+{
+#if defined(__KERNEL_CUDA__) || defined(__KERNEL_HIP__)
+  /* Hardware intrinsic, its error is far below the FP16 quantization of the weights. */
+  return __sinf(x);
+#else
+  return sinf(x);
+#endif
+}
+
+ccl_device_forceinline float srnxr_mod1(const float value)
+{
+  return value - floorf(value);
+}
+
+ccl_device_noinline float kernel_image_interp_srnxr(const ccl_global KernelImageInfo &info,
+                                                    const float3 P)
+{
+  const ccl_global uint8_t *base = (const ccl_global uint8_t *)info.data;
+  const ccl_global SRNXRDeviceHeader *hdr =
+      reinterpret_cast<const ccl_global SRNXRDeviceHeader *>(base);
+
+  const float p[3] = {P.x, P.y, P.z};
+  const float domain_min[3] = {hdr->domain_min_x, hdr->domain_min_y, hdr->domain_min_z};
+  const float domain_max[3] = {hdr->domain_max_x, hdr->domain_max_y, hdr->domain_max_z};
+  const float shift[3] = {hdr->shift_x, hdr->shift_y, hdr->shift_z};
+  const int grid_dim[3] = {(int)hdr->grid_dim_x, (int)hdr->grid_dim_y, (int)hdr->grid_dim_z};
+
+  // Shifted position (blocks live in shifted coordinates) and world-space grid cell
+  float shifted[3];
+  int cell[3];
+  for (int axis = 0; axis < 3; ++axis) {
+    if (!(p[axis] >= domain_min[axis] && p[axis] <= domain_max[axis])) {
+      return 0.0f;
+    }
+    const float size = domain_max[axis] - domain_min[axis];
+    const float normalized = (p[axis] - domain_min[axis]) / size;
+    shifted[axis] = srnxr_mod1(normalized + shift[axis]) * size + domain_min[axis];
+
+    const float cell_size = size / (float)grid_dim[axis];
+    cell[axis] = clamp((int)floorf((p[axis] - domain_min[axis]) / cell_size), 0, grid_dim[axis] - 1);
+  }
+
+  const ccl_global float *block_centers = reinterpret_cast<const ccl_global float *>(
+      base + hdr->block_centers_offset);
+  const ccl_global float *block_scales = reinterpret_cast<const ccl_global float *>(
+      base + hdr->block_scales_offset);
+  const ccl_global float *block_stats = reinterpret_cast<const ccl_global float *>(
+      base + hdr->block_stats_offset);
+  const ccl_global uint32_t *block_layout = reinterpret_cast<const ccl_global uint32_t *>(
+      base + hdr->block_layout_offset);
+  const ccl_global float *weights = reinterpret_cast<const ccl_global float *>(
+      base + hdr->siren_weights_offset);
+  const ccl_global float *biases = reinterpret_cast<const ccl_global float *>(
+      base + hdr->siren_biases_offset);
+  const ccl_global uint32_t *grid_offsets = reinterpret_cast<const ccl_global uint32_t *>(
+      base + hdr->grid_offsets_offset);
+  const ccl_global uint32_t *grid_indices = reinterpret_cast<const ccl_global uint32_t *>(
+      base + hdr->grid_indices_offset);
+
+  // Grid cells are stored x-major
+  const uint32_t cell_index = ((uint32_t)cell[0] * (uint32_t)grid_dim[1] + (uint32_t)cell[1]) *
+                                  (uint32_t)grid_dim[2] +
+                              (uint32_t)cell[2];
+  const uint32_t candidate_begin = grid_offsets[cell_index];
+  const uint32_t candidate_end = grid_offsets[cell_index + 1];
+
+  const float w0 = hdr->w0;
+  const float overlap = hdr->overlap;
+  const uint32_t hidden_layer_count = hdr->hidden_layer_count;
+  const float inv_two_sigma_sq = 0.5f / (hdr->blend_sigma * hdr->blend_sigma);
+
+  float numerator = 0.0f;
+  float weight_sum = 0.0f;
+  float activation[SRNXR_MAX_WIDTH];
+  float next[SRNXR_MAX_WIDTH];
+
+  for (uint32_t candidate = candidate_begin; candidate < candidate_end; ++candidate) {
+    const uint32_t block = grid_indices[candidate];
+    const ccl_global float *center = block_centers + block * 3;
+    const ccl_global float *scale = block_scales + block * 3;
+    const float xi0 = (shifted[0] - center[0]) / scale[0];
+    const float xi1 = (shifted[1] - center[1]) / scale[1];
+    const float xi2 = (shifted[2] - center[2]) / scale[2];
+    if (fabsf(xi0) > overlap || fabsf(xi1) > overlap || fabsf(xi2) > overlap) {
+      continue;
+    }
+
+    const ccl_global uint32_t *layout = block_layout + block * SRNXR_BLOCK_LAYOUT_FIELDS;
+    const uint32_t width = layout[0];
+    uint32_t weight_offset = layout[2];
+    uint32_t bias_offset = layout[3];
+
+    const float in0 = xi0 / overlap;
+    const float in1 = xi1 / overlap;
+    const float in2 = xi2 / overlap;
+
+    // First sine layer [width, 3]
+    for (uint32_t o = 0; o < width; ++o) {
+      const ccl_global float *row = weights + weight_offset + o * 3;
+      const float sum = row[0] * in0 + row[1] * in1 + row[2] * in2 + biases[bias_offset + o];
+      activation[o] = srnxr_sin(w0 * sum);
+    }
+    weight_offset += width * 3;
+    bias_offset += width;
+
+    // Remaining sine layers [width, width]
+    for (uint32_t layer = 1; layer < hidden_layer_count; ++layer) {
+      for (uint32_t o = 0; o < width; ++o) {
+        const ccl_global float *row = weights + weight_offset + o * width;
+        float sum = biases[bias_offset + o];
+        for (uint32_t i = 0; i < width; ++i) {
+          sum += row[i] * activation[i];
+        }
+        next[o] = srnxr_sin(w0 * sum);
+      }
+      for (uint32_t o = 0; o < width; ++o) {
+        activation[o] = next[o];
+      }
+      weight_offset += width * width;
+      bias_offset += width;
+    }
+
+    // Linear head [1, width], then per-block denormalization
+    float value = biases[bias_offset];
+    const ccl_global float *head = weights + weight_offset;
+    for (uint32_t i = 0; i < width; ++i) {
+      value += head[i] * activation[i];
+    }
+    const ccl_global float *stats = block_stats + block * SRNXR_BLOCK_STATS_FIELDS;
+    value = value * stats[1] + stats[0];
+
+    const float distance_sq = xi0 * xi0 + xi1 * xi1 + xi2 * xi2;
+    const float blend_weight = expf(-distance_sq * inv_two_sigma_sq);
+    numerator += blend_weight * value;
+    weight_sum += blend_weight;
+  }
+
+  if (weight_sum <= hdr->weight_sum_epsilon) {
+    return 0.0f;
+  }
+  const float value = (numerator / weight_sum) * hdr->value_std + hdr->value_mean;
+  return clamp(value, 0.0f, 1.0f);
+}
+
+// ============================================================================
 // Helpers for RAW3D / ZFP interpolation
 // ============================================================================
 
@@ -943,6 +1105,13 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
 
   if (tex.use_transform_3d) {
     P = transform_point(&tex.transform_3d, P);
+  }
+
+  /* SRNXR is a continuous field evaluated at P in object space, it needs neither voxel
+   * interpolation nor the stochastic jitter. */
+  if ((ImageDataType)info.data_type == IMAGE_DATA_TYPE_SRNXR_FLOAT) {
+    const float f = kernel_image_interp_srnxr(info, P);
+    return make_float4(f, f, f, 1.0f);
   }
 
   InterpolationType interpolation = (interp == INTERPOLATION_NONE) ?

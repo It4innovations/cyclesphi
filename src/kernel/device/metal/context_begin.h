@@ -12,6 +12,7 @@
 #  include "kernel/util/nanovdb.h"
 #endif
 #include "kernel/util/image_3d_derivates.h"
+#include "kernel/util/image_3d_srnxr.h"
 
 /* Open the Metal kernel context class
  * Necessary to access resource bindings */

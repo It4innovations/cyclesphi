@@ -56,6 +56,7 @@ enum ImageDataType {
 
   IMAGE_DATA_TYPE_ZFP_FLOAT = 19,
   IMAGE_DATA_TYPE_CUB_FLOAT = 20,
+  IMAGE_DATA_TYPE_SRNXR_FLOAT = 21,
 
   IMAGE_DATA_NUM_TYPES
 };
@@ -82,7 +83,7 @@ struct SerializableCUBData {
 
 ccl_device_inline bool is_nanovdb_type(int type)
 {
-  return (type >= IMAGE_DATA_TYPE_NANOVDB_FLOAT && type <= IMAGE_DATA_TYPE_CUB_FLOAT);
+  return (type >= IMAGE_DATA_TYPE_NANOVDB_FLOAT && type <= IMAGE_DATA_TYPE_SRNXR_FLOAT);
 }
 
 /* Alpha types
