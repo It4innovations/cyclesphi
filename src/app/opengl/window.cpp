@@ -33,6 +33,11 @@ struct Window {
   int mouseX = 0, mouseY = 0;
   int mouseBut0 = 0, mouseBut2 = 0;
 
+  /* Mouse motion accumulated over the events of one main loop iteration, so the camera is
+   * updated (and the render reset) once per iteration instead of once per event. */
+  int pendingX = 0, pendingY = 0;
+  int pendingBut = -1;
+
   int width = 0, height = 0;
 
   SDL_Window *window = nullptr;
@@ -234,6 +239,16 @@ static void window_mouse(const int button, const int state, const int x, int y)
   }
 }
 
+static void window_motion_flush()
+{
+  if (V.motion && V.pendingBut != -1 && (V.pendingX != 0 || V.pendingY != 0)) {
+    V.motion(V.pendingX, V.pendingY, V.pendingBut);
+  }
+  V.pendingX = 0;
+  V.pendingY = 0;
+  V.pendingBut = -1;
+}
+
 static void window_motion(const int x, const int y)
 {
   const int but = V.mouseBut0 ? 0 : 2;
@@ -242,7 +257,12 @@ static void window_motion(const int x, const int y)
 
   /* Only drags move the camera. */
   if (V.motion && (V.mouseBut0 || V.mouseBut2)) {
-    V.motion(distX, distY, but);
+    if (V.pendingBut != but) {
+      window_motion_flush();
+    }
+    V.pendingX += distX;
+    V.pendingY += distY;
+    V.pendingBut = but;
   }
 
   V.mouseX = x;
@@ -313,10 +333,12 @@ void window_main_loop(const char *title,
       else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
                event.type == SDL_EVENT_MOUSE_BUTTON_UP)
       {
+        window_motion_flush();
         window_mouse(event.button.button, event.type, int(event.button.x), int(event.button.y));
       }
       else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
         /* Wheel is reported as button 1, the steps in y. */
+        window_motion_flush();
         if (V.motion && event.wheel.integer_y != 0) {
           V.motion(0, int(event.wheel.integer_y), 1);
         }
@@ -335,6 +357,8 @@ void window_main_loop(const char *title,
     if (quit) {
       break;
     }
+
+    window_motion_flush();
 
     if (V.redraw) {
       V.redraw = false;
