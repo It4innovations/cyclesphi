@@ -240,7 +240,8 @@ static void window_motion(const int x, const int y)
   const int distX = x - V.mouseX;
   const int distY = y - V.mouseY;
 
-  if (V.motion) {
+  /* Only drags move the camera. */
+  if (V.motion && (V.mouseBut0 || V.mouseBut2)) {
     V.motion(distX, distY, but);
   }
 
@@ -314,6 +315,12 @@ void window_main_loop(const char *title,
       {
         window_mouse(event.button.button, event.type, int(event.button.x), int(event.button.y));
       }
+      else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+        /* Wheel is reported as button 1, the steps in y. */
+        if (V.motion && event.wheel.integer_y != 0) {
+          V.motion(0, int(event.wheel.integer_y), 1);
+        }
+      }
       else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
         window_reshape(event.window.data1, event.window.data2);
       }
@@ -342,9 +349,22 @@ void window_main_loop(const char *title,
   SDL_Quit();
 }
 
+void window_set_title(const char *title)
+{
+  if (V.window) {
+    SDL_SetWindowTitle(V.window, title);
+  }
+}
+
 void window_redraw()
 {
   V.redraw = true;
+
+  /* Wake up the main loop instead of waiting for its timeout. */
+  SDL_Event event;
+  SDL_zero(event);
+  event.type = SDL_EVENT_USER;
+  SDL_PushEvent(&event);
 }
 
 CCL_NAMESPACE_END

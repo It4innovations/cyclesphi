@@ -28,6 +28,7 @@ void window_main_loop(const char *title,
 
 void window_display_info(const char *info);
 void window_display_help();
+void window_set_title(const char *title);
 void window_redraw();
 
 bool window_opengl_context_enable();

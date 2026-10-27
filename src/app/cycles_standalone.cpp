@@ -6,7 +6,9 @@
 
 #include "device/device.h"
 #include "scene/camera.h"
+#include "scene/geometry.h"
 #include "scene/integrator.h"
+#include "scene/object.h"
 #include "scene/scene.h"
 #include "session/buffers.h"
 #include "session/session.h"
@@ -240,6 +242,34 @@ static void display_info(Progress &progress)
 
   window_display_info(str.c_str());
 
+  /* Frames and samples per second in the window title, averaged over half a second. */
+  static double title_time = 0.0;
+  static int title_frames = 0;
+  static int title_sample = 0;
+
+  title_frames++;
+  if (title_time == 0.0) {
+    title_time = elapsed;
+    title_frames = 0;
+  }
+  else if (elapsed - title_time >= 0.5) {
+    const int sample = progress.get_current_sample();
+    const double dt = elapsed - title_time;
+    /* The sample counter restarts when the render is reset. */
+    const int new_samples = (sample >= title_sample) ? sample - title_sample : sample;
+
+    const string title = string_printf("Cycles: %s | %.1f fps | %.1f samples/s | sample %d",
+                                       path_filename(options.filepath).c_str(),
+                                       title_frames / dt,
+                                       new_samples / dt,
+                                       sample);
+    window_set_title(title.c_str());
+
+    title_time = elapsed;
+    title_frames = 0;
+    title_sample = sample;
+  }
+
   if (options.show_help) {
     window_display_help();
   }
@@ -252,33 +282,58 @@ static void display()
   display_info(options.session->progress);
 }
 
+/* Center of the bounds of the scene objects, the orbit pivot. */
+static float3 scene_center()
+{
+  BoundBox bounds = BoundBox::empty;
+  for (const Object *object : options.session->scene->objects) {
+    if (object->get_geometry() && !object->get_geometry()->is_light() && object->bounds.valid())
+    {
+      bounds.grow(object->bounds);
+    }
+  }
+  return bounds.valid() ? bounds.center() : zero_float3();
+}
+
+/* Mouse navigation: left drag orbits around the scene center, right drag pans, the wheel
+ * (button 1, steps in y) zooms. */
 static void motion(const int x, const int y, int button)
 {
-  if (options.interactive) {
-    Transform matrix = options.session->scene->camera->get_matrix();
+  Transform matrix = options.session->scene->camera->get_matrix();
 
-    /* Translate */
-    if (button == 0) {
-      const float3 translate = make_float3(x * 0.01f, -(y * 0.01f), 0.0f);
-      matrix = matrix * transform_translate(translate);
-    }
+  const float3 position = transform_get_column(&matrix, 3);
+  const float3 forward = normalize(transform_get_column(&matrix, 2));
+  const float3 right = normalize(transform_get_column(&matrix, 0));
 
-    /* Rotate */
-    else if (button == 2) {
-      const float4 r1 = make_float4((float)x * 0.1f, 0.0f, 1.0f, 0.0f);
-      matrix = matrix * transform_rotate(DEG2RADF(r1.x), make_float3(r1.y, r1.z, r1.w));
+  /* Pivot on the view axis, at the depth of the scene center. */
+  const float distance = max(dot(scene_center() - position, forward), 0.1f);
+  const float3 pivot = position + forward * distance;
 
-      const float4 r2 = make_float4(y * 0.1f, 1.0f, 0.0f, 0.0f);
-      matrix = matrix * transform_rotate(DEG2RADF(r2.x), make_float3(r2.y, r2.z, r2.w));
-    }
-
-    /* Update and Reset */
-    options.session->scene->camera->set_matrix(matrix);
-    options.session->scene->camera->need_flags_update = true;
-    options.session->scene->camera->need_device_update = true;
-
-    options.session->reset(options.session_params, session_buffer_params());
+  /* Orbit */
+  if (button == 0) {
+    const float speed = 0.005f;
+    const Transform rotation = transform_rotate(-x * speed, make_float3(0.0f, 0.0f, 1.0f)) *
+                               transform_rotate(-y * speed, right);
+    matrix = transform_translate(pivot) * rotation * transform_translate(-pivot) * matrix;
   }
+
+  /* Pan */
+  else if (button == 2) {
+    const float speed = 0.002f * distance;
+    matrix = matrix * transform_translate(make_float3(-x * speed, y * speed, 0.0f));
+  }
+
+  /* Zoom */
+  else if (button == 1) {
+    matrix = matrix * transform_translate(make_float3(0.0f, 0.0f, y * 0.1f * distance));
+  }
+
+  /* Update and Reset */
+  options.session->scene->camera->set_matrix(matrix);
+  options.session->scene->camera->need_flags_update = true;
+  options.session->scene->camera->need_device_update = true;
+
+  options.session->reset(options.session_params, session_buffer_params());
 }
 
 static void resize(const int width, const int height)
