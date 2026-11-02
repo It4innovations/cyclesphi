@@ -71,6 +71,12 @@ enum {
   PG_HITV_POINTCLOUD,
   PG_HITL_POINTCLOUD,
 
+  /* Neural volume cooperative vector networks, the callables of the neural volume programs
+   * (kernel_neural_volume.cu), before the SVM callables to keep the OSL callable indices. */
+  PG_CALL_SRNXR_COOPVEC_64,
+  PG_CALL_SRNXR_COOPVEC_128,
+  PG_CALL_SRNXR_COOPVEC_256,
+
   /* Callable */
   PG_CALL_SVM_AO,
   PG_CALL_SVM_BEVEL,
@@ -84,6 +90,8 @@ static const int HIT_PROGAM_GROUP_OFFSET = PG_HITD;
 static const int NUM_HIT_PROGRAM_GROUPS = 24;
 static const int CALLABLE_PROGRAM_GROUPS_BASE = PG_CALL_SVM_AO;
 static const int NUM_CALLABLE_PROGRAM_GROUPS = 2;
+static const int SRNXR_CALLABLE_PROGRAM_GROUPS_BASE = PG_CALL_SRNXR_COOPVEC_64;
+static const int NUM_SRNXR_CALLABLE_PROGRAM_GROUPS = 3;
 
 /* List of OptiX pipelines. */
 enum { PIP_SHADE, PIP_INTERSECT, NUM_PIPELINES };
@@ -100,6 +108,9 @@ class OptiXDevice : public CUDADevice {
   OptixModule optix_module = nullptr;
   OptixModule mnee_module = nullptr;
   OptixModule shader_raytrace_module = nullptr;
+  /* Volume shading programs of the neural volume COOPVEC backend (kernel_neural_volume.cu). */
+  OptixModule neural_volume_module = nullptr;
+  bool use_neural_coopvec = false;
   OptixModule builtin_modules[4] = {};
   OptixPipeline pipelines[NUM_PIPELINES] = {};
   OptixProgramGroup groups[NUM_PROGRAM_GROUPS] = {};
@@ -137,6 +148,14 @@ class OptiXDevice : public CUDADevice {
                            OptixResult &failure_reason);
 
   bool load_kernels(const uint kernel_features) override;
+
+  bool supports_neural_coopvec(string &reason) const override;
+  void set_use_neural_coopvec(bool use) override;
+
+  /* Converts the cooperative vector matrices of uploaded SRNXR images, and reports the decoder
+   * statistics of the OptiX programs before freeing them. */
+  void mem_copy_to(device_memory &mem) override;
+  void mem_free(device_memory &mem) override;
 
   bool load_osl_kernels() override;
 

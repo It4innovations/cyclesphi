@@ -183,6 +183,23 @@ class MultiDevice : public Device {
     return true;
   }
 
+  bool supports_neural_coopvec(string &reason) const override
+  {
+    for (const SubDevice &sub : devices) {
+      if (!sub.device->supports_neural_coopvec(reason)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void set_use_neural_coopvec(bool use) override
+  {
+    for (SubDevice &sub : devices) {
+      sub.device->set_use_neural_coopvec(use);
+    }
+  }
+
   bool load_osl_kernels() override
   {
     for (SubDevice &sub : devices) {

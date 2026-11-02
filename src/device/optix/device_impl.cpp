@@ -8,6 +8,9 @@
 #  include "device/optix/device_impl.h"
 #  include "device/optix/queue.h"
 
+/* OPTIX_VERSION, the stubs of util.h do not include it. */
+#  include <optix.h>
+
 #  include "bvh/bvh.h"
 #  include "bvh/optix.h"
 
@@ -23,9 +26,11 @@
 #  include "util/path.h"
 #  include "util/progress.h"
 #  include "util/task.h"
+#  include "util/time.h"
 
 #  define __KERNEL_OPTIX__
 #  include "kernel/device/optix/globals.h"
+#  include "kernel/util/image_3d_srnxr.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -142,6 +147,11 @@ OptiXDevice::~OptiXDevice()
   if (osl_volume_module != nullptr) {
     optixModuleDestroy(osl_volume_module);
   }
+#  endif
+  if (neural_volume_module != nullptr) {
+    optixModuleDestroy(neural_volume_module);
+  }
+#  ifdef WITH_OSL
   for (const OptixModule &module : osl_modules) {
     if (module != nullptr) {
       optixModuleDestroy(module);
@@ -270,6 +280,9 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
 #  endif
   const bool use_shader_raytrace = (kernel_features & KERNEL_FEATURE_NODE_RAYTRACE);
   const bool use_mnee = (kernel_features & KERNEL_FEATURE_MNEE);
+  /* With OSL the volume programs come from the OSL modules. */
+  const bool use_neural_volume = use_neural_coopvec && !use_osl_shading &&
+                                 (kernel_features & KERNEL_FEATURE_VOLUME);
 
   /* Skip creating OptiX module if only doing denoising. */
   const bool need_optix_kernels = (kernel_features &
@@ -324,6 +337,10 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
   if (shader_raytrace_module != nullptr) {
     optixModuleDestroy(shader_raytrace_module);
     shader_raytrace_module = nullptr;
+  }
+  if (neural_volume_module != nullptr) {
+    optixModuleDestroy(neural_volume_module);
+    neural_volume_module = nullptr;
   }
   for (int i = 0; i < 2; ++i) {
     if (builtin_modules[i] != nullptr) {
@@ -465,6 +482,12 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
     {
       return false;
     }
+    string neural_volume_ptx_data;
+    if (use_neural_volume &&
+        !load_optional_module("kernel_optix_neural_volume", neural_volume_ptx_data))
+    {
+      return false;
+    }
 #  ifdef WITH_OSL
     string osl_camera_ptx_data;
     if (use_osl_camera && !load_optional_module("kernel_optix_osl_camera", osl_camera_ptx_data)) {
@@ -480,6 +503,7 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
     OptixResult base_result = OPTIX_SUCCESS;
     OptixResult mnee_result = OPTIX_SUCCESS;
     OptixResult shader_raytrace_result = OPTIX_SUCCESS;
+    OptixResult neural_volume_result = OPTIX_SUCCESS;
 #  ifdef WITH_OSL
     OptixResult osl_camera_result = OPTIX_SUCCESS;
     OptixResult osl_volume_result = OPTIX_SUCCESS;
@@ -495,6 +519,13 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
                           shader_raytrace_ptx_data,
                           shader_raytrace_module,
                           shader_raytrace_result);
+    }
+    if (use_neural_volume) {
+      create_optix_module(pool,
+                          module_options,
+                          neural_volume_ptx_data,
+                          neural_volume_module,
+                          neural_volume_result);
     }
 #  ifdef WITH_OSL
     if (use_osl_camera) {
@@ -522,6 +553,11 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
     if (shader_raytrace_result != OPTIX_SUCCESS) {
       set_error(string_printf("Failed to load OptiX shader ray-tracing kernel (%s)",
                               optixGetErrorName(shader_raytrace_result)));
+      return false;
+    }
+    if (neural_volume_result != OPTIX_SUCCESS) {
+      set_error(string_printf("Failed to load OptiX neural volume kernel (%s)",
+                              optixGetErrorName(neural_volume_result)));
       return false;
     }
 #  ifdef WITH_OSL
@@ -697,6 +733,35 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
     }
   }
 
+  if (use_neural_volume) {
+    group_descs[PG_RGEN_SHADE_VOLUME].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+    group_descs[PG_RGEN_SHADE_VOLUME].raygen.module = neural_volume_module;
+    group_descs[PG_RGEN_SHADE_VOLUME].raygen.entryFunctionName =
+        "__raygen__kernel_optix_integrator_shade_volume";
+    group_descs[PG_RGEN_SHADE_VOLUME_RAY_MARCHING].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+    group_descs[PG_RGEN_SHADE_VOLUME_RAY_MARCHING].raygen.module = neural_volume_module;
+    group_descs[PG_RGEN_SHADE_VOLUME_RAY_MARCHING].raygen.entryFunctionName =
+        "__raygen__kernel_optix_integrator_shade_volume_ray_marching";
+    group_descs[PG_RGEN_SHADE_SHADOW].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+    group_descs[PG_RGEN_SHADE_SHADOW].raygen.module = neural_volume_module;
+    group_descs[PG_RGEN_SHADE_SHADOW].raygen.entryFunctionName =
+        "__raygen__kernel_optix_integrator_shade_shadow";
+    group_descs[PG_RGEN_EVAL_VOLUME_DENSITY].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+    group_descs[PG_RGEN_EVAL_VOLUME_DENSITY].raygen.module = neural_volume_module;
+    group_descs[PG_RGEN_EVAL_VOLUME_DENSITY].raygen.entryFunctionName =
+        "__raygen__kernel_optix_shader_eval_volume_density";
+    const char *callables[NUM_SRNXR_CALLABLE_PROGRAM_GROUPS] = {
+        "__direct_callable__srnxr_coopvec_64",
+        "__direct_callable__srnxr_coopvec_128",
+        "__direct_callable__srnxr_coopvec_256"};
+    for (int i = 0; i < NUM_SRNXR_CALLABLE_PROGRAM_GROUPS; i++) {
+      OptixProgramGroupDesc &desc = group_descs[SRNXR_CALLABLE_PROGRAM_GROUPS_BASE + i];
+      desc.kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+      desc.callables.moduleDC = neural_volume_module;
+      desc.callables.entryFunctionNameDC = callables[i];
+    }
+  }
+
   if (use_mnee) {
     group_descs[PG_RGEN_INTERSECT_MNEE].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
     group_descs[PG_RGEN_INTERSECT_MNEE].raygen.module = mnee_module;
@@ -808,8 +873,10 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
   if (use_osl_shading || use_osl_camera) {
     /* OSL kernels will be (re)created on by OSL manager. */
   }
-  else if (kernel_features & (KERNEL_FEATURE_NODE_RAYTRACE | KERNEL_FEATURE_MNEE)) {
-    /* Create shader ray-tracing and MNEE pipeline. */
+  else if ((kernel_features & (KERNEL_FEATURE_NODE_RAYTRACE | KERNEL_FEATURE_MNEE)) ||
+           use_neural_volume)
+  {
+    /* Create shader ray-tracing, MNEE and neural volume pipeline. */
     vector<OptixProgramGroup> pipeline_groups;
     pipeline_groups.reserve(NUM_PROGRAM_GROUPS);
     if (kernel_features & KERNEL_FEATURE_NODE_RAYTRACE) {
@@ -819,6 +886,15 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
     }
     if (kernel_features & KERNEL_FEATURE_MNEE) {
       pipeline_groups.push_back(groups[PG_RGEN_INTERSECT_MNEE]);
+    }
+    if (use_neural_volume) {
+      pipeline_groups.push_back(groups[PG_RGEN_SHADE_VOLUME]);
+      pipeline_groups.push_back(groups[PG_RGEN_SHADE_VOLUME_RAY_MARCHING]);
+      pipeline_groups.push_back(groups[PG_RGEN_SHADE_SHADOW]);
+      pipeline_groups.push_back(groups[PG_RGEN_EVAL_VOLUME_DENSITY]);
+      for (int i = 0; i < NUM_SRNXR_CALLABLE_PROGRAM_GROUPS; i++) {
+        pipeline_groups.push_back(groups[SRNXR_CALLABLE_PROGRAM_GROUPS_BASE + i]);
+      }
     }
     add_hit_miss_program_groups(groups, pipeline_groups);
 
@@ -836,11 +912,25 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
         pipelines[PIP_SHADE], pipeline_groups, trace_css);
 
     /* Combine ray generation and trace continuation stack size. */
-    const unsigned int css = std::max(stack_size[PG_RGEN_SHADE_SURFACE_RAYTRACE].cssRG,
-                                      stack_size[PG_RGEN_INTERSECT_MNEE].cssRG) +
-                             link_options.maxTraceDepth * trace_css;
-    const unsigned int dss = std::max(stack_size[PG_CALL_SVM_AO].dssDC,
-                                      stack_size[PG_CALL_SVM_BEVEL].dssDC);
+    unsigned int css_rg = std::max(stack_size[PG_RGEN_SHADE_SURFACE_RAYTRACE].cssRG,
+                                   stack_size[PG_RGEN_INTERSECT_MNEE].cssRG);
+    if (use_neural_volume) {
+      for (const int pg : {PG_RGEN_SHADE_VOLUME,
+                           PG_RGEN_SHADE_VOLUME_RAY_MARCHING,
+                           PG_RGEN_SHADE_SHADOW,
+                           PG_RGEN_EVAL_VOLUME_DENSITY})
+      {
+        css_rg = std::max(css_rg, stack_size[pg].cssRG);
+      }
+    }
+    const unsigned int css = css_rg + link_options.maxTraceDepth * trace_css;
+    unsigned int dss = std::max(stack_size[PG_CALL_SVM_AO].dssDC,
+                                stack_size[PG_CALL_SVM_BEVEL].dssDC);
+    if (use_neural_volume) {
+      for (int i = 0; i < NUM_SRNXR_CALLABLE_PROGRAM_GROUPS; i++) {
+        dss = std::max(dss, stack_size[SRNXR_CALLABLE_PROGRAM_GROUPS_BASE + i].dssDC);
+      }
+    }
 
     /* Set stack size depending on pipeline options. */
     optix_assert(optixPipelineSetStackSize(
@@ -907,6 +997,142 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
   }
 
   return !have_error();
+}
+
+bool OptiXDevice::supports_neural_coopvec(string &reason) const
+{
+#  if defined(WITH_CYCLES_NEURAL_COOPVEC) && (OPTIX_VERSION >= 90000)
+  if (context == nullptr) {
+    reason = info.description + ": no OptiX context";
+    return false;
+  }
+  unsigned int flags = 0;
+  if (optixDeviceContextGetProperty(
+          context, OPTIX_DEVICE_PROPERTY_COOP_VEC, &flags, sizeof(flags)) != OPTIX_SUCCESS ||
+      !(flags & OPTIX_DEVICE_PROPERTY_COOP_VEC_FLAG_STANDARD))
+  {
+    reason = info.description + ": OPTIX_DEVICE_PROPERTY_COOP_VEC reports no support";
+    return false;
+  }
+  return true;
+#  else
+  reason = string_printf(
+      "built without WITH_CYCLES_NEURAL_COOPVEC or with OptiX headers %d (9.0 needed)",
+      OPTIX_VERSION);
+  return false;
+#  endif
+}
+
+void OptiXDevice::set_use_neural_coopvec(const bool use)
+{
+  use_neural_coopvec = use;
+}
+
+void OptiXDevice::mem_copy_to(device_memory &mem)
+{
+  CUDADevice::mem_copy_to(mem);
+#  if defined(WITH_CYCLES_NEURAL_COOPVEC) && (OPTIX_VERSION >= 90000)
+  if (mem.type != MEM_IMAGE_TEXTURE || mem.host_pointer == nullptr || !mem.device_pointer ||
+      static_cast<device_image &>(mem).info.data_type != IMAGE_DATA_TYPE_SRNXR_FLOAT ||
+      mem.memory_size() < sizeof(SRNXRDeviceHeaderV2))
+  {
+    return;
+  }
+  const SRNXRDeviceHeaderV2 *hdr = static_cast<const SRNXRDeviceHeaderV2 *>(mem.host_pointer);
+  if (hdr->magic != SRNXR_DEVICE_MAGIC || hdr->version != SRNXR_DEVICE_VERSION_V2 ||
+      hdr->backend != SRNXR_BACKEND_COOPVEC || hdr->coopvec_matrix_count == 0)
+  {
+    return;
+  }
+  /* Matrix layout conversion on the device, from the row-major staging copy of the blob. */
+  const CUDAContextScope scope(this);
+  const double start = time_dt();
+  const SRNXRCoopVecMatrixV2 *table = reinterpret_cast<const SRNXRCoopVecMatrixV2 *>(
+      static_cast<const char *>(mem.host_pointer) + hdr->coopvec_table_offset);
+  for (uint64_t i = 0; i < hdr->coopvec_matrix_count; i++) {
+    const SRNXRCoopVecMatrixV2 &m = table[i];
+    size_t size = 0;
+    optix_assert(optixCoopVecMatrixComputeSize(context,
+                                               m.n,
+                                               m.k,
+                                               OPTIX_COOP_VEC_ELEM_TYPE_FLOAT16,
+                                               OPTIX_COOP_VEC_MATRIX_LAYOUT_INFERENCING_OPTIMAL,
+                                               0,
+                                               &size));
+    if (size != m.size) {
+      set_error(string_printf(
+          "SRNXR: cooperative vector matrix %ux%u needs %zu bytes on this device, the blob "
+          "reserved %llu",
+          m.n,
+          m.k,
+          size,
+          (unsigned long long)m.size));
+      return;
+    }
+    OptixCoopVecMatrixDescription in_desc = {};
+    in_desc.N = m.n;
+    in_desc.K = m.k;
+    in_desc.offsetInBytes = 0;
+    in_desc.elementType = OPTIX_COOP_VEC_ELEM_TYPE_FLOAT16;
+    in_desc.layout = OPTIX_COOP_VEC_MATRIX_LAYOUT_ROW_MAJOR;
+    in_desc.rowColumnStrideInBytes = m.k * 2;
+    in_desc.sizeInBytes = m.n * m.k * 2;
+    OptixCoopVecMatrixDescription out_desc = in_desc;
+    out_desc.layout = OPTIX_COOP_VEC_MATRIX_LAYOUT_INFERENCING_OPTIMAL;
+    out_desc.rowColumnStrideInBytes = 0;
+    out_desc.sizeInBytes = uint32_t(m.size);
+    OptixNetworkDescription in_net = {&in_desc, 1};
+    OptixNetworkDescription out_net = {&out_desc, 1};
+    optix_assert(optixCoopVecMatrixConvert(context,
+                                           nullptr,
+                                           1,
+                                           &in_net,
+                                           CUdeviceptr(mem.device_pointer + m.staging_offset),
+                                           0,
+                                           &out_net,
+                                           CUdeviceptr(mem.device_pointer + m.blob_offset),
+                                           0));
+  }
+  cuda_assert(cuStreamSynchronize(nullptr));
+  printf("SRNXR: %s converted %llu cooperative vector matrices in %.2f ms\n",
+         info.description.c_str(),
+         (unsigned long long)hdr->coopvec_matrix_count,
+         (time_dt() - start) * 1e3);
+#  endif
+}
+
+void OptiXDevice::mem_free(device_memory &mem)
+{
+#  if defined(WITH_CYCLES_NEURAL_COOPVEC) && (OPTIX_VERSION >= 90000)
+  if (mem.type == MEM_IMAGE_TEXTURE && mem.device_pointer &&
+      static_cast<device_image &>(mem).info.data_type == IMAGE_DATA_TYPE_SRNXR_FLOAT &&
+      mem.memory_size() >= sizeof(SRNXRDeviceHeaderV2))
+  {
+    /* Statistics the OptiX programs kept in the blob. */
+    const CUDAContextScope scope(this);
+    SRNXRDeviceHeaderV2 hdr;
+    if (cuMemcpyDtoH(&hdr, CUdeviceptr(mem.device_pointer), sizeof(hdr)) == CUDA_SUCCESS &&
+        hdr.magic == SRNXR_DEVICE_MAGIC && hdr.version == SRNXR_DEVICE_VERSION_V2 &&
+        hdr.backend == SRNXR_BACKEND_COOPVEC)
+    {
+      uint64_t c[SRNXR_COUNTER_NUM];
+      if (cuMemcpyDtoH(c, CUdeviceptr(mem.device_pointer + hdr.counters_offset), sizeof(c)) ==
+          CUDA_SUCCESS)
+      {
+        string line = string_printf("SRNXR counters (%s, OptiX programs, image %s):",
+                                    info.description.c_str(),
+                                    mem.log_name().c_str());
+        for (int k = 0; k < SRNXR_COUNTER_NUM; k++) {
+          if (c[k]) {
+            line += string_printf(" %s=%llu", srnxr_counter_name(k), (unsigned long long)c[k]);
+          }
+        }
+        printf("%s\n", line.c_str());
+      }
+    }
+  }
+#  endif
+  CUDADevice::mem_free(mem);
 }
 
 bool OptiXDevice::load_osl_kernels()

@@ -26,6 +26,7 @@
 #  endif
 
 #  include "kernel/device/cuda/globals.h"
+#  include "kernel/util/image_3d_srnxr.h"
 
 #  include "session/display_driver.h"
 
@@ -169,12 +170,54 @@ CUDADevice::~CUDADevice()
           info_multires_level_counter[15]);
 #endif
 
+  print_srnxr_counters();
+
   image_info.free();
 
   if (cuModule) {
     cuda_assert(cuModuleUnload(cuModule));
   }
   cuda_assert(cuDevicePrimaryCtxRelease(cuDevice));
+}
+
+/* Statistics of the SRNXR neural volume decoder (kernel/util/image_3d_srnxr_decode.h). */
+void CUDADevice::print_srnxr_counters()
+{
+  if (!cuModule) {
+    return;
+  }
+  const CUDAContextScope scope(this);
+  CUdeviceptr mem;
+  size_t bytes;
+  if (cuModuleGetGlobal(&mem, &bytes, cuModule, "srnxr_counters") != CUDA_SUCCESS ||
+      bytes != sizeof(uint64_t) * SRNXR_COUNTER_SLOTS * SRNXR_COUNTER_NUM)
+  {
+    return;
+  }
+  vector<uint64_t> counters(SRNXR_COUNTER_SLOTS * SRNXR_COUNTER_NUM);
+  if (cuMemcpyDtoH(counters.data(), mem, bytes) != CUDA_SUCCESS) {
+    return;
+  }
+  for (int slot = 0; slot < SRNXR_COUNTER_SLOTS; slot++) {
+    const uint64_t *c = &counters[slot * SRNXR_COUNTER_NUM];
+    if (c[SRNXR_COUNTER_QUERIES] == 0 && c[SRNXR_COUNTER_OUTSIDE] == 0 &&
+        c[SRNXR_COUNTER_BAKE_QUERIES] == 0)
+    {
+      continue;
+    }
+    string line = string_printf("SRNXR counters (%s, slot %d):", info.description.c_str(), slot);
+    for (int k = 0; k < SRNXR_COUNTER_NUM; k++) {
+      if (c[k]) {
+        line += string_printf(" %s=%llu", srnxr_counter_name(k), (unsigned long long)c[k]);
+      }
+    }
+    if (c[SRNXR_COUNTER_TENSOR_TILES]) {
+      line += string_printf(" (mean tile rows %.2f of 16)",
+                            double(c[SRNXR_COUNTER_TENSOR_ROWS]) /
+                                double(c[SRNXR_COUNTER_TENSOR_TILES]));
+    }
+    printf("%s\n", line.c_str());
+  }
 }
 
 bool CUDADevice::support_device(const uint /*kernel_features*/)
@@ -274,6 +317,19 @@ string CUDADevice::compile_kernel_get_common_cflags(const uint kernel_features)
 
 #  ifdef WITH_NANOVDB
   cflags += " -DWITH_NANOVDB";
+#  endif
+
+#  ifdef WITH_CYCLES_NEURAL_VOLUME
+  cflags += " -DWITH_CYCLES_NEURAL_VOLUME";
+#    ifdef WITH_CYCLES_NEURAL_CUDA_FUSED
+  cflags += " -DWITH_CYCLES_NEURAL_CUDA_FUSED";
+#    endif
+#    ifdef WITH_CYCLES_NEURAL_CUDA_TENSOR
+  cflags += " -DWITH_CYCLES_NEURAL_CUDA_TENSOR";
+#    endif
+#    ifdef WITH_CYCLES_NEURAL_COOPVEC
+  cflags += " -DWITH_CYCLES_NEURAL_COOPVEC";
+#    endif
 #  endif
 
 #  ifdef WITH_CYCLES_DEBUG

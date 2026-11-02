@@ -85,6 +85,7 @@ class DeviceInfo {
   int num = 0;
   bool display_device = false;          /* GPU is used as a display device. */
   bool has_nanovdb = false;             /* Support NanoVDB volumes. */
+  int compute_capability = 0;           /* CUDA SM version, major * 10 + minor, 0 elsewhere. */
   bool has_mnee_ = true;                /* Support MNEE. */
   bool has_osl = false;                 /* Support Open Shading Language. */
   bool has_guiding = false;             /* Support path guiding. */
@@ -160,6 +161,16 @@ class Device {
   virtual void mem_free_sub_ptr(device_ptr /*ptr*/){};
 
  public:
+  /* Neural volumes, COOPVEC backend (OptiX cooperative vectors): whether the device can run
+   * it, and whether the volume shading kernels must run as OptiX programs. Takes effect at the
+   * next load_kernels(). */
+  virtual bool supports_neural_coopvec(string &reason) const
+  {
+    reason = "not an OptiX device";
+    return false;
+  }
+  virtual void set_use_neural_coopvec(bool /*use*/) {}
+
   /* noexcept needed to silence TBB warning. */
   virtual ~Device() noexcept(false);
 

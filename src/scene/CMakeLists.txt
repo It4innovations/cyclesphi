@@ -30,6 +30,7 @@ set(SRC
   image_oiio.cpp
   image_sky.cpp
   image_vdb.cpp
+  srnxr_model.cpp
   integrator.cpp
   scene_attributes.cpp
   light.cpp
@@ -76,6 +77,7 @@ set(SRC_HEADERS
   image_oiio.h
   image_sky.h
   image_vdb.h
+  srnxr_model.h
   integrator.h
   light.h
   light_tree.h

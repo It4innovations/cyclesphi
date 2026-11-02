@@ -44,6 +44,14 @@ __constant__ KernelParamsCUDA kernel_params;
 #endif  
 #endif
 
+#ifdef __KERNEL_GPU__
+/* Statistics of the SRNXR neural volume decoder, SRNXR_COUNTER_NUM per image slot, read back
+ * by CUDADevice. */
+extern "C" {
+__device__ unsigned long long int srnxr_counters[64 * 16]; /* SRNXR_COUNTER_SLOTS x SRNXR_COUNTER_NUM */
+}
+#endif
+
 /* Abstraction macros */
 #define kernel_data kernel_params.data
 #define kernel_data_fetch(name, index) kernel_params.name[(index)]

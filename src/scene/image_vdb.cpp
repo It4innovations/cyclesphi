@@ -1827,8 +1827,8 @@ template<typename T> uint64_t srnxr_append(vector<char>& blob, const vector<T>& 
 
 }  // namespace
 
-SRNXRImageLoader::SRNXRImageLoader(vector<char>& g)
-    : VDBImageLoader("")
+SRNXRImageLoader::SRNXRImageLoader(vector<char>& g, const SRNXRBuildSettings &settings_)
+    : VDBImageLoader(""), settings(settings_)
 {
     if (!build_device_data(g)) {
         device_data.clear();
@@ -1842,6 +1842,34 @@ SRNXRImageLoader::~SRNXRImageLoader()
 bool SRNXRImageLoader::build_device_data(const vector<char>& file)
 {
     const char* data = file.data();
+
+    if (srnxr_is_version2(data, file.size())) {
+#ifndef WITH_CYCLES_NEURAL_VOLUME
+        printf("SRNXRImageLoader: format 2 files need WITH_CYCLES_NEURAL_VOLUME\n");
+        return false;
+#endif
+        std::vector<char> blob;
+        std::string error;
+        if (!srnxr_build_device_blob_v2(data, file.size(), settings, blob, report, error)) {
+            printf("SRNXRImageLoader: %s\n", error.c_str());
+            return false;
+        }
+        device_data.assign(blob.begin(), blob.end());
+        const int res = 1 << std::min<uint32_t>(report.max_depth, 10);
+        index_resolution = make_int3(res, res, res);
+        printf("SRNXRImageLoader: Loaded neural volume, backend %s, sine %s\n%s",
+               srnxr_backend_name(settings.backend),
+               srnxr_sine_mode_name(settings.sine_mode),
+               report.summary().c_str());
+        if (get_header_v2()->input_dim == 4) {
+            printf("  Simulation time: %g + %g * (ray time - 0.5), model time range [%g, %g]\n",
+                   get_header_v2()->time_frame,
+                   get_header_v2()->time_shutter,
+                   get_header_v2()->domain_min[3],
+                   get_header_v2()->domain_max[3]);
+        }
+        return true;
+    }
 
     // Header
     if (file.size() < srnxr_header_struct_size) {
@@ -1860,6 +1888,7 @@ bool SRNXRImageLoader::build_device_data(const vector<char>& file)
         return false;
     }
     if (format_version != srnxr_file_version) {
+        /* Format 2 is handled above, anything else is unknown. */
         printf("SRNXRImageLoader: Unsupported format version: %u\n", format_version);
         return false;
     }
@@ -2038,6 +2067,7 @@ bool SRNXRImageLoader::build_device_data(const vector<char>& file)
     memcpy(blob.data(), &header, sizeof(header));
 
     device_data = std::move(blob);
+    index_resolution = make_int3(header.grid_dim_x, header.grid_dim_y, header.grid_dim_z);
 
     printf("SRNXRImageLoader: Loaded SIREN octree\n");
     printf("  Blocks: %u, layers: %u, max width: %u, w0: %f\n",
@@ -2060,11 +2090,9 @@ bool SRNXRImageLoader::load_metadata(ImageMetaData& metadata,
         return false;
     }
 
-    const SRNXRDeviceHeader* header = get_header();
-
-    metadata.channels = 1;
-    metadata.width = header->grid_dim_x;
-    metadata.height = header->grid_dim_y;
+    metadata.channels = is_version2() ? get_header_v2()->channel_count : 1;
+    metadata.width = index_resolution.x;
+    metadata.height = index_resolution.y;
     metadata.nanovdb_byte_size = device_data.size();
     metadata.type = IMAGE_DATA_TYPE_SRNXR_FLOAT;
 
@@ -2086,6 +2114,16 @@ bool SRNXRImageLoader::load_pixels(const ImageMetaData&, void* pixels)
 
 string SRNXRImageLoader::name() const
 {
+    if (is_version2()) {
+        string fields;
+        for (const uint32_t c : report.channel_field) {
+            fields += "_" + report.field_names[c];
+        }
+        return string_printf("SRNXR2_%uL_%s%s",
+                             get_header_v2()->leaf_count,
+                             srnxr_backend_name(SRNXRBackend(get_header_v2()->backend)),
+                             fields.c_str());
+    }
     if (!device_data.empty()) {
         return string_printf("SRNXR_%uB_%ux%ux%u",
                              get_header()->block_count,
@@ -2129,9 +2167,8 @@ void SRNXRImageLoader::get_bbox(int3& min_bbox, int3& max_bbox)
         return;
     }
 
-    const SRNXRDeviceHeader* header = get_header();
     min_bbox = make_int3(0, 0, 0);
-    max_bbox = make_int3(header->grid_dim_x, header->grid_dim_y, header->grid_dim_z);
+    max_bbox = index_resolution;
 }
 
 float3 SRNXRImageLoader::index_to_world(float3 in)
@@ -2140,11 +2177,20 @@ float3 SRNXRImageLoader::index_to_world(float3 in)
         return make_float3(0.0f, 0.0f, 0.0f);
     }
 
-    const SRNXRDeviceHeader* header = get_header();
-    return make_float3(
-        header->domain_min_x + in.x * (header->domain_max_x - header->domain_min_x) / header->grid_dim_x,
-        header->domain_min_y + in.y * (header->domain_max_y - header->domain_min_y) / header->grid_dim_y,
-        header->domain_min_z + in.z * (header->domain_max_z - header->domain_min_z) / header->grid_dim_z);
+    float3 dmin, dmax;
+    if (is_version2()) {
+        const SRNXRDeviceHeaderV2* header = get_header_v2();
+        dmin = make_float3(header->domain_min[0], header->domain_min[1], header->domain_min[2]);
+        dmax = make_float3(header->domain_max[0], header->domain_max[1], header->domain_max[2]);
+    }
+    else {
+        const SRNXRDeviceHeader* header = get_header();
+        dmin = make_float3(header->domain_min_x, header->domain_min_y, header->domain_min_z);
+        dmax = make_float3(header->domain_max_x, header->domain_max_y, header->domain_max_z);
+    }
+    return make_float3(dmin.x + in.x * (dmax.x - dmin.x) / index_resolution.x,
+                       dmin.y + in.y * (dmax.y - dmin.y) / index_resolution.y,
+                       dmin.z + in.z * (dmax.z - dmin.z) / index_resolution.z);
 }
 
 CCL_NAMESPACE_END

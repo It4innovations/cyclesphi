@@ -10,6 +10,10 @@
 #include "util/types_image.h"
 #include "kernel/util/image_3d_derivates.h"
 #include "kernel/util/image_3d_srnxr.h"
+#if defined(WITH_CYCLES_NEURAL_VOLUME) && !defined(__KERNEL_METAL__)
+#  define SRNXR_V2_KERNEL 1
+#  include "kernel/util/image_3d_srnxr_decode.h"
+#endif
 
 #if !defined(__KERNEL_METAL__) && !defined(__KERNEL_ONEAPI__)
 #  ifdef WITH_NANOVDB
@@ -1066,6 +1070,58 @@ ccl_device_noinline float kernel_image_interp_srnxr(const ccl_global KernelImage
 }
 
 // ============================================================================
+// SRNXR version 2 (octree of local SIREN networks over (x, y, z, t))
+// ============================================================================
+// See kernel/util/image_3d_srnxr_decode.h and tools/srnxr/neural_volume.md. The simulation time
+// of a sample is time_frame + time_shutter * (ray time - 0.5). During the majorant bake of the
+// volume octree (SR_VOLUME_MAJORANT_BAKE) the image returns a certified bound instead of a
+// point sample: the lower or the upper end of the range of the mapped channels in the bake
+// voxel around P, chosen by the shader LCG, so the 16 samples of a voxel see both ends.
+
+#ifdef SRNXR_V2_KERNEL
+ccl_device_noinline float4 kernel_image_interp_srnxr_v2(const ccl_global uint8_t *base,
+                                                        ccl_private ShaderData *sd,
+                                                        const float3 P)
+{
+  const ccl_global SRNXRDeviceHeaderV2 *hdr = srnxr_v2_header(base);
+  const float p[4] = {P.x, P.y, P.z, hdr->time_frame + hdr->time_shutter * (sd->time - 0.5f)};
+  const uint32_t channels = hdr->channel_count;
+  float v[SRNXR_V2_MAX_OUTPUTS > 3 ? SRNXR_V2_MAX_OUTPUTS : 3];
+
+  if (sd->runtime_flag & SR_VOLUME_MAJORANT_BAKE) {
+    float lo[3], hi[3];
+    srnxr_v2_bound(base, p, lo, hi);
+    srnxr_counter_add(base, SRNXR_COUNTER_BAKE_QUERIES, 1);
+    /* The box may extend past the domain, where the image is the outside value. */
+    bool partial = !(p[3] >= hdr->domain_min[3] && p[3] <= hdr->domain_max[3]);
+    for (int d = 0; d < 3; d++) {
+      partial = partial || p[d] - hdr->bake_margin[d] < hdr->domain_min[d] ||
+                p[d] + hdr->bake_margin[d] > hdr->domain_max[d];
+    }
+    const bool upper = (lcg_step_uint(&sd->lcg_state) & 1u) != 0;
+    for (uint32_t c = 0; c < channels; c++) {
+      if (partial) {
+        lo[c] = fminf(lo[c], hdr->outside_value);
+        hi[c] = fmaxf(hi[c], hdr->outside_value);
+      }
+      v[c] = (lo[c] > hi[c]) ? hdr->outside_value : (upper ? hi[c] : lo[c]);
+    }
+  }
+  else {
+    float out[SRNXR_V2_MAX_OUTPUTS];
+    srnxr_v2_decode(base, p, true, out);
+    for (uint32_t c = 0; c < channels; c++) {
+      v[c] = out[hdr->channel_field[c]];
+    }
+  }
+  if (channels == 1) {
+    return make_float4(v[0], v[0], v[0], 1.0f);
+  }
+  return make_float4(v[0], v[1], v[2], 1.0f);
+}
+#endif
+
+// ============================================================================
 // Helpers for RAW3D / ZFP interpolation
 // ============================================================================
 
@@ -1125,6 +1181,15 @@ ccl_device float4 kernel_image_interp_3d(KernelGlobals kg,
   /* SRNXR is a continuous field evaluated at P in object space, it needs neither voxel
    * interpolation nor the stochastic jitter. */
   if ((ImageDataType)info.data_type == IMAGE_DATA_TYPE_SRNXR_FLOAT) {
+    const ccl_global uint32_t *words = (const ccl_global uint32_t *)info.data;
+    if (words[1] == SRNXR_DEVICE_VERSION_V2) {
+#  ifdef SRNXR_V2_KERNEL
+      return kernel_image_interp_srnxr_v2((const ccl_global uint8_t *)info.data, sd, P);
+#  else
+      /* Not built, the loader does not accept format 2 files then. */
+      return zero_float4();
+#  endif
+    }
     const float f = kernel_image_interp_srnxr(info, P);
     return make_float4(f, f, f, 1.0f);
   }

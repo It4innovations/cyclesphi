@@ -16,6 +16,26 @@ class Shader;
 class ShaderGraph;
 
 void xml_read_file(Scene *scene, const char *filepath);
+
+/* Run time configuration of the neural volume decoder (.srnxr format 2), set from the command
+ * line before reading the scene. Non-empty values override the srnxr_* attributes of the XML
+ * <attribute> elements. */
+struct XMLNeuralVolumeOptions {
+  /* cuda_fused, cuda_tensor or coopvec */
+  std::string backend;
+  /* accurate (sinf) or fast (__sinf on CUDA) */
+  std::string sine;
+  /* Backend used, with a warning, when the requested one cannot run on the render device.
+   * Empty: such volumes are not loaded. */
+  std::string fallback;
+  /* Benchmark mode: never fall back, a backend the device cannot run is an error. */
+  bool benchmark = false;
+  /* -1: from XML (default on), 0: off, 1: on. Device statistics of the decoder. */
+  int counters = -1;
+  /* -1: from XML (default on), 0: off, 1: on. Cooperative decoding of partially active warps. */
+  int partial_warps = -1;
+};
+void xml_set_neural_volume_options(const XMLNeuralVolumeOptions &options);
 void xml_set_volume_to_attr(Scene* scene, std::string geom_name, std::string attr_name, int type, vector<char>& file_content);
 void xml_set_material_to_node(Scene* scene, const char* file_content);
 void xml_set_material_to_shader(Scene* scene, const char* file_content);

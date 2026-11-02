@@ -129,6 +129,12 @@ option(WITH_CYCLES_OPENSUBDIV       "Build with OpenSubdiv support" ON)
 option(WITH_CYCLES_OPENVDB          "Build with OpenVDB support" ON)
 option(WITH_CYCLES_PUGIXML          "Build with XML support" ON)
 option(WITH_CYCLES_NANOVDB          "Build with NanoVDB support" ON)
+# Neural volumes (.srnxr format 2, tools/srnxr/neural_volume.md). The backends are selected at
+# run time (--neural-backend, srnxr_backend), these options decide which ones are built.
+option(WITH_CYCLES_NEURAL_VOLUME       "Build the neural volume decoder (.srnxr format 2)" ON)
+option(WITH_CYCLES_NEURAL_CUDA_FUSED   "Build the warp-cooperative SIMT path of the CUDA_FUSED neural volume backend (without it CUDA_FUSED runs one query per thread)" ON)
+option(WITH_CYCLES_NEURAL_CUDA_TENSOR  "Build the CUDA_TENSOR neural volume backend (mma.sync, SM 8.0+)" ON)
+option(WITH_CYCLES_NEURAL_COOPVEC      "Build the COOPVEC neural volume backend (OptiX 9 cooperative vectors)" OFF)
 option(WITH_CYCLES_OSL              "Build with OSL support" ON)
 option(WITH_CYCLES_USD              "Build with USD support" ON)
 

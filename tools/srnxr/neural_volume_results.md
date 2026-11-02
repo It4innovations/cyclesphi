@@ -1,0 +1,276 @@
+# Neural volume decoder: results
+
+Measured results of the SRNXR format 2 decoder (`tools/srnxr/neural_volume.md`): standalone
+throughput and accuracy of the three inference backends, and the first end-to-end Cycles renders.
+Every number below was measured; combinations that were not run are marked **NOT TESTED**.
+
+> **All models are SYNTHETIC.** No trained checkpoints of the adaptive-octree CFD surrogate
+> (Smolík, Brzobohatý, HPCSE 2026) were available. The models are SIRENs trained by
+> `tools/srnxr/srnxr_make_synthetic.py` on an analytic time-dependent flow. They have the
+> layout of the method (adaptive octree, 15 % expanded leaves, Gaussian blending, one SIREN per
+> leaf over (x, y, z, t), five fields `ux uy uz p rho`), but say nothing about the fidelity of
+> real models. Accuracy limits for real data must come from the dataset requirements.
+
+## Hardware and software
+
+| item | value |
+|---|---|
+| GPU | NVIDIA RTX PRO 6000 Blackwell Server Edition (2 per node), SM 12.0, 97 887 MiB |
+| node | p12-turin01 (IT4I Complementary Systems) |
+| driver | 610.43.02 (CUDA driver API 13.3) |
+| CUDA toolkit | 12.9.0 (runtime 12.9), GCC 14.3 |
+| OptiX | Cycles build: SDK 8.1.0; `srnxr_coopvec`: OptiX 9.1.0 headers (github.com/NVIDIA/optix-dev, tag v9.1.0) |
+| clocks | max SM clock 2430 MHz, power limit 600 W, application clocks not locked |
+| Cycles | branch `srnxr_tensor` at 3cf99ca8e plus the uncommitted changes of this work |
+| kernel flags | standalone: `-O3 -lineinfo`, `sm_120`, no fast math; `_cycles_regs` variant adds `-maxrregcount=168` and runs 384-thread blocks like the Cycles kernels; Cycles: `--use_fast_math` (the decoder calls `__nv_sinf`, `__nv_expf`, `__fdiv_rn` explicitly in accurate mode) |
+| RTX 4090 (SM 8.9) | **NOT TESTED** (not available) |
+
+## Models
+
+| model | leaves | octree depth | network | FP16 weights | file (with FP32 master) |
+|---|---|---|---|---|---|
+| SIREN-3 (`synth_w256_l3`) | 120 | 3 | 4 -> 256 x 3 sine layers -> 5, w0 = 30 every layer | 32.0 MB | 96.4 MB |
+| SIREN-4 (`synth_w256_l4`) | 120 | 3 | 4 -> 256 x 4 sine layers -> 5, w0 = 30 every layer | 47.7 MB | 143.7 MB |
+
+Fit of the synthetic models against the analytic field (held-out NRMSE, range normalized):
+SIREN-3 0.08 % (rho) - 0.44 % (uz); SIREN-4 0.08 % - 0.44 %. Leaves overlap 15.0 % of the strict
+size on every interior side (measured by the loader), 18.2 neighbors per leaf on average, 27 at
+most.
+
+## Standalone throughput
+
+`tools/srnxr/bench/srnxr_bench` and `srnxr_coopvec`, decoding the Cycles device blob with the
+Cycles decoder code. Mqueries/s at batch 65 536 and the latency of a batch of 1 query (one
+launch, launch overhead included; an empty launch costs 1.45 us). Warm runs, median of 20.
+A query is one field evaluation, which evaluates 1 - 8 local networks (the leaves whose support
+contains the point).
+
+Workloads (65 536 queries each, `tools/srnxr/srnxr_points.py`):
+- `one_leaf`: all queries in the strict interior of one leaf (one network per query, best case)
+- `coherent`: 32-query segments along random rays (neighboring queries share leaves)
+- `random`: uniform random points (neighboring queries in different leaves)
+- `overlap`: points in the overlap zones only (several networks per query)
+
+### SIREN-3, Cycles launch configuration (168 registers, 384 threads per block)
+
+| workload | CUDA_FUSED per-thread | CUDA_FUSED warp | CUDA_FUSED warp, `__sinf` | CUDA_TENSOR | CUDA_TENSOR, `__sinf` | COOPVEC (OptiX) | COOPVEC, `__sinf` |
+|---|---|---|---|---|---|---|---|
+| one_leaf | 2.13 Mq/s, 1649 us@1 | 22.4 Mq/s, 144 us@1 | 22.9 Mq/s, 142 us@1 | **51.7 Mq/s**, 94 us@1 | **59.4 Mq/s**, 80 us@1 | 3.40 Mq/s, 645 us@1 | 3.43 Mq/s, 621 us@1 |
+| coherent | 1.71 Mq/s, 3287 us@1 | 8.38 Mq/s, 273 us@1 | 8.59 Mq/s, 271 us@1 | **45.6 Mq/s**, 176 us@1 | **52.6 Mq/s**, 146 us@1 | 3.13 Mq/s, 1284 us@1 | 3.21 Mq/s, 1226 us@1 |
+| random | 1.11 Mq/s, 3285 us@1 | 8.31 Mq/s, 275 us@1 | 8.55 Mq/s, 272 us@1 | 11.0 Mq/s, 178 us@1 | 11.6 Mq/s, 148 us@1 | 1.29 Mq/s, 1284 us@1 | 1.31 Mq/s, 1227 us@1 |
+| overlap | 0.68 Mq/s, 6560 us@1 | 4.84 Mq/s, 535 us@1 | 4.95 Mq/s, 527 us@1 | 5.48 Mq/s, 340 us@1 | 5.66 Mq/s, 281 us@1 | 0.86 Mq/s, 2414 us@1 | 0.86 Mq/s, 2316 us@1 |
+
+COOPVEC runs as an OptiX raygen program (OptiX chooses the launch configuration), not with the
+Cycles launch bounds.
+
+### SIREN-3, unconstrained registers (202 registers, 128 threads per block)
+
+| workload | CUDA_FUSED per-thread | CUDA_FUSED warp | CUDA_FUSED warp, `__sinf` | CUDA_TENSOR | CUDA_TENSOR, `__sinf` |
+|---|---|---|---|---|---|
+| one_leaf | 1.81 Mq/s | 19.8 Mq/s | 20.2 Mq/s | 34.4 Mq/s | 39.6 Mq/s |
+| coherent | 1.45 Mq/s | 9.72 Mq/s | 10.6 Mq/s | 37.6 Mq/s | 43.9 Mq/s |
+| random | 0.85 Mq/s | 7.98 Mq/s | 8.30 Mq/s | 8.10 Mq/s | 9.42 Mq/s |
+| overlap | 0.55 Mq/s | 4.40 Mq/s | 4.49 Mq/s | 4.16 Mq/s | 4.79 Mq/s |
+
+The 168-register / 384-thread configuration is faster for CUDA_TENSOR (more resident warps hide
+the L2 latency of the weight fragments) despite 184 - 248 bytes of spills.
+
+### SIREN-4, Cycles launch configuration (168 registers, 384 threads per block)
+
+| workload | CUDA_FUSED per-thread | CUDA_FUSED warp | CUDA_FUSED warp, `__sinf` | CUDA_TENSOR | CUDA_TENSOR, `__sinf` | COOPVEC (OptiX) | COOPVEC, `__sinf` |
+|---|---|---|---|---|---|---|---|
+| one_leaf | 1.41 Mq/s | 14.9 Mq/s | 15.3 Mq/s | **39.6 Mq/s** | **46.4 Mq/s** | 2.42 Mq/s, 891 us@1 | 2.44 Mq/s, 866 us@1 |
+| coherent | 1.05 Mq/s | 5.59 Mq/s | 5.73 Mq/s | **35.2 Mq/s** | **41.9 Mq/s** | 2.23 Mq/s, 1816 us@1 | 2.28 Mq/s, 1751 us@1 |
+| random | 0.73 Mq/s | 5.86 Mq/s | 6.00 Mq/s | 8.65 Mq/s | 9.38 Mq/s | 0.89 Mq/s, 1714 us@1 | 0.89 Mq/s, 1654 us@1 |
+| overlap | 0.46 Mq/s | 3.39 Mq/s | 3.47 Mq/s | 4.33 Mq/s | 4.62 Mq/s | 0.58 Mq/s, 3421 us@1 | 0.59 Mq/s, 3287 us@1 |
+
+### SIREN-4, unconstrained registers (128 threads per block)
+
+| workload | CUDA_FUSED per-thread | CUDA_FUSED warp | CUDA_FUSED warp, `__sinf` | CUDA_TENSOR | CUDA_TENSOR, `__sinf` |
+|---|---|---|---|---|---|
+| one_leaf | 1.20 Mq/s | 14.6 Mq/s | 15.2 Mq/s | 29.0 Mq/s | 33.6 Mq/s |
+| coherent | 1.00 Mq/s | 7.50 Mq/s | 7.84 Mq/s | 31.1 Mq/s | 36.7 Mq/s |
+| random | 0.58 Mq/s | 5.76 Mq/s | 5.95 Mq/s | 6.44 Mq/s | 7.53 Mq/s |
+| overlap | 0.38 Mq/s | 3.15 Mq/s | 3.24 Mq/s | 3.24 Mq/s | 3.79 Mq/s |
+
+The fourth sine layer costs CUDA_TENSOR 15 - 23 % and the warp SIMT path 25 - 35 %, in line with
+the extra 256 x 256 layer (about +50 % multiply-adds).
+
+### Batch size scaling
+
+All batch sizes 1, 32, 256, 1024, 4096, 16 384 and 65 536 are in
+`neural_volume_results/perf.csv` (one row per build, model, workload, configuration and batch).
+
+### Execution evidence
+
+Device counters of the correctness runs (16 000 accuracy points, 33 816 network evaluations):
+
+| backend | counters |
+|---|---|
+| CUDA_FUSED per-thread | 33 816 `simt_evals` |
+| CUDA_FUSED warp | 33 816 `warp_simt_evals` in 21 539 passes, 0 per-thread |
+| CUDA_TENSOR | 20 878 `tensor_tiles` with 33 816 rows (1.6 of 16 rows per tile on this incoherent set), 0 `fallback_simt` |
+| COOPVEC | 33 816 `coopvec_evals`, 0 `simt_evals` |
+
+`OPTIX_DEVICE_PROPERTY_COOP_VEC` reports `STANDARD` on this GPU and driver. The OptiX module
+with FP16 cooperative vector products compiles and runs; the same products with **FP32 output
+vectors are rejected by OptiX 9.1** at module creation (`output vector type is of unsupported
+type (0x2A03)`), so COOPVEC rounds every layer output (the sine argument) to FP16.
+
+### Why the backends perform as they do
+
+- **CUDA_FUSED per-thread** keeps two 256-float activation arrays per thread in local memory
+  (2 KB per thread): L1 thrashing and long dependent load chains. It remains as the CPU path and
+  as the GPU path for warps with fewer than 8 active lanes.
+- **CUDA_FUSED warp-cooperative** distributes the 256 neurons over the lanes (8 per lane),
+  broadcasts the inputs by shuffle and reads the weights from a transposed FP16 copy, coalesced;
+  4 queries per pass. 10x the per-thread path at identical arithmetic.
+- **CUDA_TENSOR** groups the queries of a warp by network (16 rows per `mma.m16n8k16` tile) and
+  keeps the activations in registers in fragment layout. It wins when neighboring queries share
+  networks (one_leaf, coherent: 45 - 59 Mq/s); with random leaves the tiles are 1 - 2 rows full
+  and it falls to the level of the warp SIMT path.
+- **COOPVEC** is 10 - 15x slower than CUDA_TENSOR here: OptiX has no cooperative vector sine, so
+  the 256-element vectors of every layer are taken apart for a per-element FP32 sine, and the
+  256-wide FP16 vectors per thread do not fit the register file. The `__sinf` variant is only 1 %
+  faster, the sine is not the bottleneck.
+- Fast sine (`__sinf`) gains 2 - 15 % on CUDA_FUSED and CUDA_TENSOR.
+- Network divergence (`random`, `overlap`) costs every backend 4 - 10x; reordering queries by
+  network before decoding is not implemented (and is not possible inline in the Cycles volume
+  integrator).
+
+### Partially active warps
+
+In the Cycles volume integrator most warps reach the image lookup with only part of their lanes
+active (on the test scene 10.9 of 32 on average, see below). `srnxr_bench --active-fraction F`
+reproduces this: every launch is split into two launches over complementary random subsets of
+the threads (F and 1 - F active). CUDA_FUSED, SIREN-3, Cycles launch configuration, batch
+65 536, Mqueries/s:
+
+| workload | F | partial-warp path | per-thread (`--no-partial`) | gain |
+|---|---|---|---|---|
+| one_leaf | 0.7 / 0.5 / 0.3 | 9.83 / 7.60 / 8.96 | 1.22 / 1.23 / 1.26 | 6.2 - 8.1x |
+| coherent | 0.7 / 0.5 / 0.3 | 3.51 / 2.90 / 3.47 | 0.85 / 0.79 / 0.79 | 3.7 - 4.4x |
+| random | 0.7 / 0.5 / 0.3 | 5.41 / 3.85 / 5.48 | 0.72 / 0.71 / 0.74 | 5.4 - 7.6x |
+| overlap | 0.7 / 0.5 / 0.3 | 2.88 / 2.24 / 3.04 | 0.45 / 0.46 / 0.46 | 4.9 - 6.7x |
+
+The partial-warp path matches the per-thread path to 2.4e-7 (97.8 % of the values bitwise; the
+remaining differences are FMA contraction); with F = 0.5 CUDA_TENSOR runs all evaluations through
+it and counts them as `fallback_simt`. It is limited by re-reading the weights for every pass of
+2 queries (the static shared memory of a Cycles block does not hold more FP32 activations).
+
+## Load, packing and memory (SIREN-3)
+
+| step | value |
+|---|---|
+| parse + validate (host) | 0.42 s (96 MB file, CRC of every section) |
+| pack device blob (host) | 0.025 s |
+| device blob, CUDA_FUSED | 64.4 MB (FP16 weights 32.4 MB + transposed warp copy 32.0 MB) |
+| device blob, CUDA_TENSOR | 64.4 MB (FP16 weights 32.4 MB + mma fragment copy 31.9 MB) measured before the partial-warp path; it now also holds the transposed copy (+32.0 MB) |
+| device blob, COOPVEC | weights + 32.3 MB cooperative vector region (INFERENCING_OPTIMAL matrices = row-major size); in Cycles also the 32.3 MB row-major staging copy the device converts from |
+| `optixCoopVecMatrixConvert`, 360 matrices | 2.1 - 2.2 ms standalone (6.4 ms the first time), 1.8 - 2.1 ms in Cycles |
+| OptiX module + pipeline creation, standalone | 10.5 ms (cached) |
+| OptiX neural volume module in Cycles, first compile | about 196 s, 10 GB host memory (cached afterwards); with the network evaluation inlined into every call site it did not finish in 15 minutes (60 GB) |
+
+In Cycles every SRNXR attribute is its own image, so a scene that reads two fields of one file
+(density and pressure) holds two device blobs.
+
+## Accuracy
+
+`tools/srnxr/srnxr_compare.py` against the float64 oracle with the deployed FP16 weights
+(`srnxr_reference.py`), 16 000 deterministic points in nine categories (block centers, strict
+boundaries, overlap zones, T-junctions, high-gradient front, time boundaries, outside the domain,
+uniform). NRMSE is RMSE / field range over all points inside the domain; PSNR over the range.
+
+| comparison (SIREN-3) | NRMSE ux | NRMSE p | NRMSE rho | max abs p | PSNR p |
+|---|---|---|---|---|---|
+| storage: FP16 weights vs FP32 master (oracle arithmetic) | 3.5e-5 | 4.2e-5 | 2.8e-5 | 1.0e-3 | 87.6 dB |
+| CPU (host build of CUDA_FUSED) | 5.0e-8 | 5.7e-8 | 4.0e-8 | 1.1e-6 | 144.9 dB |
+| CUDA_FUSED per-thread | 4.9e-8 | 5.7e-8 | 4.1e-8 | 1.1e-6 | 144.9 dB |
+| CUDA_FUSED warp | 4.2e-8 | 4.9e-8 | 3.5e-8 | 9.2e-7 | 146.3 dB |
+| CUDA_FUSED warp, `__sinf` | 6.5e-8 | 7.5e-8 | 5.7e-8 | 1.3e-6 | 142.6 dB |
+| CUDA_TENSOR | 1.4e-5 | 1.6e-5 | 1.2e-5 | 2.8e-4 | 96.1 dB |
+| CUDA_TENSOR, `__sinf` | 1.3e-5 | 1.6e-5 | 1.2e-5 | 2.8e-4 | 96.1 dB |
+| emulation: FP16 activations per layer (oracle) | 1.3e-5 | 1.6e-5 | 1.2e-5 | 2.8e-4 | 96.1 dB |
+| COOPVEC (FP16 layer outputs) | 9.4e-5 | 1.1e-4 | 8.4e-5 | 2.3e-3 | 79.1 dB |
+| COOPVEC, `__sinf` | 9.3e-5 | 1.1e-4 | 8.4e-5 | 2.3e-3 | 79.1 dB |
+
+SIREN-4 behaves the same (worst field: FUSED 6.8e-8, TENSOR 2.3e-5, COOPVEC 1.7e-4, storage 6.3e-5).
+All backends return exactly the outside value for the 2 000 points outside the domain.
+
+- CUDA_TENSOR matches the oracle with FP16-rounded activations, so its error is the intended
+  activation rounding, below the FP16 storage error.
+- COOPVEC is 7x less accurate than CUDA_TENSOR and above the storage error: the pre-activation
+  is rounded to FP16 before the multiplication by w0 = 30, which amplifies it.
+- The fast sine adds nothing measurable on top of FP16 effects; on CUDA_FUSED it is 1.5x the
+  FP32 rounding error.
+
+Field-level analysis (`srnxr_analysis.py`, slice z = -0.3, t = 0.5, 256 x 256, SIREN-3):
+
+| backend | gradient rel. RMSE (rho) | rho isosurface displacement, mean | support jump rho, mean / max |
+|---|---|---|---|
+| oracle | 0 | 0 | 1.6e-4 / 3.3e-3 |
+| CPU | 7.5e-6 | 3.3e-8 | 1.6e-4 / 3.3e-3 |
+| CUDA_FUSED warp | 6.5e-6 | 3.0e-8 | 1.6e-4 / 3.3e-3 |
+| CUDA_TENSOR | 2.5e-3 | 9.9e-6 | 1.7e-4 / 3.3e-3 |
+| COOPVEC | 1.4e-2 | 5.3e-5 | 2.0e-4 / 3.3e-3 |
+
+The isosurface displacement is in domain units (grid spacing 7.8e-3). The jump across the support
+boundary of a leaf is a property of the method (Gaussian weights truncated at the expanded box),
+not of the backends. Error maps: `neural_volume_results/error_map_*.png`.
+
+Certified majorant bounds (`srnxr_bounds_check.py`, 2 000 samples per leaf): 0 violations of the
+per-leaf output ranges and of the blended field against the neighbor union; the bound is 1.4 - 2.0x
+the sampled range (median), up to 13x for rho in nearly constant leaves.
+
+## Cycles end to end
+
+Scene `srnxr_make_scene.py`: 1024 x 512 (the default output size of the `cycles` standalone,
+which does not take the camera resolution of the XML unless `--width`/`--height` are given), the
+SIREN-3 volume (attribute `neural_density` from
+field `rho`, `pressure` from field `p`; density `max(rho, 0) * 8`, emission `max(p, 0) * 0.6`),
+one point light, 16 samples, default (unbiased) volume integrator, one Cycles build with OptiX 9.1
+headers and `WITH_CYCLES_NEURAL_COOPVEC=ON` (`install/cyclesphi_srnxr_coopvec_p12`). Every row
+decodes both fields (two images, about 87 M queries and 156 M network evaluations each).
+
+| device, backend | partial-warp path | render time | decoder counters (both images) |
+|---|---|---|---|
+| CUDA, CUDA_FUSED | on | **94.5 s** | warp-cooperative 81.0 M, partial-warp 189.4 M, per-thread 41.8 M |
+| CUDA, CUDA_FUSED | off (`--neural-partial-warps 0`) | 211.6 s | warp-cooperative 80.9 M, per-thread 231.3 M |
+| CUDA, CUDA_TENSOR | on | **94.4 s** | mma 12.6 M tiles / 81.2 M rows (6.4 - 6.6 of 16 rows per tile); `fallback_simt` 231.0 M (partial-warp 189.0 M, per-thread 42.0 M) |
+| CUDA, CUDA_TENSOR | off | 210.0 s | mma 12.5 M tiles / 80.9 M rows; `fallback_simt` 231.3 M, all per-thread |
+| OptiX, CUDA_TENSOR | on | 92.5 s | as on the CUDA device |
+| OptiX, COOPVEC | - | 138.1 s | 312.2 M `coopvec_evals`, 0 SIMT |
+| CPU | | NOT TESTED | |
+
+Images: `neural_volume_results/render_l3_{cuda_fused,cuda_tensor,optix_coopvec}_16spp.png`.
+PSNR against CUDA_FUSED: CUDA_FUSED without the partial-warp path 71.1 dB, CUDA_TENSOR 48.0 dB,
+COOPVEC 44.6 dB (the backends change the decoded values slightly, so the paths and the noise
+differ); mean image values agree to 5 digits.
+
+- The warps are partially active at the image lookup: 85.9 M queries in 7.85 M warp calls,
+  10.9 active lanes on average. The partial-warp path halves the render time for both CUDA
+  backends (211 s -> 94 s); 13 % of the evaluations still come from warps with fewer than 8
+  active lanes and run per thread.
+- CUDA_TENSOR runs only 26 % of the evaluations on Tensor Cores (the fully active warps) and is
+  no faster than CUDA_FUSED end to end: in this integrator the warp occupancy, not the matrix
+  arithmetic, is the limit.
+- COOPVEC runs every evaluation as cooperative vector products inside the OptiX volume programs
+  and is 1.46x slower than the CUDA backends, in line with the standalone measurements.
+- Every run includes the conservative majorant bake: 33.6 M bound queries per image (128^3 voxels
+  x 16 samples), no network evaluation.
+
+An earlier version of the test scene declared the density attribute with
+`std="ATTR_STD_VOLUME_DENSITY"`; the attribute node did not reliably find it (depending on the
+image load order), so the earlier timings of this section (335 s, 143 s) decoded only one field
+and are withdrawn. The scene now uses named attributes.
+
+## Not tested
+
+- RTX 4090 / Ada (SM 8.9), any other GPU than the RTX PRO 6000 Blackwell.
+- Real checkpoints of the HPCSE 2026 surrogate; Fourier MLP models (not supported by the decoder).
+- CPU rendering of format 2 volumes in Cycles (the CPU path is the host build of CUDA_FUSED, its
+  accuracy was tested standalone).
+- COOPVEC with OSL shading (rejected by design), on GPUs before Blackwell.
+- Profiler counters (Nsight Compute) of Tensor Core utilization and occupancy.
+- Cold-cache (first launch after upload) timings per batch; only the first full-set launch was
+  recorded (CUDA_TENSOR 11 ms, COOPVEC 20 - 31 ms for 16 000 points).

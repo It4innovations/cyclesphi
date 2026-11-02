@@ -21,8 +21,19 @@ void OptiXDeviceQueue::init_execution()
   CUDADeviceQueue::init_execution();
 }
 
-static bool is_optix_specific_kernel(DeviceKernel kernel, bool osl_shading, bool osl_camera)
+static bool is_optix_specific_kernel(DeviceKernel kernel,
+                                     bool osl_shading,
+                                     bool osl_camera,
+                                     bool neural_volume)
 {
+  /* Volume shading with neural volume cooperative vectors runs as OptiX programs. */
+  if (neural_volume && (kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME ||
+                        kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME_RAY_MARCHING ||
+                        kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW ||
+                        kernel == DEVICE_KERNEL_SHADER_EVAL_VOLUME_DENSITY))
+  {
+    return true;
+  }
 #  ifdef WITH_OSL
   /* OSL uses direct callables to execute, so shading needs to be done in OptiX if OSL is used. */
   if (osl_shading && device_kernel_has_shading(kernel)) {
@@ -54,7 +65,8 @@ bool OptiXDeviceQueue::enqueue(DeviceKernel kernel,
   const bool osl_camera = false;
 #  endif
 
-  if (!is_optix_specific_kernel(kernel, osl_shading, osl_camera)) {
+  const bool neural_volume = optix_device->neural_volume_module != nullptr;
+  if (!is_optix_specific_kernel(kernel, osl_shading, osl_camera, neural_volume)) {
     return CUDADeviceQueue::enqueue(kernel, work_size, args);
   }
 
@@ -202,6 +214,17 @@ bool OptiXDeviceQueue::enqueue(DeviceKernel kernel,
   sbt_params.hitgroupRecordCount = NUM_HIT_PROGRAM_GROUPS;
   sbt_params.callablesRecordBase = sbt_data_ptr + CALLABLE_PROGRAM_GROUPS_BASE * sizeof(SbtRecord);
   sbt_params.callablesRecordCount = NUM_CALLABLE_PROGRAM_GROUPS;
+  if (neural_volume && !osl_shading &&
+      (kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME ||
+       kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME_RAY_MARCHING ||
+       kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW ||
+       kernel == DEVICE_KERNEL_SHADER_EVAL_VOLUME_DENSITY))
+  {
+    /* The neural volume programs call the cooperative vector networks as callables 0 - 2. */
+    sbt_params.callablesRecordBase = sbt_data_ptr +
+                                     SRNXR_CALLABLE_PROGRAM_GROUPS_BASE * sizeof(SbtRecord);
+    sbt_params.callablesRecordCount = NUM_SRNXR_CALLABLE_PROGRAM_GROUPS;
+  }
   sbt_params.callablesRecordStrideInBytes = sizeof(SbtRecord);
 
 #  ifdef WITH_OSL

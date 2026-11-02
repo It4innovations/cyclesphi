@@ -244,6 +244,7 @@ set(SRC_KERNEL_UTIL_HEADERS
   util/image_2d.h
   util/image_3d.h
   util/image_3d_srnxr.h
+  util/image_3d_srnxr_decode.h
   util/lookup_table.h
   util/nanovdb.h
   util/profiler.h

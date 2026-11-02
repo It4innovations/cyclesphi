@@ -31,3 +31,6 @@ install*/
 
 # OSL compiled examples
 examples/osl/*.oso
+
+# Measured results of the neural volume tools (tools/srnxr/neural_volume_results.md)
+tools/srnxr/neural_volume_results/

@@ -9,6 +9,7 @@
 #include <regex>
 #include <sstream>
 
+#include "device/device.h"
 #include "graph/node_xml_bin.h"
 
 // #include "scene/alembic.h"
@@ -100,6 +101,198 @@ struct XMLReadState : public XMLReader {
 
   XMLReadState() : scene(nullptr) {}
 };
+
+/* Neural volume decoder configuration */
+
+static XMLNeuralVolumeOptions xml_neural_volume_options;
+
+void xml_set_neural_volume_options(const XMLNeuralVolumeOptions &options)
+{
+  xml_neural_volume_options = options;
+}
+
+/* Whether every render device can run the backend. The CPU runs the CUDA_FUSED arithmetic one
+ * query per thread. CUDA_TENSOR needs mma.m16n8k16 (SM 8.0) and the shading kernels launched
+ * as CUDA kernels (with OSL on OptiX they are OptiX programs, where warp-synchronous code is
+ * not allowed). COOPVEC needs OptiX programs and is not integrated into Cycles shading. */
+static bool xml_srnxr_device_supports(const Scene *scene,
+                                      const SRNXRBackend backend,
+                                      string &reason)
+{
+  const DeviceInfo &info = scene->device->info;
+  const vector<DeviceInfo> devices = (info.type == DEVICE_MULTI) ? info.multi_devices :
+                                                                   vector<DeviceInfo>{info};
+  for (const DeviceInfo &d : devices) {
+    const string name = Device::string_from_type(d.type) + " " + d.description;
+    switch (backend) {
+      case SRNXR_BACKEND_CUDA_FUSED:
+        if (d.type == DEVICE_METAL) {
+          reason = name + ": the neural volume decoder is not built for Metal";
+          return false;
+        }
+        break;
+      case SRNXR_BACKEND_CUDA_TENSOR:
+#ifndef WITH_CYCLES_NEURAL_CUDA_TENSOR
+        reason = "built without WITH_CYCLES_NEURAL_CUDA_TENSOR";
+        return false;
+#endif
+        if (d.type != DEVICE_CUDA && d.type != DEVICE_OPTIX) {
+          reason = name + ": CUDA_TENSOR runs on CUDA and OptiX devices only";
+          return false;
+        }
+        if (d.compute_capability < 80) {
+          reason = name + string_printf(": CUDA_TENSOR needs SM 8.0 or newer, the device is SM %d.%d",
+                                        d.compute_capability / 10,
+                                        d.compute_capability % 10);
+          return false;
+        }
+        if (d.type == DEVICE_OPTIX && scene->params.shadingsystem == SHADINGSYSTEM_OSL) {
+          reason = name + ": with OSL the OptiX device shades in OptiX programs, CUDA_TENSOR "
+                          "needs CUDA kernels";
+          return false;
+        }
+        break;
+      case SRNXR_BACKEND_COOPVEC:
+#ifndef WITH_CYCLES_NEURAL_COOPVEC
+        reason = "built without WITH_CYCLES_NEURAL_COOPVEC";
+        return false;
+#endif
+        if (d.type != DEVICE_OPTIX) {
+          reason = name + ": COOPVEC runs in OptiX programs, use the OptiX device";
+          return false;
+        }
+        if (scene->params.shadingsystem == SHADINGSYSTEM_OSL) {
+          reason = name + ": COOPVEC is built for SVM shading, not OSL";
+          return false;
+        }
+        break;
+      case SRNXR_BACKEND_NUM:
+        reason = "invalid backend";
+        return false;
+    }
+  }
+  return true;
+}
+
+/* Decoder settings of an SRNXR attribute: XML srnxr_* attributes, the command line overrides
+ * and the device check. Returns false when the volume must not be loaded. */
+static bool xml_read_srnxr_settings(const XMLReadState &state,
+                                    const xml_node node_attribute,
+                                    SRNXRBuildSettings &settings)
+{
+  const XMLNeuralVolumeOptions &cli = xml_neural_volume_options;
+  string backend_name = "cuda_fused";
+  string sine_name = "accurate";
+  if (const xml_attribute a = node_attribute.attribute("srnxr_backend")) {
+    backend_name = a.value();
+  }
+  if (const xml_attribute a = node_attribute.attribute("srnxr_sine")) {
+    sine_name = a.value();
+  }
+  if (!cli.backend.empty()) {
+    backend_name = cli.backend;
+  }
+  if (!cli.sine.empty()) {
+    sine_name = cli.sine;
+  }
+  if (!srnxr_backend_from_name(backend_name, settings.backend)) {
+    fprintf(stderr, "Error: unknown neural volume backend \"%s\".\n", backend_name.c_str());
+    return false;
+  }
+  if (!srnxr_sine_mode_from_name(sine_name, settings.sine_mode)) {
+    fprintf(stderr, "Error: unknown neural volume sine mode \"%s\".\n", sine_name.c_str());
+    return false;
+  }
+  if (const xml_attribute a = node_attribute.attribute("srnxr_fields")) {
+    std::istringstream ss(a.value());
+    std::string field;
+    while (ss >> field) {
+      settings.fields.push_back(field);
+    }
+  }
+  if (const xml_attribute a = node_attribute.attribute("srnxr_time")) {
+    settings.has_time_frame = true;
+    settings.time_frame = float(atof(a.value()));
+  }
+  if (const xml_attribute a = node_attribute.attribute("srnxr_time_shutter")) {
+    settings.time_shutter = float(atof(a.value()));
+  }
+  if (const xml_attribute a = node_attribute.attribute("srnxr_outside")) {
+    settings.outside_value = float(atof(a.value()));
+  }
+  if (const xml_attribute a = node_attribute.attribute("srnxr_counters")) {
+    settings.counters = a.as_bool();
+  }
+  if (cli.counters >= 0) {
+    settings.counters = cli.counters != 0;
+  }
+  if (const xml_attribute a = node_attribute.attribute("srnxr_partial_warps")) {
+    settings.partial_warps = a.as_bool();
+  }
+  if (cli.partial_warps >= 0) {
+    settings.partial_warps = cli.partial_warps != 0;
+  }
+
+  const SRNXRBackend requested = settings.backend;
+  string reason;
+  bool supported = xml_srnxr_device_supports(state.scene, requested, reason);
+  if (supported && requested == SRNXR_BACKEND_COOPVEC) {
+    /* Device capability (OPTIX_DEVICE_PROPERTY_COOP_VEC, OptiX headers of the build). */
+    supported = state.scene->device->supports_neural_coopvec(reason);
+  }
+  if (!supported) {
+    SRNXRBackend fallback;
+    if (cli.benchmark || cli.fallback.empty() || !srnxr_backend_from_name(cli.fallback, fallback))
+    {
+      fprintf(stderr,
+              "Error: neural volume backend %s is not supported: %s%s\n",
+              srnxr_backend_name(requested),
+              reason.c_str(),
+              cli.benchmark ? " (benchmark mode, no fallback)" : "");
+      return false;
+    }
+    string fallback_reason;
+    if (!xml_srnxr_device_supports(state.scene, fallback, fallback_reason)) {
+      fprintf(stderr,
+              "Error: neural volume backend %s is not supported (%s), neither is the fallback "
+              "%s (%s)\n",
+              srnxr_backend_name(requested),
+              reason.c_str(),
+              srnxr_backend_name(fallback),
+              fallback_reason.c_str());
+      return false;
+    }
+    fprintf(stderr,
+            "Warning: neural volume backend %s is not supported (%s), using the configured "
+            "fallback %s\n",
+            srnxr_backend_name(requested),
+            reason.c_str(),
+            srnxr_backend_name(fallback));
+    settings.backend = fallback;
+  }
+  if (settings.backend == SRNXR_BACKEND_COOPVEC) {
+    /* The volume shading kernels run as OptiX programs from the next kernel load. */
+    state.scene->device->set_use_neural_coopvec(true);
+  }
+  /* The warp-cooperative copy of the weights is only read by CUDA devices. */
+  {
+    const DeviceInfo &info = state.scene->device->info;
+    bool cuda = info.type == DEVICE_CUDA || info.type == DEVICE_OPTIX;
+    for (const DeviceInfo &d : info.multi_devices) {
+      cuda = cuda || d.type == DEVICE_CUDA || d.type == DEVICE_OPTIX;
+    }
+#ifndef WITH_CYCLES_NEURAL_CUDA_FUSED
+    cuda = false;
+#endif
+    settings.warp_weights = cuda;
+  }
+  printf("Neural volume decoder: requested %s, selected %s, sine %s, device %s\n",
+         srnxr_backend_name(requested),
+         srnxr_backend_name(settings.backend),
+         srnxr_sine_mode_name(settings.sine_mode),
+         state.scene->device->info.description.c_str());
+  return true;
+}
 
 template<typename T>
 static void read_vector_from_binary_file(XMLReader &reader, vector<T> &data, const char *attr)
@@ -1266,7 +1459,11 @@ static void xml_read_geom(XMLReadState &state, const xml_node xml_node_geom)
             file.close();
           }
 
-          unique_ptr<ImageLoader> loader = make_unique<SRNXRImageLoader>(raw_data);
+          SRNXRBuildSettings srnxr_settings;
+          if (!xml_read_srnxr_settings(state, node_attribute, srnxr_settings)) {
+            continue;
+          }
+          unique_ptr<ImageLoader> loader = make_unique<SRNXRImageLoader>(raw_data, srnxr_settings);
 
           ImageParams params;
           xml_read_image_params(state, params, node_attribute);

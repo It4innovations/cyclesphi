@@ -146,6 +146,11 @@ void device_cuda_info(vector<DeviceInfo> &devices)
     info.has_nanovdb = true;
     info.denoisers = 0;
 
+    int cc_major = 0, cc_minor = 0;
+    cuDeviceGetAttribute(&cc_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, num);
+    cuDeviceGetAttribute(&cc_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, num);
+    info.compute_capability = cc_major * 10 + cc_minor;
+
     info.has_gpu_queue = true;
 
     /* Check if the device has P2P access to any other device in the system. */

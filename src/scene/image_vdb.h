@@ -29,6 +29,7 @@
 #include "util/transform.h"
 #include "kernel/util/image_3d_derivates.h"
 #include "kernel/util/image_3d_srnxr.h"
+#include "scene/srnxr_model.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -359,11 +360,15 @@ protected:
 };
 
 // Loader of the .srnxr (SIREN octree) format: the file is parsed and validated
-// on the host, the device blob (see image_3d_srnxr.h) holds the network
-// weights in FP32 and the kernel evaluates the density from them directly.
+// on the host, the device blob (see image_3d_srnxr.h) holds the networks and
+// the kernel evaluates the field from them directly.
+//   Format 1: 3D blocks, one output, FP32 weights on the device.
+//   Format 2: octree of local SIREN networks over (x, y, z, t) with several
+//             fields, FP16 weights, selectable inference backend; parsed by
+//             srnxr_build_device_blob_v2() (scene/srnxr_model.h).
 class SRNXRImageLoader : public VDBImageLoader {
 public:
-    SRNXRImageLoader(vector<char> &g);
+    SRNXRImageLoader(vector<char> &g, const SRNXRBuildSettings &settings = SRNXRBuildSettings());
     ~SRNXRImageLoader();
 
     virtual bool load_metadata(ImageMetaData& metadata,
@@ -387,11 +392,24 @@ public:
     virtual float3 index_to_world(float3 in) override;
 
 protected:
-    // SRNXRDeviceHeader followed by the arrays, empty when the file is invalid
+    // SRNXRDeviceHeader or SRNXRDeviceHeaderV2 followed by the arrays, empty when the file is invalid
     vector<char> device_data;
+    SRNXRBuildSettings settings;
+    SRNXRBuildReport report;
+    // Index space of the volume mesh: the acceleration grid (format 1) or the finest
+    // octree level (format 2)
+    int3 index_resolution = make_int3(0, 0, 0);
 
     const SRNXRDeviceHeader* get_header() const {
         return reinterpret_cast<const SRNXRDeviceHeader*>(device_data.data());
+    }
+
+    const SRNXRDeviceHeaderV2* get_header_v2() const {
+        return reinterpret_cast<const SRNXRDeviceHeaderV2*>(device_data.data());
+    }
+
+    bool is_version2() const {
+        return !device_data.empty() && get_header()->version == SRNXR_DEVICE_VERSION_V2;
     }
 
     bool build_device_data(const vector<char>& file);

@@ -11,6 +11,8 @@
 #include "scene/image_loader.h"
 #include "scene/stats.h"
 
+#include "kernel/util/image_3d_srnxr.h"
+
 #include "util/atomic.h"
 #include "util/debug.h"
 #include "util/image.h"
@@ -341,6 +343,18 @@ device_image *ImageCache::load_image_full(Device &device,
       uint8_t *pixels = mem->data<uint8_t>();
       if (pixels) {
         loader.load_pixels(metadata, pixels);
+        if (type == IMAGE_DATA_TYPE_SRNXR_FLOAT &&
+            metadata.nanovdb_byte_size >= sizeof(SRNXRDeviceHeaderV2))
+        {
+          /* Statistics slot of the neural volume decoder, see srnxr_counter_add(). */
+          SRNXRDeviceHeaderV2 *hdr = reinterpret_cast<SRNXRDeviceHeaderV2 *>(pixels);
+          if (hdr->magic == SRNXR_DEVICE_MAGIC && hdr->version == SRNXR_DEVICE_VERSION_V2) {
+            hdr->counter_slot = image_info_id;
+            printf("SRNXR: image %s uses counter slot %u\n",
+                   loader.name().c_str(),
+                   image_info_id % SRNXR_COUNTER_SLOTS);
+          }
+        }
       }
 #endif
       break;

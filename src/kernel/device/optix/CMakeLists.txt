@@ -16,6 +16,10 @@ set(SRC_KERNEL_DEVICE_OPTIX
   kernel_shader_raytrace.cu
 )
 
+if(WITH_CYCLES_NEURAL_VOLUME AND WITH_CYCLES_NEURAL_COOPVEC)
+  list(APPEND SRC_KERNEL_DEVICE_OPTIX kernel_neural_volume.cu)
+endif()
+
 if(WITH_CYCLES_OSL)
   math(EXPR OSL_LIBRARY_VERSION_CODE "${OSL_VERSION_MAJOR} * 10000 + ${OSL_VERSION_MINOR} * 100 + ${OSL_VERSION_PATCH}")
 
@@ -61,6 +65,9 @@ if(WITH_CYCLES_CUDA_BINARIES AND WITH_CYCLES_DEVICE_OPTIX)
     endif()
 
     set(arch compute_50)
+    if(DEFINED cycles_optix_kernel_arch)
+      set(arch ${cycles_optix_kernel_arch})
+    endif()
     set(cuda_nvcc_executable ${CUDA_NVCC_EXECUTABLE})
     set(cuda_version ${CUDA_VERSION})
     if("${CUDA_VERSION}" GREATER_EQUAL 130) # Support for Maxwell, Pascal and Volta was dropped in CUDA 13
@@ -117,6 +124,15 @@ if(WITH_CYCLES_CUDA_BINARIES AND WITH_CYCLES_DEVICE_OPTIX)
     kernel_optix_shader_raytrace
     "kernel_shader_raytrace.cu"
     "--keep-device-functions")
+  if(WITH_CYCLES_NEURAL_VOLUME AND WITH_CYCLES_NEURAL_COOPVEC)
+    # Cooperative vectors need OptiX 9 headers, the programs are built for Turing and newer.
+    set(cycles_optix_kernel_arch compute_75)
+    cycles_optix_kernel_add(
+      kernel_optix_neural_volume
+      "kernel_neural_volume.cu"
+      "--keep-device-functions")
+    unset(cycles_optix_kernel_arch)
+  endif()
   if(WITH_CYCLES_OSL)
     cycles_optix_kernel_add(
       kernel_optix_osl

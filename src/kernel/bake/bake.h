@@ -167,7 +167,7 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
   /* Setup shader data. */
   ShaderData sd;
   shader_setup_from_volume(&sd, &ray, in.object);
-  sd.runtime_flag = SR_IS_VOLUME_SHADER_EVAL;
+  sd.runtime_flag = SR_IS_VOLUME_SHADER_EVAL | SR_VOLUME_MAJORANT_BAKE;
   sd.shader_flag = 0;
   /* For stochastic texture sampling. */
   sd.lcg_state = lcg_state_init(offset, 0, 0, 0x15b4f88d);

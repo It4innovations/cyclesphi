@@ -516,7 +516,8 @@ ccl_device_inline void volume_shader_eval(KernelGlobals kg,
   sd->num_closure = 0;
   sd->num_closure_left = max_closures;
   sd->shader_flag = 0;
-  sd->runtime_flag = SR_IS_VOLUME_SHADER_EVAL | (sd->runtime_flag & SR_CACHE_MISS);
+  sd->runtime_flag = SR_IS_VOLUME_SHADER_EVAL |
+                     (sd->runtime_flag & (SR_CACHE_MISS | SR_VOLUME_MAJORANT_BAKE));
   sd->object_flag = 0;
 
   for (int i = 0;; i++) {

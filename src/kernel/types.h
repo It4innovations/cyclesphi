@@ -928,6 +928,9 @@ enum ShaderRuntimeFlag {
   SR_RAY_PORTAL = (1 << 11),
   /* Shader evaluation needs to be redone, because of texture cache miss */
   SR_CACHE_MISS = (1 << 12),
+  /* Volume density evaluation of the majorant octree (kernel_volume_density_evaluate): images
+   * that cannot be point sampled safely may return conservative bounds instead. */
+  SR_VOLUME_MAJORANT_BAKE = (1 << 13),
 };
 
 /* Shader flags that are set after compiling the shaders. */

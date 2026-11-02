@@ -50,6 +50,9 @@ class CUDADevice : public GPUDevice {
 
   bool support_device(const uint /*kernel_features*/);
 
+  /* Print the statistics the SRNXR neural volume decoder kept in the CUDA module. */
+  void print_srnxr_counters();
+
   bool check_peer_access(Device *peer_device) override;
 
   bool use_adaptive_compilation();

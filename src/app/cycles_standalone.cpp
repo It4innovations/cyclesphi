@@ -478,6 +478,8 @@ static void options_parse(const int argc, const char **argv)
   /* shading system */
   string ssname = "svm";
 
+  XMLNeuralVolumeOptions neural_options;
+
   /* parse options */
   ArgParse ap;
   bool help = false;
@@ -519,6 +521,23 @@ static void options_parse(const int argc, const char **argv)
   ap.arg("--tile-size %d:TILE_SIZE").help("Tile size in pixels").action([&](auto argv) {
     parse_int(argv, &options.session_params.tile_size);
   });
+  ap.arg("--neural-backend %s:BACKEND")
+      .help("Neural volume (.srnxr) decoder: cuda_fused, cuda_tensor, coopvec")
+      .action([&](auto argv) { parse_string(argv, &neural_options.backend); });
+  ap.arg("--neural-sine %s:MODE")
+      .help("Neural volume sine: accurate (sinf), fast (__sinf on CUDA)")
+      .action([&](auto argv) { parse_string(argv, &neural_options.sine); });
+  ap.arg("--neural-fallback %s:BACKEND")
+      .help("Neural volume backend used with a warning when the requested one is unsupported")
+      .action([&](auto argv) { parse_string(argv, &neural_options.fallback); });
+  ap.arg("--neural-benchmark", &neural_options.benchmark)
+      .help("Neural volume benchmark mode: unsupported backends are errors, no fallback");
+  ap.arg("--neural-partial-warps %d:ON")
+      .help("Neural volume: 1 decode partially active warps cooperatively (default), 0 per thread")
+      .action([&](auto argv) { parse_int(argv, &neural_options.partial_warps); });
+  ap.arg("--neural-counters %d:ON")
+      .help("Neural volume device statistics: 1 on, 0 off (default: XML, on)")
+      .action([&](auto argv) { parse_int(argv, &neural_options.counters); });
   ap.arg("--list-devices", &list).help("List information about all available devices");
   ap.arg("--profile", &profile).help("Enable profile logging");
   ap.arg("--log-level %s:LEVEL")
@@ -560,6 +579,8 @@ static void options_parse(const int argc, const char **argv)
   }
 
   options.session_params.use_profiling = profile;
+
+  xml_set_neural_volume_options(neural_options);
 
   if (ssname == "osl") {
     options.scene_params.shadingsystem = SHADINGSYSTEM_OSL;
