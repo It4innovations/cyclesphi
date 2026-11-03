@@ -24,6 +24,9 @@
  *                                            separate timed kernels; compared to the direct decode
  *     --wf-grid N                            blocks of the persistent wavefront kernels (default
  *                                            8 per SM)
+ *     --wf-tiles-per-warp N                  wavefront tensor stage: 1 or 2 tiles per warp (default 1)
+ *     --tensor-split                         wavefront tensor stage with split FP16 activations
+ *                                            (hi + lo, FP32-level precision, two mma streams)
  *     --wf-warp-tiles                        wavefront tensor stage with one independent warp per
  *                                            tile (default: the warps of a block share the
  *                                            weights of one network through shared memory)
@@ -160,6 +163,8 @@ int main(int argc, char **argv)
   bool wavefront = false;
   int wf_grid = 0;
   bool wf_block_tensor = true;
+  bool tensor_split = false;
+  int wf_tiles_per_warp = 1;
   for (int i = 3; i < argc; i++) {
     const std::string a = argv[i];
     auto next = [&]() -> std::string {
@@ -211,6 +216,12 @@ int main(int argc, char **argv)
     else if (a == "--wf-warp-tiles") {
       wf_block_tensor = false;
     }
+    else if (a == "--tensor-split") {
+      tensor_split = true;
+    }
+    else if (a == "--wf-tiles-per-warp") {
+      wf_tiles_per_warp = atoi(next().c_str());
+    }
     else {
       fprintf(stderr, "unknown option %s\n", a.c_str());
       return 1;
@@ -251,6 +262,7 @@ int main(int argc, char **argv)
   settings.time_shutter = 0.0f;
   /* The queue evaluates every network on Tensor Cores. */
   settings.force_mma_weights = settings.force_mma_weights || wavefront;
+  settings.tensor_split = tensor_split;
 
   std::vector<char> blob;
   SRNXRBuildReport report;
@@ -507,13 +519,18 @@ int main(int argc, char **argv)
                               cudaMemcpyDeviceToHost));
       };
       cudaFuncAttributes tattr;
-      if (wf_block_tensor) {
-        CUDA_CHECK(cudaFuncGetAttributes(&tattr, wf_tensor_block_kernel));
+      if (wf_block_tensor && wf_tiles_per_warp == 2) {
+        CUDA_CHECK(cudaFuncGetAttributes(&tattr, wf_tensor_block_kernel<2>));
+      }
+      else if (wf_block_tensor) {
+        CUDA_CHECK(cudaFuncGetAttributes(&tattr, wf_tensor_block_kernel<1>));
       }
       else {
         CUDA_CHECK(cudaFuncGetAttributes(&tattr, wf_tensor_kernel));
       }
       jkv("wavefront_block_tensor", wf_block_tensor ? "true" : "false", false);
+      jkv("wavefront_tensor_split", tensor_split ? "true" : "false", false);
+      jkv("wavefront_tiles_per_warp", std::to_string(wf_tiles_per_warp), false);
       printf("wavefront: tensor kernel %d registers, %zu bytes local, %zu bytes shared; "
              "persistent grid %d x %d\n",
              tattr.numRegs, tattr.localSizeBytes, tattr.sharedSizeBytes, grid_p, block);
@@ -524,7 +541,7 @@ int main(int argc, char **argv)
       /* Correctness over the full set against the direct decode. */
       CUDA_CHECK(cudaMemset(wq.q.stats, 0, sizeof(uint64_t) * SRNXR_QUEUE_COUNTER_NUM));
       wavefront_run(wq, d_blob, d_points, n, hdr.decode_key, output_dim, d_wf, block, grid_p, ev,
-                    wf_block_tensor);
+                    wf_block_tensor, wf_tiles_per_warp);
       CUDA_CHECK(cudaGetLastError());
       CUDA_CHECK(cudaDeviceSynchronize());
       std::vector<float> wf_values(values.size());
@@ -593,13 +610,13 @@ int main(int argc, char **argv)
           }
           for (int r = 0; r < 3; r++) {
             wavefront_run(wq, d_blob, d_points, b, hdr.decode_key, output_dim, d_wf, block,
-                          grid_p, nullptr, wf_block_tensor);
+                          grid_p, nullptr, wf_block_tensor, wf_tiles_per_warp);
           }
           CUDA_CHECK(cudaGetLastError());
           std::vector<float> st[7], totals(repeat);
           for (int r = 0; r < repeat; r++) {
             wavefront_run(wq, d_blob, d_points, b, hdr.decode_key, output_dim, d_wf, block,
-                          grid_p, ev, wf_block_tensor);
+                          grid_p, ev, wf_block_tensor, wf_tiles_per_warp);
             CUDA_CHECK(cudaEventSynchronize(ev[7]));
             float tt[7];
             stage_times(tt);

@@ -551,6 +551,10 @@ static void options_parse(const int argc, const char **argv)
   ap.arg("--neural-queue-window %d:K")
       .help("Neural volume queue: lookups per path and launch (default 128)")
       .action([&](auto argv) { parse_int(argv, &neural_options.queue_window); });
+  ap.arg("--neural-tensor-precision %s:MODE")
+      .help("Neural volume queue Tensor Core stage: fp16 (default) or split (FP32-level "
+            "activations from a high and a low FP16 part, two mma streams)")
+      .action([&](auto argv) { parse_string(argv, &neural_options.tensor_precision); });
   ap.arg("--neural-queue-capacity %d:N")
       .help("Neural volume queue: requests per launch (default 4 x the paths)")
       .action([&](auto argv) { parse_int(argv, &neural_options.queue_capacity); });

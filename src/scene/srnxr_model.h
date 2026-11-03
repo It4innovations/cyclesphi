@@ -54,6 +54,9 @@ struct SRNXRBuildSettings {
   /* Majorant bake from the decoded field at the bake samples (SRNXR_DEVICE_FLAG_SAMPLED_MAJORANT,
    * not certified) instead of the certified bounds. */
   bool sampled_majorant = false;
+  /* Wavefront queue Tensor Core stage with split FP16 activations (hi + lo, two mma streams,
+   * FP32-level activations, SRNXR_DEVICE_FLAG_TENSOR_SPLIT). */
+  bool tensor_split = false;
   /* COOPVEC: size in bytes of an N x K FP16 matrix in the OptiX INFERENCING_OPTIMAL layout
    * (optixCoopVecMatrixComputeSize). Without it no cooperative vector region is packed. */
   std::function<uint64_t(uint32_t n, uint32_t k)> coopvec_matrix_size;

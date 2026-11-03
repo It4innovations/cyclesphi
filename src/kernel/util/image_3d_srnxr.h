@@ -138,6 +138,9 @@ enum SRNXRDeviceFlags {
   /* The majorant bake samples the decoded field like any procedural density instead of
    * returning the certified bounds: tight, but NOT certified (no guarantee between samples). */
   SRNXR_DEVICE_FLAG_SAMPLED_MAJORANT = (1 << 4),
+  /* Wavefront queue Tensor Core stage: split every FP16 activation into a high and a low
+   * FP16 part (two mma streams), FP32-level activations. */
+  SRNXR_DEVICE_FLAG_TENSOR_SPLIT = (1 << 5),
 };
 
 /* Device statistics, see srnxr_counter_add(). */

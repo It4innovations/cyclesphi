@@ -385,10 +385,16 @@ timed with events (median of 5 - 10). Mpairs/s counts the local network evaluati
   order of the contributing leaves differs).
 - Block-shared weights (12 warps of a block evaluating tiles of one network, 8 KB weight panels
   staged in shared memory with `cp.async`, double buffered) are 13 - 25 % faster than
-  independent warp tiles at 1 M requests and equal at 65 K requests: the tensor stage is at about
-  a quarter of the dense FP16 Tensor Core peak of the GPU (16 rows x 2 x 256 x 256 MACs per tile
-  at 256 FMA per cycle and SM would be 3.4 us per tile; measured 10 - 11 us per tile and SM), the
-  rest is the latency of the dependent mma chains and the sines per warp.
+  independent warp tiles at 1 M requests and equal at 65 K requests. A microbenchmark of
+  `mma.sync.m16n8k16` (`scratch mma_bench.cu`, 752 warps x 4 independent chains) measures
+  447 TFLOPS dense FP16 on this GPU with FP32 accumulation and 445 with FP16 accumulation
+  (16.8 cycles per mma per SM sub-partition at 2430 MHz; the FP32 accumulate is not halved on the
+  RTX PRO 6000): the 1024 mma of a tile (two 256 x 256 layers) would take 1.8 us per tile and SM,
+  the tensor stage takes 9.8 us (6.9 ms for 115 498 tiles on 188 SMs), 18 % of the Tensor Core
+  peak. The fast sine (`--sine fast`) lowers it to 8.6 us (5.9 ms), so the accurate sine is 14 %
+  of the stage; the rest is the issue and latency of the dependent mma chains, the fragment loads,
+  the conversions and the block barriers. Nsight Compute is not permitted on the node
+  (`ERR_NVGPUCTRPERM`).
 - At the 1.24 M requests of a 1280 x 720 frame (both fields, sampled majorant; 2.5 M network
   evaluations) the batch costs about 11 ms per sample.
 
@@ -433,6 +439,62 @@ decode); the certified majorant, with 3.7x the requests per sample (9x the mean 
   block mean difference 0.0003, 0 replay misses. The accuracy of the decoded field is that of
   CUDA_TENSOR (FP16 activations, [Accuracy](#accuracy)); the batch result matches the direct
   tensor decode to 3.6e-7 (standalone).
+
+### Split FP16 activations (`--neural-tensor-precision split`)
+
+CUDA_TENSOR rounds the activations to FP16 once per layer (the 1.6e-5 NRMSE of the accuracy
+table). The queue's tensor stage can instead split every activation into a high FP16 part and
+the FP16 rounding of the remainder (`srnxr_split_lo`) and run a second mma stream with the low
+parts into the same FP32 accumulator: about 22 bits of the activation reach the product, the
+weights stay FP16. Standalone (`srnxr_bench --wavefront --tensor-split`, 16 000 accuracy
+points, against the FP32 CUDA_FUSED decode of the same points):
+
+| tensor stage | max abs diff vs FP32, field p | of the field range | tensor stage at 1 M coherent | queue throughput |
+|---|---|---|---|---|
+| FP16 activations | 2.8e-4 | 9.2e-5 | 7.6 ms | 107.5 Mq/s |
+| split (hi + lo) | 2.9e-6 | 9.5e-7 | 10.1 ms | 85.9 Mq/s |
+
+The split variant costs 32 % in the tensor stage (two mma streams, the low parts in local
+memory, 255 registers with 92 bytes of spills in the bench build) and brings the activation
+error 100x down, to the level of the FP32 decode (the rest is the FP16 rounding of the low part
+and the accumulation order).
+
+In Cycles (final build, tensor kernel with its own launch bounds of 256 threads and 255
+registers), 1280 x 720, both fields, 1 spp: FP16 activations 30.7 ms (32.5 FPS), split 44.5 ms
+(22.5 FPS); certified majorant with split 151.6 ms (6.6 FPS). 960 x 540, 16 samples, sampled
+majorant, PSNR against the inline CUDA_FUSED (FP32) render: queue with split 69.5 dB, queue
+with FP16 activations 65.4 dB, inline CUDA_TENSOR 68.7 dB; the mean image value is 0.32849 in
+all four renders. (At 16 samples the images differ by their Monte Carlo noise, which decorrelates
+as soon as the decoded densities change the collision decisions; the PSNR ranks the decoders but
+does not measure their error, see the accuracy table for that.)
+
+### Two tiles per warp (not adopted)
+
+`srnxr_v2_eval_network_tensor_block<W, SPLIT, NT>` can evaluate NT tiles per warp (the weight
+fragments and the barriers are amortized over 2 x 16 rows, four independent mma chains per
+warp). Measured at 1 M coherent requests (`--wf-tiles-per-warp 2`): tensor stage 7.63 ms
+against 7.74 ms with one tile (within noise), with split precision 14.6 ms against 10.3 ms
+(the second set of fragments and low parts spills, 276 bytes). The kernels are not limited by
+the per-row overhead but by the registers; the queue keeps one tile per warp, with its own launch
+bounds in Cycles (256 threads, 255 registers: the block evaluator needs 240 - 255 registers, the
+168 of the path tracing kernels would spill the fragments).
+
+### Why the certified majorant stays at the leaf level
+
+The certified majorant (9x the mean density on the test model) is the union of per-leaf output
+ranges `b +- sum |W_head|` over the leaves touching a voxel. Relative to the true maximum of a
+leaf the bound is only 1.4 - 2.0x (median, `srnxr_bounds_check.py`); the rest of the factor is the
+ratio of the maximum of a leaf to the mean of a voxel, i.e. the bound is per leaf (16^3 majorant
+voxels at depth 3) while the sampled majorant is per voxel. A per-voxel certified bound needs
+the range of the network over a sub-box, which interval arithmetic cannot deliver for a SIREN
+with w0 = 30: the first-layer pre-activation of a 128^3 voxel spans about 0.9 rad per spatial
+axis (|W_0| up to 0.25, w0 = 30, 1/16 of the leaf in local coordinates), so the first sines are
+confined, but the second layer sums 256 of them with |w0 W_1| ~ 0.15 and the interval width of
+its pre-activations (about 20 rad) already covers full periods; every later layer and the head
+are therefore at the global bound. A Lipschitz bound is no better (the constant is about
+(30 ||W||)^3 ~ 10^5 in local units). Tighter certified majorants are a property of the model
+(smaller leaves where the field varies, or bounds trained and exported with the file), not of the
+decoder; the certified mode cannot be tightened in the renderer without changing the certificate.
 
 ## Not tested
 

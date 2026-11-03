@@ -1038,14 +1038,29 @@ ccl_device_forceinline void srnxr_block_stage(ccl_private uint8_t *smem,
  * same network (a warp without rows passes rows = 0 and takes part in the staging). smem:
  * SRNXR_TENSOR_BLOCK_SMEM_BYTES of shared memory, 16 byte aligned. Every thread of the block
  * must call this (block-wide barriers). */
-template<int W>
+/* SPLIT: the FP16 low part of the activations a (A fragment of 16 columns): lo = v - fp16(v),
+ * rounded to FP16, so that hi + lo carries about 22 bits of v. The second mma stream with lo
+ * adds the correction to the same FP32 accumulator. */
+ccl_device_forceinline void srnxr_split_lo(const uint32_t hi[4],
+                                           const float v[8],
+                                           uint32_t lo[4])
+{
+#  pragma unroll
+  for (int i = 0; i < 4; i++) {
+    lo[i] = srnxr_pack_half2(v[2 * i] - srnxr_half_lo(hi[i]), v[2 * i + 1] - srnxr_half_hi(hi[i]));
+  }
+}
+
+template<int W, bool SPLIT, int NT>
 ccl_device_noinline void srnxr_v2_eval_network_tensor_block(const ccl_global uint8_t *base,
                                                             const uint32_t network,
-                                                            const uint32_t rows,
+                                                            const ccl_private uint32_t *rows,
                                                             const ccl_private float *x,
                                                             ccl_private float *y,
                                                             uint8_t *smem)
 {
+  /* NT tiles per warp: rows[i] is the lane mask of the rows of tile i, x + 4 i the input of the
+   * row of this lane in tile i, y + SRNXR_V2_MAX_OUTPUTS i its output. */
   constexpr int KT = W / 16;
   constexpr uint32_t pair_bytes = 2 * KT * 32 * 8;
   const ccl_global SRNXRDeviceHeaderV2 *hdr = srnxr_v2_header(base);
@@ -1062,46 +1077,82 @@ ccl_device_noinline void srnxr_v2_eval_network_tensor_block(const ccl_global uin
                                 (net.mma_offset >> 1);
   const uint32_t in_dim = hdr->input_dim;
   const uint32_t sine_mode = hdr->sine_mode;
-  const bool active = rows != 0;
+  bool active[NT];
+  bool any_active = false;
+#  pragma unroll
+  for (int i = 0; i < NT; i++) {
+    active[i] = rows[i] != 0;
+    any_active = any_active || active[i];
+  }
 
   const uint32_t lane = srnxr_lane_id();
   const uint32_t g = lane >> 2, t = lane & 3;
 
-  /* Inputs of rows g and g + 8. */
-  const uint32_t src0 = srnxr_nth_lane(rows, g);
-  const uint32_t src1 = srnxr_nth_lane(rows, g + 8);
-  float x0[4], x1[4];
-  for (int d = 0; d < 4; d++) {
-    const float v0 = __shfl_sync(0xFFFFFFFFu, x[d], src0 & 31);
-    const float v1 = __shfl_sync(0xFFFFFFFFu, x[d], src1 & 31);
-    x0[d] = (src0 < 32) ? v0 : 0.0f;
-    x1[d] = (src1 < 32) ? v1 : 0.0f;
+  /* Inputs of rows g and g + 8 of every tile. */
+  float x0[NT][4], x1[NT][4];
+#  pragma unroll
+  for (int i = 0; i < NT; i++) {
+    const uint32_t src0 = srnxr_nth_lane(rows[i], g);
+    const uint32_t src1 = srnxr_nth_lane(rows[i], g + 8);
+    for (int d = 0; d < 4; d++) {
+      const float v0 = __shfl_sync(0xFFFFFFFFu, x[4 * i + d], src0 & 31);
+      const float v1 = __shfl_sync(0xFFFFFFFFu, x[4 * i + d], src1 & 31);
+      x0[i][d] = (src0 < 32) ? v0 : 0.0f;
+      x1[i][d] = (src1 < 32) ? v1 : 0.0f;
+    }
   }
 
-  /* First layer in FP32, written as the A fragments of the second layer. */
-  uint32_t a[KT][4];
-  if (active) {
+  /* First layer in FP32, written as the A fragments of the second layer. SPLIT keeps the FP16
+   * low parts of the activations in alo (local memory, read once per output tile pair). */
+  uint32_t a[NT][KT][4];
+  uint32_t alo[SPLIT ? NT : 1][SPLIT ? KT : 1][4];
+  if (any_active) {
     const float w0 = hdr->layer_w0[0];
 #  pragma unroll
     for (int kt = 0; kt < KT; kt++) {
-      float act0[4], act1[4];
+      float act0[NT][4], act1[NT][4];
 #  pragma unroll
       for (int j = 0; j < 4; j++) {
         const uint32_t col = kt * 16 + 2 * t + (j & 1) + ((j >> 1) << 3);
         const ccl_global uint16_t *row = w0_weights + col * in_dim;
-        float s0 = biases[col], s1 = biases[col];
+        float s0[NT], s1[NT];
+#  pragma unroll
+        for (int i = 0; i < NT; i++) {
+          s0[i] = biases[col];
+          s1[i] = biases[col];
+        }
         for (uint32_t d = 0; d < in_dim; d++) {
           const float wv = srnxr_half_to_float(row[d]);
-          s0 += wv * x0[d];
-          s1 += wv * x1[d];
+#  pragma unroll
+          for (int i = 0; i < NT; i++) {
+            s0[i] += wv * x0[i][d];
+            s1[i] += wv * x1[i][d];
+          }
         }
-        act0[j] = srnxr_sin(w0 * s0, sine_mode);
-        act1[j] = srnxr_sin(w0 * s1, sine_mode);
+#  pragma unroll
+        for (int i = 0; i < NT; i++) {
+          act0[i][j] = srnxr_sin(w0 * s0[i], sine_mode);
+          act1[i][j] = srnxr_sin(w0 * s1[i], sine_mode);
+        }
       }
-      a[kt][0] = srnxr_pack_half2(act0[0], act0[1]);
-      a[kt][1] = srnxr_pack_half2(act1[0], act1[1]);
-      a[kt][2] = srnxr_pack_half2(act0[2], act0[3]);
-      a[kt][3] = srnxr_pack_half2(act1[2], act1[3]);
+#  pragma unroll
+      for (int i = 0; i < NT; i++) {
+        a[i][kt][0] = srnxr_pack_half2(act0[i][0], act0[i][1]);
+        a[i][kt][1] = srnxr_pack_half2(act1[i][0], act1[i][1]);
+        a[i][kt][2] = srnxr_pack_half2(act0[i][2], act0[i][3]);
+        a[i][kt][3] = srnxr_pack_half2(act1[i][2], act1[i][3]);
+        if (SPLIT) {
+          const float v[8] = {act0[i][0],
+                              act0[i][1],
+                              act1[i][0],
+                              act1[i][1],
+                              act0[i][2],
+                              act0[i][3],
+                              act1[i][2],
+                              act1[i][3]};
+          srnxr_split_lo(a[i][kt], v, alo[SPLIT ? i : 0][SPLIT ? kt : 0]);
+        }
+      }
     }
   }
   biases += W;
@@ -1111,7 +1162,8 @@ ccl_device_noinline void srnxr_v2_eval_network_tensor_block(const ccl_global uin
   uint8_t *stage1 = smem + SRNXR_TENSOR_BLOCK_STAGE_BYTES;
   for (uint32_t layer = 1; layer < hdr->hidden_layer_count; layer++) {
     const float w0 = hdr->layer_w0[layer];
-    uint32_t next[KT][4];
+    uint32_t next[NT][KT][4];
+    uint32_t nlo[SPLIT ? NT : 1][SPLIT ? KT : 1][4];
     srnxr_block_stage(stage0, reinterpret_cast<const ccl_global uint8_t *>(mma), pair_bytes);
 #  pragma unroll 1
     for (int ot = 0; ot < KT; ot++) {
@@ -1127,37 +1179,68 @@ ccl_device_noinline void srnxr_v2_eval_network_tensor_block(const ccl_global uin
         srnxr_cp_async_wait<0>();
       }
       __syncthreads();
-      if (active) {
+      if (any_active) {
         const uint2 *b0 = reinterpret_cast<const uint2 *>(cur) + lane;
         const uint2 *b1 = b0 + KT * 32;
-        float c0[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        float c1[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float c0[NT][4], c1[NT][4];
+#  pragma unroll
+        for (int i = 0; i < NT; i++) {
+#  pragma unroll
+          for (int j = 0; j < 4; j++) {
+            c0[i][j] = 0.0f;
+            c1[i][j] = 0.0f;
+          }
+        }
 #  pragma unroll
         for (int kt = 0; kt < KT; kt++) {
-          srnxr_mma(c0, a[kt], b0[kt * 32]);
-          srnxr_mma(c1, a[kt], b1[kt * 32]);
+          const uint2 f0 = b0[kt * 32], f1 = b1[kt * 32];
+#  pragma unroll
+          for (int i = 0; i < NT; i++) {
+            srnxr_mma(c0[i], a[i][kt], f0);
+            srnxr_mma(c1[i], a[i][kt], f1);
+            if (SPLIT) {
+              srnxr_mma(c0[i], alo[SPLIT ? i : 0][SPLIT ? kt : 0], f0);
+              srnxr_mma(c1[i], alo[SPLIT ? i : 0][SPLIT ? kt : 0], f1);
+            }
+          }
         }
         const uint32_t col0 = ot * 16 + 2 * t;
         const float bias0 = biases[col0], bias1 = biases[col0 + 1];
         const float bias8 = biases[col0 + 8], bias9 = biases[col0 + 9];
-        next[ot][0] = srnxr_pack_half2(srnxr_sin(w0 * (c0[0] + bias0), sine_mode),
-                                       srnxr_sin(w0 * (c0[1] + bias1), sine_mode));
-        next[ot][1] = srnxr_pack_half2(srnxr_sin(w0 * (c0[2] + bias0), sine_mode),
-                                       srnxr_sin(w0 * (c0[3] + bias1), sine_mode));
-        next[ot][2] = srnxr_pack_half2(srnxr_sin(w0 * (c1[0] + bias8), sine_mode),
-                                       srnxr_sin(w0 * (c1[1] + bias9), sine_mode));
-        next[ot][3] = srnxr_pack_half2(srnxr_sin(w0 * (c1[2] + bias8), sine_mode),
-                                       srnxr_sin(w0 * (c1[3] + bias9), sine_mode));
+#  pragma unroll
+        for (int i = 0; i < NT; i++) {
+          const float v[8] = {srnxr_sin(w0 * (c0[i][0] + bias0), sine_mode),
+                              srnxr_sin(w0 * (c0[i][1] + bias1), sine_mode),
+                              srnxr_sin(w0 * (c0[i][2] + bias0), sine_mode),
+                              srnxr_sin(w0 * (c0[i][3] + bias1), sine_mode),
+                              srnxr_sin(w0 * (c1[i][0] + bias8), sine_mode),
+                              srnxr_sin(w0 * (c1[i][1] + bias9), sine_mode),
+                              srnxr_sin(w0 * (c1[i][2] + bias8), sine_mode),
+                              srnxr_sin(w0 * (c1[i][3] + bias9), sine_mode)};
+          next[i][ot][0] = srnxr_pack_half2(v[0], v[1]);
+          next[i][ot][1] = srnxr_pack_half2(v[2], v[3]);
+          next[i][ot][2] = srnxr_pack_half2(v[4], v[5]);
+          next[i][ot][3] = srnxr_pack_half2(v[6], v[7]);
+          if (SPLIT) {
+            srnxr_split_lo(next[i][ot], v, nlo[SPLIT ? i : 0][SPLIT ? ot : 0]);
+          }
+        }
       }
       /* The buffer is overwritten by the staging two iterations ahead. */
       __syncthreads();
     }
-    if (active) {
+    if (any_active) {
 #  pragma unroll
-      for (int kt = 0; kt < KT; kt++) {
+      for (int i = 0; i < NT; i++) {
 #  pragma unroll
-        for (int j = 0; j < 4; j++) {
-          a[kt][j] = next[kt][j];
+        for (int kt = 0; kt < KT; kt++) {
+#  pragma unroll
+          for (int j = 0; j < 4; j++) {
+            a[i][kt][j] = next[i][kt][j];
+            if (SPLIT) {
+              alo[SPLIT ? i : 0][SPLIT ? kt : 0][j] = nlo[SPLIT ? i : 0][SPLIT ? kt : 0][j];
+            }
+          }
         }
       }
     }
@@ -1166,8 +1249,15 @@ ccl_device_noinline void srnxr_v2_eval_network_tensor_block(const ccl_global uin
   }
 
   /* Linear head, one 8 column output tile (4 KB, read from global memory). */
-  if (active) {
-    float c[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  if (any_active) {
+    float c[NT][4];
+#  pragma unroll
+    for (int i = 0; i < NT; i++) {
+#  pragma unroll
+      for (int j = 0; j < 4; j++) {
+        c[i][j] = 0.0f;
+      }
+    }
     {
       uint2 bf[KT];
 #  pragma unroll
@@ -1176,32 +1266,40 @@ ccl_device_noinline void srnxr_v2_eval_network_tensor_block(const ccl_global uin
       }
 #  pragma unroll
       for (int kt = 0; kt < KT; kt++) {
-        srnxr_mma(c, a[kt], bf[kt]);
+#  pragma unroll
+        for (int i = 0; i < NT; i++) {
+          srnxr_mma(c[i], a[i][kt], bf[kt]);
+          if (SPLIT) {
+            srnxr_mma(c[i], alo[SPLIT ? i : 0][SPLIT ? kt : 0], bf[kt]);
+          }
+        }
       }
     }
     const uint32_t output_dim = hdr->output_dim;
     const uint32_t k0 = 2 * t;
     const float hb0 = (k0 < output_dim) ? biases[k0] : 0.0f;
     const float hb1 = (k0 + 1 < output_dim) ? biases[k0 + 1] : 0.0f;
-    c[0] += hb0;
-    c[1] += hb1;
-    c[2] += hb0;
-    c[3] += hb1;
-
-    /* Row r of the output tile is in lanes 4 (r & 7) + k / 2, element (r < 8 ? 0 : 2) + k % 2. */
-    const uint32_t rank = __popc(rows & ((1u << lane) - 1u));
-    const bool upper = rank >= 8;
-    for (uint32_t kp = 0; kp < (output_dim + 1) / 2; kp++) {
-      const uint32_t src = (rank & 7) * 4 + kp;
-      const float v0 = __shfl_sync(0xFFFFFFFFu, c[0], src);
-      const float v1 = __shfl_sync(0xFFFFFFFFu, c[1], src);
-      const float v2 = __shfl_sync(0xFFFFFFFFu, c[2], src);
-      const float v3 = __shfl_sync(0xFFFFFFFFu, c[3], src);
-      if (2 * kp < output_dim) {
-        y[2 * kp] = upper ? v2 : v0;
-      }
-      if (2 * kp + 1 < output_dim) {
-        y[2 * kp + 1] = upper ? v3 : v1;
+#  pragma unroll
+    for (int i = 0; i < NT; i++) {
+      c[i][0] += hb0;
+      c[i][1] += hb1;
+      c[i][2] += hb0;
+      c[i][3] += hb1;
+      /* Row r of the output tile is in lanes 4 (r & 7) + k / 2, element (r < 8 ? 0 : 2) + k % 2. */
+      const uint32_t rank = __popc(rows[i] & ((1u << lane) - 1u));
+      const bool upper = rank >= 8;
+      for (uint32_t kp = 0; kp < (output_dim + 1) / 2; kp++) {
+        const uint32_t src = (rank & 7) * 4 + kp;
+        const float v0 = __shfl_sync(0xFFFFFFFFu, c[i][0], src);
+        const float v1 = __shfl_sync(0xFFFFFFFFu, c[i][1], src);
+        const float v2 = __shfl_sync(0xFFFFFFFFu, c[i][2], src);
+        const float v3 = __shfl_sync(0xFFFFFFFFu, c[i][3], src);
+        if (2 * kp < output_dim) {
+          y[SRNXR_V2_MAX_OUTPUTS * i + 2 * kp] = upper ? v2 : v0;
+        }
+        if (2 * kp + 1 < output_dim) {
+          y[SRNXR_V2_MAX_OUTPUTS * i + 2 * kp + 1] = upper ? v3 : v1;
+        }
       }
     }
   }

@@ -264,6 +264,12 @@ directly, so the `accurate` mode is accurate in every build (fast math still flu
      double buffered, so the layer weights come from L2 once per block instead of once per warp;
      the tiles are full (16 rows) because the rows of a network come from every path of the
      launch, not from one warp.
+     One tile per warp (two measured no faster, the fragments spill), the kernel has its own
+     launch bounds (256 threads, 255 registers). With `srnxr_tensor_precision="split"`
+     (`SRNXR_DEVICE_FLAG_TENSOR_SPLIT`) every activation is an FP16 high part plus the FP16
+     rounding of the remainder (`srnxr_split_lo`) and a second mma stream adds the low parts to
+     the same FP32 accumulator: about 22 bits of the activation reach the product, the weights
+     stay FP16 (the inline CUDA_TENSOR decoder keeps FP16 activations).
   6. `neural_queue_blend`: the pairs of a request are blended in neighbor order (deterministic,
      the same running-max Gaussian blend as the inline decoder) into the result of the request.
   7. the real `integrator_shade_volume` / `integrator_shade_shadow` (`SRNXR_QUEUE_REPLAY`):
@@ -320,12 +326,13 @@ XML attributes of an `<attribute volume_type="srnxr" buffer="file.srnxr" ...>`:
 | `srnxr_counters` | device statistics on / off (default on) |
 | `srnxr_partial_warps` | cooperative decoding of partially active warps on / off (default on) |
 | `srnxr_majorant` | majorant bake: `certified` (default, bounds) or `sampled` (decoded field at the bake samples, not certified) |
+| `srnxr_tensor_precision` | Tensor Core stage of the wavefront queue: `fp16` (default, activations rounded to FP16 once per layer) or `split` (FP16 high + low part of every activation, two mma streams, FP32-level activations, about 1.3x the tensor stage) |
 
 Integrator sockets: `volume_neural_queue` (off), `volume_neural_queue_window` (128),
 `volume_neural_queue_capacity` (0: 4 x the paths).
 
 Command line of `cycles` (overrides the XML): `--neural-queue 0|1`, `--neural-queue-window K`,
-`--neural-queue-capacity N`, `--neural-backend`, `--neural-sine`,
+`--neural-queue-capacity N`, `--neural-tensor-precision fp16|split`, `--neural-backend`, `--neural-sine`,
 `--neural-fallback BACKEND` (used with a warning when the requested backend cannot run on the
 render device), `--neural-benchmark` (no fallback, an unsupported backend is an error),
 `--neural-counters 0|1`, `--neural-partial-warps 0|1`, `--neural-majorant certified|sampled`. The selected and the requested backend

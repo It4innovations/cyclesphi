@@ -259,6 +259,20 @@ static bool xml_read_srnxr_settings(const XMLReadState &state,
     return false;
   }
   settings.sampled_majorant = majorant == "sampled";
+  std::string tensor_precision = "fp16";
+  if (const xml_attribute a = node_attribute.attribute("srnxr_tensor_precision")) {
+    tensor_precision = a.value();
+  }
+  if (!cli.tensor_precision.empty()) {
+    tensor_precision = cli.tensor_precision;
+  }
+  if (tensor_precision != "fp16" && tensor_precision != "split") {
+    fprintf(stderr,
+            "Error: unknown neural volume tensor precision \"%s\" (fp16, split).\n",
+            tensor_precision.c_str());
+    return false;
+  }
+  settings.tensor_split = tensor_precision == "split";
 
   const SRNXRBackend requested = settings.backend;
   string reason;

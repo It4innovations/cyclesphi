@@ -472,18 +472,25 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
 }
 ccl_gpu_kernel_postfix
 
-ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
+/* The tensor stage keeps the activation fragments of a tile (and their low parts with split
+ * precision) in registers: its own launch bounds (256 threads, up to 255 registers) instead of
+ * the 384 / 168 of the path tracing kernels. Two tiles per warp measured no faster (spills). */
+#define SRNXR_QUEUE_TENSOR_THREADS 256
+#define SRNXR_QUEUE_TENSOR_REGISTERS 255
+#define SRNXR_QUEUE_TENSOR_TILES_PER_WARP 1
+ccl_gpu_kernel(SRNXR_QUEUE_TENSOR_THREADS, SRNXR_QUEUE_TENSOR_REGISTERS)
     ccl_gpu_kernel_signature(neural_queue_tensor, const int work_size)
 {
 #if defined(SRNXR_QUEUE_STAGES) && defined(SRNXR_HAS_MMA)
   __shared__ __align__(16) uint8_t smem[SRNXR_TENSOR_BLOCK_SMEM_BYTES + 16];
   const SRNXRQueue &q = kernel_integrator_state.srnxr_queue;
   const uint32_t tiles = q.counters[SRNXR_QUEUE_COUNTER_TILES];
-  const uint32_t warps_per_block = ccl_gpu_block_dim_x >> 5;
-  for (uint32_t first = ccl_gpu_block_idx_x * warps_per_block; first < tiles;
-       first += ccl_gpu_grid_dim_x * warps_per_block)
+  const uint32_t tiles_per_block = (ccl_gpu_block_dim_x >> 5) * SRNXR_QUEUE_TENSOR_TILES_PER_WARP;
+  for (uint32_t first = ccl_gpu_block_idx_x * tiles_per_block; first < tiles;
+       first += ccl_gpu_grid_dim_x * tiles_per_block)
   {
-    srnxr_queue_tensor_group(q, first, tiles, SRNXRQueueBaseOf(), smem);
+    srnxr_queue_tensor_group<SRNXR_QUEUE_TENSOR_TILES_PER_WARP>(
+        q, first, tiles, SRNXRQueueBaseOf(), smem);
   }
 #endif
   (void)work_size;

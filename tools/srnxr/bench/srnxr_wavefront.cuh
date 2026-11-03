@@ -74,16 +74,17 @@ __global__ void wf_tensor_kernel(const SRNXRQueue q, const BlobBase base_of)
 #endif
 }
 
+template<int NT>
 __global__ void wf_tensor_block_kernel(const SRNXRQueue q, const BlobBase base_of)
 {
 #ifdef __CUDA_ARCH__
   __shared__ __align__(16) uint8_t smem[SRNXR_TENSOR_BLOCK_SMEM_BYTES + 16];
   const uint32_t tiles = q.counters[SRNXR_QUEUE_COUNTER_TILES];
-  const uint32_t warps_per_block = blockDim.x >> 5;
-  for (uint32_t first = blockIdx.x * warps_per_block; first < tiles;
-       first += gridDim.x * warps_per_block)
+  const uint32_t tiles_per_block = (blockDim.x >> 5) * NT;
+  for (uint32_t first = blockIdx.x * tiles_per_block; first < tiles;
+       first += gridDim.x * tiles_per_block)
   {
-    srnxr_queue_tensor_group(q, first, tiles, base_of, smem);
+    srnxr_queue_tensor_group<NT>(q, first, tiles, base_of, smem);
   }
 #endif
 }
@@ -210,7 +211,8 @@ static void wavefront_run(WavefrontQueue &wq,
                           const int block,
                           const int grid_persistent,
                           cudaEvent_t *events,
-                          const bool block_tensor)
+                          const bool block_tensor,
+                          const int tiles_per_warp)
 {
   const SRNXRQueue &q = wq.q;
   const BlobBase base_of = {d_blob};
@@ -235,8 +237,11 @@ static void wavefront_run(WavefrontQueue &wq,
   if (events) {
     CUDA_CHECK(cudaEventRecord(events[4]));
   }
-  if (block_tensor) {
-    wf_tensor_block_kernel<<<grid_persistent, block>>>(q, base_of);
+  if (block_tensor && tiles_per_warp == 2) {
+    wf_tensor_block_kernel<2><<<grid_persistent, block>>>(q, base_of);
+  }
+  else if (block_tensor) {
+    wf_tensor_block_kernel<1><<<grid_persistent, block>>>(q, base_of);
   }
   else {
     wf_tensor_kernel<<<grid_persistent, block>>>(q, base_of);

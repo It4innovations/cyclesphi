@@ -43,6 +43,9 @@ struct XMLNeuralVolumeOptions {
   int queue_window = 0;
   /* Requests per launch (0: 4 x the paths). */
   int queue_capacity = 0;
+  /* Tensor Core stage of the queue: fp16 (activations rounded to FP16 once per layer, default)
+   * or split (hi + lo FP16 parts, FP32-level activations, two mma streams); empty: from XML. */
+  std::string tensor_precision;
 };
 
 /* Apply the integrator options of the command line to the scene (after reading the file). */

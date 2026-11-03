@@ -1077,6 +1077,7 @@ bool srnxr_build_device_blob_v2(const char *data,
   hdr.flags = (settings.counters ? SRNXR_DEVICE_FLAG_COUNTERS : 0) |
               (settings.partial_warps ? SRNXR_DEVICE_FLAG_PARTIAL_WARPS : 0) |
               (settings.sampled_majorant ? SRNXR_DEVICE_FLAG_SAMPLED_MAJORANT : 0) |
+              (settings.tensor_split ? SRNXR_DEVICE_FLAG_TENSOR_SPLIT : 0) |
               ((want_mma && report.networks_without_mma < network_count) ?
                    SRNXR_DEVICE_FLAG_MMA_WEIGHTS :
                    0) |

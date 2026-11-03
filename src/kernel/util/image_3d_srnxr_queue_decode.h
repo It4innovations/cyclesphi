@@ -383,11 +383,11 @@ ccl_device_inline void srnxr_queue_tensor_tile(const SRNXRQueue &q,
   }
 }
 
-/* Stage 5, block-cooperative variant: the warps of the block take the consecutive tiles
- * [first_tile, first_tile + warps) and evaluate them bucket by bucket with the weights staged
- * in shared memory (srnxr_v2_eval_network_tensor_block). Every thread of the block calls it;
- * smem: SRNXR_TENSOR_BLOCK_SMEM_BYTES plus 16 bytes. */
-template<typename BaseOf>
+/* Stage 5, block-cooperative variant: every warp of the block takes NT consecutive tiles,
+ * the block the tiles [first_tile, first_tile + NT warps), and evaluates them bucket by bucket
+ * with the weights staged in shared memory (srnxr_v2_eval_network_tensor_block). Every thread of
+ * the block calls it; smem: SRNXR_TENSOR_BLOCK_SMEM_BYTES plus 16 bytes. */
+template<int NT, typename BaseOf>
 ccl_device_inline void srnxr_queue_tensor_group(const SRNXRQueue &q,
                                                 const uint32_t first_tile,
                                                 const uint32_t num_tiles,
@@ -397,31 +397,44 @@ ccl_device_inline void srnxr_queue_tensor_group(const SRNXRQueue &q,
   const uint32_t lane = srnxr_lane_id();
   const uint32_t warp = threadIdx.x >> 5;
   uint32_t *block_bucket = reinterpret_cast<uint32_t *>(smem + SRNXR_TENSOR_BLOCK_SMEM_BYTES);
-  const uint32_t t = first_tile + warp;
-  const bool has_tile = t < num_tiles;
-  uint32_t bucket = has_tile ? srnxr_queue_tile_bucket(q, t) : 0xFFFFFFFFu;
 
-  /* Rows of the tile of this warp. */
-  uint32_t first = 0, last = 0;
-  if (has_tile) {
-    first = q.bucket_offset[bucket] + (t - q.bucket_tile[bucket]) * SRNXR_QUEUE_TILE_ROWS;
-    last = min(first + SRNXR_QUEUE_TILE_ROWS, q.bucket_offset[bucket + 1]);
-  }
-  const bool has_row = has_tile && first + lane < last;
-  uint32_t pair = 0, leaf = 0, req = 0, network = SRNXR_INVALID_INDEX;
-  const ccl_global uint8_t *base = nullptr;
-  float x[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-  if (has_row) {
-    pair = q.sorted[first + lane];
-    req = pair / SRNXR_QUEUE_MAX_PAIRS;
-    leaf = q.pair_leaf[pair];
-    base = base_of(q.req_slot[req]);
-    const ccl_global SRNXRLeafV2 &l = reinterpret_cast<const ccl_global SRNXRLeafV2 *>(
-        base + srnxr_v2_header(base)->leaves_offset)[leaf];
-    network = l.network;
-    const float p[4] = {
-        q.req_p[req * 4], q.req_p[req * 4 + 1], q.req_p[req * 4 + 2], q.req_p[req * 4 + 3]};
-    srnxr_v2_local_input(l, p, x);
+  /* The tiles of this warp and the row of this lane in each of them. */
+  uint32_t bucket[NT], pair[NT], leaf[NT], req[NT], network[NT];
+  bool has_row[NT];
+  const ccl_global uint8_t *base[NT];
+  float x[4 * NT];
+#  pragma unroll
+  for (int i = 0; i < NT; i++) {
+    const uint32_t t = first_tile + warp * NT + i;
+    const bool has_tile = t < num_tiles;
+    bucket[i] = has_tile ? srnxr_queue_tile_bucket(q, t) : 0xFFFFFFFFu;
+    uint32_t first = 0, last = 0;
+    if (has_tile) {
+      first = q.bucket_offset[bucket[i]] +
+              (t - q.bucket_tile[bucket[i]]) * SRNXR_QUEUE_TILE_ROWS;
+      last = min(first + SRNXR_QUEUE_TILE_ROWS, q.bucket_offset[bucket[i] + 1]);
+    }
+    has_row[i] = has_tile && first + lane < last;
+    pair[i] = 0;
+    leaf[i] = 0;
+    req[i] = 0;
+    network[i] = SRNXR_INVALID_INDEX;
+    base[i] = nullptr;
+    x[4 * i] = x[4 * i + 1] = x[4 * i + 2] = x[4 * i + 3] = 0.0f;
+    if (has_row[i]) {
+      pair[i] = q.sorted[first + lane];
+      req[i] = pair[i] / SRNXR_QUEUE_MAX_PAIRS;
+      leaf[i] = q.pair_leaf[pair[i]];
+      base[i] = base_of(q.req_slot[req[i]]);
+      const ccl_global SRNXRLeafV2 &l = reinterpret_cast<const ccl_global SRNXRLeafV2 *>(
+          base[i] + srnxr_v2_header(base[i])->leaves_offset)[leaf[i]];
+      network[i] = l.network;
+      const float p[4] = {q.req_p[req[i] * 4],
+                          q.req_p[req[i] * 4 + 1],
+                          q.req_p[req[i] * 4 + 2],
+                          q.req_p[req[i] * 4 + 3]};
+      srnxr_v2_local_input(l, p, x + 4 * i);
+    }
   }
 
   for (;;) {
@@ -431,8 +444,15 @@ ccl_device_inline void srnxr_queue_tensor_group(const SRNXRQueue &q,
       *block_bucket = 0xFFFFFFFFu;
     }
     __syncthreads();
-    if (lane == 0 && bucket != 0xFFFFFFFFu) {
-      atomicMin(block_bucket, bucket);
+    if (lane == 0) {
+      uint32_t mine = 0xFFFFFFFFu;
+#  pragma unroll
+      for (int i = 0; i < NT; i++) {
+        mine = min(mine, bucket[i]);
+      }
+      if (mine != 0xFFFFFFFFu) {
+        atomicMin(block_bucket, mine);
+      }
     }
     __syncthreads();
     const uint32_t cur = *block_bucket;
@@ -448,38 +468,73 @@ ccl_device_inline void srnxr_queue_tensor_group(const SRNXRQueue &q,
     const ccl_global SRNXRNetworkV2 *networks =
         reinterpret_cast<const ccl_global SRNXRNetworkV2 *>(tile_base + hdr->networks_offset);
     const uint32_t tile_network = leaves[q.pair_leaf[pair0]].network;
-    const bool mine = bucket == cur;
-    const bool valid = mine && has_row && network == tile_network &&
-                       hdr->bucket_base + network == cur &&
-                       (base == tile_base ||
-                        srnxr_v2_header(base)->decode_key == hdr->decode_key);
-    if (mine && has_row && !valid) {
-      atomicOr(q.req_info + req, SRNXR_QUEUE_REQUEST_INCOMPLETE);
+    /* A row of another network or model in this bucket (bucket collision) is not evaluated, its
+     * request is decoded inline at replay. The blobs of one decode key (the images of one model)
+     * hold the same octree and networks, the row may use the blob of the tile. */
+    uint32_t rows[NT];
+    bool valid[NT];
+#  pragma unroll
+    for (int i = 0; i < NT; i++) {
+      const bool mine = bucket[i] == cur;
+      valid[i] = mine && has_row[i] && network[i] == tile_network &&
+                 hdr->bucket_base + network[i] == cur &&
+                 (base[i] == tile_base ||
+                  srnxr_v2_header(base[i])->decode_key == hdr->decode_key);
+      if (mine && has_row[i] && !valid[i]) {
+        atomicOr(q.req_info + req[i], SRNXR_QUEUE_REQUEST_INCOMPLETE);
+      }
+      rows[i] = __ballot_sync(0xFFFFFFFFu, valid[i]);
     }
-    const uint32_t rows = __ballot_sync(0xFFFFFFFFu, valid);
-    float y[SRNXR_V2_MAX_OUTPUTS];
+    float y[SRNXR_V2_MAX_OUTPUTS * NT];
     const uint32_t width = networks[tile_network].width;
+    const bool split = (hdr->flags & SRNXR_DEVICE_FLAG_TENSOR_SPLIT) != 0;
+    bool done = true;
     if (width == 256) {
-      srnxr_v2_eval_network_tensor_block<256>(tile_base, tile_network, rows, x, y, smem);
-    }
-    else if (width == 128) {
-      srnxr_v2_eval_network_tensor_block<128>(tile_base, tile_network, rows, x, y, smem);
-    }
-    else if (width == 64) {
-      srnxr_v2_eval_network_tensor_block<64>(tile_base, tile_network, rows, x, y, smem);
-    }
-    else if (valid) {
-      srnxr_v2_eval_network_simt(tile_base, tile_network, x, y);
-    }
-    if (valid) {
-      srnxr_v2_leaf_output(leaves[leaf], y, hdr->output_dim);
-      ccl_global float *out = q.pair_out + size_t(pair) * SRNXR_QUEUE_OUT_STRIDE;
-      for (uint32_t k = 0; k < hdr->output_dim; k++) {
-        out[k] = y[k];
+      if (split) {
+        srnxr_v2_eval_network_tensor_block<256, true, NT>(tile_base, tile_network, rows, x, y, smem);
+      }
+      else {
+        srnxr_v2_eval_network_tensor_block<256, false, NT>(tile_base, tile_network, rows, x, y, smem);
       }
     }
-    if (mine) {
-      bucket = 0xFFFFFFFFu;
+    else if (width == 128) {
+      if (split) {
+        srnxr_v2_eval_network_tensor_block<128, true, NT>(tile_base, tile_network, rows, x, y, smem);
+      }
+      else {
+        srnxr_v2_eval_network_tensor_block<128, false, NT>(tile_base, tile_network, rows, x, y, smem);
+      }
+    }
+    else if (width == 64) {
+      if (split) {
+        srnxr_v2_eval_network_tensor_block<64, true, NT>(tile_base, tile_network, rows, x, y, smem);
+      }
+      else {
+        srnxr_v2_eval_network_tensor_block<64, false, NT>(tile_base, tile_network, rows, x, y, smem);
+      }
+    }
+    else {
+      done = false;
+    }
+#  pragma unroll
+    for (int i = 0; i < NT; i++) {
+      if (!valid[i]) {
+        continue;
+      }
+      if (!done) {
+        srnxr_v2_eval_network_simt(tile_base, tile_network, x + 4 * i, y + SRNXR_V2_MAX_OUTPUTS * i);
+      }
+      srnxr_v2_leaf_output(leaves[leaf[i]], y + SRNXR_V2_MAX_OUTPUTS * i, hdr->output_dim);
+      ccl_global float *out = q.pair_out + size_t(pair[i]) * SRNXR_QUEUE_OUT_STRIDE;
+      for (uint32_t k = 0; k < hdr->output_dim; k++) {
+        out[k] = y[SRNXR_V2_MAX_OUTPUTS * i + k];
+      }
+    }
+#  pragma unroll
+    for (int i = 0; i < NT; i++) {
+      if (bucket[i] == cur) {
+        bucket[i] = 0xFFFFFFFFu;
+      }
     }
   }
 }
