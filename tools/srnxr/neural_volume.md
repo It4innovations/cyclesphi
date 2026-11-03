@@ -193,12 +193,27 @@ directly, so the `accurate` mode is accurate in every build (fast math still flu
   `src/kernel/bake/bake.h`), which is unsafe for a neural field and costs 33 M network
   evaluations. The bake now sets `SR_VOLUME_MAJORANT_BAKE` (`src/kernel/types.h`, kept by
   `volume_shader_eval` in `src/kernel/integrator/volume_shader.h`); the image then returns the
-  lower or upper end (chosen by the shader LCG) of a certified range: the union of the per-leaf
-  ranges `b +- sum |W|` of the output layer (|sin| <= 1) over the leaves touching a box of two
-  bake voxels around P. This bounds the field; the majorant is certified for transfer functions
-  that are monotonic in the field (the test material: `max(rho, 0) * scale`). Shaders with a
-  Light Path node make Cycles estimate majorants at render time by sampling (not certified);
-  use ray marching (`volume_ray_marching`) for those.
+  upper end (even bake samples) or the lower end (odd samples, `SR_VOLUME_MAJORANT_BAKE_LOWER`)
+  of a certified range: the union of the per-leaf output ranges `b +- sum |W|` of the output
+  layer (|sin| <= 1) over the leaves whose expanded box (and shutter time interval) touches the
+  box of two bake voxels around P. The value at a point is a convex combination of exactly those
+  leaves (each of them a neighbor of the strict leaf of the point, so the search runs over the
+  neighbor lists of the strict leaves the box touches). This bounds the field; the majorant is
+  certified for transfer functions that are monotonic in the field (the test material:
+  `max(rho, 0) * scale`). Shaders with a Light Path node make Cycles estimate majorants at render
+  time by sampling (not certified); use ray marching (`volume_ray_marching`) for those.
+  The certified majorant is loose (on the test model about 9x the mean density, the sum over
+  256 neurons of `|W|` assumes every sine at +-1 with the matching sign) and the null-scattering
+  integrator evaluates the field at every majorant collision. `srnxr_majorant="sampled"`
+  (`SRNXR_DEVICE_FLAG_SAMPLED_MAJORANT`) makes the bake sample the decoded field at the 16 points
+  per voxel instead, which is what Cycles does for every procedural density: tight, but NOT
+  certified (between the samples the field can exceed it; Cycles then rescales locally), and the
+  bake costs 128^3 x 16 queries per image (about 1.7 s on the RTX PRO 6000).
+- **Shared decode**: a volume shader reading several fields of one model at one point (density
+  and emission of the test scene) decodes once: `kernel_image_interp_srnxr_v2` keeps every field
+  of the last decode in the `ShaderData` (`srnxr_cache_*`, reset by `shader_setup_from_volume`),
+  keyed by the point and by `SRNXRDeviceHeaderV2::decode_key` (file checksum and decode
+  settings, the same for every attribute of one file).
 - **Counters**: CUDA kernels keep 16 statistics per image slot in the module global
   `srnxr_counters` (`src/kernel/device/cuda/globals.h`), printed by `CUDADevice` when the device
   is freed; OptiX programs keep them in the blob, printed by `OptiXDevice::mem_free`.
@@ -248,11 +263,12 @@ XML attributes of an `<attribute volume_type="srnxr" buffer="file.srnxr" ...>`:
 | `srnxr_outside` | value outside the domain (default 0) |
 | `srnxr_counters` | device statistics on / off (default on) |
 | `srnxr_partial_warps` | cooperative decoding of partially active warps on / off (default on) |
+| `srnxr_majorant` | majorant bake: `certified` (default, bounds) or `sampled` (decoded field at the bake samples, not certified) |
 
 Command line of `cycles` (overrides the XML): `--neural-backend`, `--neural-sine`,
 `--neural-fallback BACKEND` (used with a warning when the requested backend cannot run on the
 render device), `--neural-benchmark` (no fallback, an unsupported backend is an error),
-`--neural-counters 0|1`, `--neural-partial-warps 0|1`. The selected and the requested backend
+`--neural-counters 0|1`, `--neural-partial-warps 0|1`, `--neural-majorant certified|sampled`. The selected and the requested backend
 are logged for every attribute.
 Support rules: CPU runs CUDA_FUSED; CUDA_TENSOR needs a CUDA or OptiX device with SM 8.0+ and SVM
 shading; COOPVEC needs the OptiX device, SVM shading, the build option and the device property.
@@ -293,7 +309,8 @@ Cluster scripts: `/mnt/proj1/open-36-34/milanjaros/projects/blender/scripts/srnx
 
 - Synthetic models only; no real checkpoint of the poster's surrogate was available.
 - Fourier MLP models, time-partitioned leaves and a sine on the output layer are rejected.
-- Several fields of one file read by several attributes are decoded and stored separately.
+- Several fields of one file read by several attributes are stored separately (one device blob
+  per attribute); the decode of a point is shared (see Shared decode).
 - CUDA_TENSOR needs fully active warps; in the Cycles volume integrator most warps are partial
   (10.9 of 32 lanes on the test scene), so only a quarter of the evaluations reach the Tensor
   Cores and the end-to-end time equals CUDA_FUSED.

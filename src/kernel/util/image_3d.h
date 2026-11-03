@@ -1076,7 +1076,8 @@ ccl_device_noinline float kernel_image_interp_srnxr(const ccl_global KernelImage
 // of a sample is time_frame + time_shutter * (ray time - 0.5). During the majorant bake of the
 // volume octree (SR_VOLUME_MAJORANT_BAKE) the image returns a certified bound instead of a
 // point sample: the lower or the upper end of the range of the mapped channels in the bake
-// voxel around P, chosen by the shader LCG, so the 16 samples of a voxel see both ends.
+// voxel around P, the lower end for the odd bake samples (SR_VOLUME_MAJORANT_BAKE_LOWER), so
+// the 16 samples of a voxel see both ends.
 
 #ifdef SRNXR_V2_KERNEL
 ccl_device_noinline float4 kernel_image_interp_srnxr_v2(const ccl_global uint8_t *base,
@@ -1088,7 +1089,9 @@ ccl_device_noinline float4 kernel_image_interp_srnxr_v2(const ccl_global uint8_t
   const uint32_t channels = hdr->channel_count;
   float v[SRNXR_V2_MAX_OUTPUTS > 3 ? SRNXR_V2_MAX_OUTPUTS : 3];
 
-  if (sd->runtime_flag & SR_VOLUME_MAJORANT_BAKE) {
+  if ((sd->runtime_flag & SR_VOLUME_MAJORANT_BAKE) &&
+      !(hdr->flags & SRNXR_DEVICE_FLAG_SAMPLED_MAJORANT))
+  {
     float lo[3], hi[3];
     srnxr_v2_bound(base, p, lo, hi);
     srnxr_counter_add(base, SRNXR_COUNTER_BAKE_QUERIES, 1);
@@ -1098,13 +1101,32 @@ ccl_device_noinline float4 kernel_image_interp_srnxr_v2(const ccl_global uint8_t
       partial = partial || p[d] - hdr->bake_margin[d] < hdr->domain_min[d] ||
                 p[d] + hdr->bake_margin[d] > hdr->domain_max[d];
     }
-    const bool upper = (lcg_step_uint(&sd->lcg_state) & 1u) != 0;
+    const bool upper = !(sd->runtime_flag & SR_VOLUME_MAJORANT_BAKE_LOWER);
     for (uint32_t c = 0; c < channels; c++) {
       if (partial) {
         lo[c] = fminf(lo[c], hdr->outside_value);
         hi[c] = fmaxf(hi[c], hdr->outside_value);
       }
       v[c] = (lo[c] > hi[c]) ? hdr->outside_value : (upper ? hi[c] : lo[c]);
+    }
+  }
+  else if (sd->runtime_flag & SR_IS_VOLUME_SHADER_EVAL) {
+    /* Density, emission and color of a volume shader usually read several fields of one model at
+     * the same point: decode once (every field) and keep the result in the shader data. */
+    static_assert(sizeof(sd->srnxr_cache_out) / sizeof(float) == SRNXR_V2_MAX_OUTPUTS,
+                  "ShaderData neural volume cache size");
+    if (!(sd->srnxr_cache_key == hdr->decode_key && sd->srnxr_cache_p[0] == p[0] &&
+          sd->srnxr_cache_p[1] == p[1] && sd->srnxr_cache_p[2] == p[2] &&
+          sd->srnxr_cache_p[3] == p[3]))
+    {
+      srnxr_v2_decode(base, p, true, sd->srnxr_cache_out);
+      sd->srnxr_cache_key = hdr->decode_key;
+      for (int d = 0; d < 4; d++) {
+        sd->srnxr_cache_p[d] = p[d];
+      }
+    }
+    for (uint32_t c = 0; c < channels; c++) {
+      v[c] = sd->srnxr_cache_out[hdr->channel_field[c]];
     }
   }
   else {

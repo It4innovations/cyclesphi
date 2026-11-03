@@ -51,6 +51,9 @@ struct SRNXRBuildSettings {
   bool counters = true;
   /* Decode partially active warps cooperatively (otherwise one query per thread). */
   bool partial_warps = true;
+  /* Majorant bake from the decoded field at the bake samples (SRNXR_DEVICE_FLAG_SAMPLED_MAJORANT,
+   * not certified) instead of the certified bounds. */
+  bool sampled_majorant = false;
   /* COOPVEC: size in bytes of an N x K FP16 matrix in the OptiX INFERENCING_OPTIMAL layout
    * (optixCoopVecMatrixComputeSize). Without it no cooperative vector region is packed. */
   std::function<uint64_t(uint32_t n, uint32_t k)> coopvec_matrix_size;

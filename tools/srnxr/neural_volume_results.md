@@ -121,7 +121,10 @@ type (0x2A03)`), so COOPVEC rounds every layer output (the sine argument) to FP1
 
 - **CUDA_FUSED per-thread** keeps two 256-float activation arrays per thread in local memory
   (2 KB per thread): L1 thrashing and long dependent load chains. It remains as the CPU path and
-  as the GPU path for warps with fewer than 8 active lanes.
+  as the GPU path for warps with fewer than 8 active lanes. (The per-thread numbers of the tables
+  above are of the first version, which summed one neuron at a time; it now sums 8 rows at once
+  with bitwise identical results: 6.11 Mq/s and 586 us@1 on one_leaf, 3.21 Mq/s on random,
+  2.9 - 3.0x, see Interactive rendering.)
 - **CUDA_FUSED warp-cooperative** distributes the 256 neurons over the lanes (8 per lane),
   broadcasts the inputs by shuffle and reads the weights from a transposed FP16 copy, coalesced;
   4 queries per pass. 10x the per-thread path at identical arithmetic.
@@ -220,9 +223,15 @@ not of the backends. Error maps: `neural_volume_results/error_map_*.png`.
 
 Certified majorant bounds (`srnxr_bounds_check.py`, 2 000 samples per leaf): 0 violations of the
 per-leaf output ranges and of the blended field against the neighbor union; the bound is 1.4 - 2.0x
-the sampled range (median), up to 13x for rho in nearly constant leaves.
+the sampled range (median), up to 13x for rho in nearly constant leaves. As a density majorant on
+a 24^3 voxel grid (`srnxr_majorant_check.py`): 9.0x the mean density with the bake of the
+contributing leaves, 18.2x with the earlier neighbor union, 1.06x for the sampled maximum.
 
 ## Cycles end to end
+
+> Measured **before** the majorant, shared decode and per-thread changes described in
+> [Interactive rendering](#interactive-rendering), which make the frames 4.4x (certified majorant)
+> to 13x (sampled majorant) faster; the 16-sample times below were not re-measured.
 
 Scene `srnxr_make_scene.py`: 1024 x 512 (the default output size of the `cycles` standalone,
 which does not take the camera resolution of the XML unless `--width`/`--height` are given), the
@@ -263,6 +272,87 @@ An earlier version of the test scene declared the density attribute with
 `std="ATTR_STD_VOLUME_DENSITY"`; the attribute node did not reliably find it (depending on the
 image load order), so the earlier timings of this section (335 s, 143 s) decoded only one field
 and are withdrawn. The scene now uses named attributes.
+
+## Interactive rendering
+
+Progressive rendering at one sample per pixel per frame, the mode of interactive (viewport)
+rendering: the frame time is the path tracing time of one sample. Measured with the `cycles`
+standalone in background mode (script `scripts/srnxr/run_fps.sh` in the project directory on p12;
+data in `neural_volume_results/fps.csv`, the first measurement in `fps_v1.csv`): render time with
+9 samples minus render time with 1 sample, divided by 8, so scene loading, kernel loading and the
+majorant bake are excluded; display transfer and denoising are not included (no interactive
+display on the node). GPU: RTX PRO 6000 Blackwell, counters off, partial-warp path on unless
+stated, test scene of `srnxr_make_scene.py` with `--width`/`--height` passed to `cycles`.
+"both" decodes density and pressure, "density" only the density.
+
+| resolution | scene | first measurement | CUDA_FUSED certified | CUDA_TENSOR certified | COOPVEC certified | CUDA_FUSED sampled | CUDA_TENSOR sampled | COOPVEC sampled |
+|---|---|---|---|---|---|---|---|---|
+| 480 x 270 | density | 1768 ms, 0.57 FPS | 629 ms, 1.59 FPS | 603 ms, 1.66 FPS | 1421 ms, 0.70 FPS | 222 ms, **4.50 FPS** | 231 ms, 4.32 FPS | 463 ms, 2.16 FPS |
+| 480 x 270 | both | 3098 ms, 0.32 FPS | 741 ms, 1.35 FPS | 739 ms, 1.35 FPS | 1368 ms, 0.73 FPS | 266 ms, 3.76 FPS | 259 ms, **3.87 FPS** | 429 ms, 2.33 FPS |
+| 960 x 540 | density | 4043 ms, 0.25 FPS | 1409 ms, 0.71 FPS | 1366 ms, 0.73 FPS | 4020 ms, 0.25 FPS | 456 ms, 2.19 FPS | 446 ms, **2.24 FPS** | 1163 ms, 0.86 FPS |
+| 960 x 540 | both | 6814 ms, 0.15 FPS | 1550 ms, 0.65 FPS | 1553 ms, 0.64 FPS | 3698 ms, 0.27 FPS | 504 ms, **1.99 FPS** | 510 ms, 1.96 FPS | 1097 ms, 0.91 FPS |
+| 1920 x 1080 | density | 12486 ms, 0.080 FPS | 4407 ms, 0.23 FPS | 4315 ms, 0.23 FPS | 14656 ms, 0.068 FPS | 1399 ms, 0.71 FPS | 1393 ms, **0.72 FPS** | 4183 ms, 0.24 FPS |
+| 1920 x 1080 | both | 21440 ms, 0.047 FPS | 4874 ms, 0.21 FPS | 4772 ms, 0.21 FPS | 13342 ms, 0.075 FPS | 1560 ms, 0.64 FPS | 1545 ms, **0.65 FPS** | 3930 ms, 0.25 FPS |
+
+"first measurement" is CUDA_FUSED before the three changes below; without the partial-warp path
+(`--neural-partial-warps 0`), 960 x 540, both fields, CUDA_FUSED: 15331 ms then, 2395 ms
+(certified) and 724 ms (sampled) now.
+
+What the first measurement got wrong, found with per-kernel timings
+(`CYCLES_DEBUG_PER_KERNEL_PERFORMANCE=1 cycles --log-level trace`, script
+`scripts/srnxr/run_kstats.sh`): the whole frame is `integrator_shade_volume` and
+`integrator_shade_shadow` (the majorant bake takes 11 - 41 ms once), and those kernels were
+latency bound, not throughput bound: at 960 x 540 a launch with 103 K paths took longer (0.84 s)
+than the one with 232 K paths (0.80 s), and a launch with 29 K paths still 0.38 s. Every thread
+walks its whole ray segment through the volume in one launch, one field decode per majorant
+collision, and the launch lasts as long as its longest walk.
+
+1. **Loose majorant.** The bake took the union of the leaf ranges over the neighbors of every
+   leaf near the bake sample (neighbors of neighbors): about 18x the mean density on a voxel
+   grid of the test model (`tools/srnxr/srnxr_majorant_check.py`), so about 95 % of the collisions were null
+   collisions, each with a decode. The bake now takes the union over the leaves whose expanded
+   box touches the voxel, of which the field is a convex combination (still certified, about
+   9x). The lower or upper end of the bounds was also chosen by the shader LCG, so a voxel had a
+   2^-16 chance of never seeing the upper end; the bake samples now alternate deterministically.
+   960 x 540, density, 1 sample: 4.05 s -> 3.30 s.
+2. **Separate decodes per field.** Density and emission read two fields of one model at the same
+   point and decoded twice; the decode is now shared through the shader data (both fields cost
+   1.1x one, before 1.7x).
+3. **Slow per-thread path.** Warps with fewer than 8 active lanes, which are the long tails of the
+   launches, decode per thread. That path summed one neuron at a time (a 256-long dependent FMA
+   chain, the activations re-read from local memory for every neuron); it now sums 8 rows at once
+   (`srnxr_dot_rows`, each row still in index order, so the results are bitwise identical:
+   0 of 320 000 bytes differ on the accuracy set). Standalone, Cycles launch configuration:
+   latency of one query 1739 -> 586 us (one_leaf) and 6923 -> 2317 us (overlap), throughput
+   2.14 -> 6.11 Mq/s (one_leaf), 1.05 -> 3.21 Mq/s (random). 960 x 540, density, 1 sample:
+   3.30 s -> 1.41 s.
+
+`--neural-majorant sampled` (`srnxr_majorant="sampled"`) bakes the majorant from the decoded field
+at the 16 bake samples per voxel, which is what Cycles does for every procedural density: about
+1.06x the mean density, another 3x faster, but **not certified** (between the samples the field
+can exceed it; Cycles then rescales the majorant locally) and the bake costs 128^3 x 16 decodes per
+image (1.6 - 1.7 s at scene load, 35 M network evaluations/s). The specification forbids a
+majorant from sampling alone, so the default stays `certified`. On the test scene the two agree:
+480 x 270, both fields, 256 samples, the mean image values differ by 1.1e-5, the largest 16 x 16
+block mean difference is 0.0017 (below the 8-bit step) and the PSNR between them is 45.9 dB
+(noise).
+
+- With the sampled majorant one sample of 960 x 540 decodes only about 0.7 M points, 1.4 M network
+  evaluations (counters; the remaining 33.5 M queries of the run are the bake), so 450 ms per frame
+  is about 3 M network evaluations/s: the frame time is still the latency of the longest sequential walks, while the
+  same GPU decodes 35 M networks/s in the coherent bake.
+- CUDA_TENSOR does not help end to end (partially active warps). COOPVEC is now 2 - 3x slower than
+  the CUDA backends: it has no per-thread path to improve (its products are per thread already)
+  and it rounds every layer to FP16.
+- Remaining levers, not implemented: a smaller network (one decode is 4 -> 256 x 3 -> 5, about
+  240 K multiply-adds per query with the blending, versus about 2 K for the 32 - 64 wide MLPs
+  over a latent feature grid of the neural shading samples, github.com/shader-slang/neural-shading-s26,
+  which also use activations cooperative vectors evaluate natively; the sine is not one of them);
+  shorter dependent walks (reordering or batching the decodes of many paths between launches,
+  which the Cycles volume integrator does not allow); a tighter certified bound than
+  `b +- sum |W|`.
+- Not measured: the GUI viewport of `cycles` / cyclesphi with display and denoising, adaptive
+  resolution (start pixel size) and sample count of the interactive session.
 
 ## Not tested
 

@@ -535,6 +535,10 @@ static void options_parse(const int argc, const char **argv)
   ap.arg("--neural-partial-warps %d:ON")
       .help("Neural volume: 1 decode partially active warps cooperatively (default), 0 per thread")
       .action([&](auto argv) { parse_int(argv, &neural_options.partial_warps); });
+  ap.arg("--neural-majorant %s:MODE")
+      .help("Neural volume majorant bake: certified (bounds, default), sampled (decoded field at "
+            "the bake samples, not certified)")
+      .action([&](auto argv) { parse_string(argv, &neural_options.majorant); });
   ap.arg("--neural-counters %d:ON")
       .help("Neural volume device statistics: 1 on, 0 off (default: XML, on)")
       .action([&](auto argv) { parse_int(argv, &neural_options.counters); });

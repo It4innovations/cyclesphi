@@ -211,6 +211,9 @@ ccl_device void kernel_volume_density_evaluate(KernelGlobals kg,
     }
     sd.closure_transparent_extinction = zero_float3();
     sd.closure_emission_background = zero_float3();
+    /* Images returning bounds alternate between the lower and the upper end. */
+    sd.runtime_flag = (sample & 1) ? (sd.runtime_flag | SR_VOLUME_MAJORANT_BAKE_LOWER) :
+                                     (sd.runtime_flag & ~SR_VOLUME_MAJORANT_BAKE_LOWER);
 
     /* Evaluate volume coefficients. */
     ConstIntegratorBakeState state;

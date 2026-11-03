@@ -291,6 +291,49 @@ ccl_device_forceinline float srnxr_dot_row(const ccl_global uint16_t *row,
   return sum;
 }
 
+/* SRNXR_SIMT_ROWS consecutive rows of a FP16 weight matrix (row length n) with the same FP32
+ * activations: independent accumulators hide the FMA and load latency of a lone thread and every
+ * activation is read once for all rows. Each row sums in index order like srnxr_dot_row. */
+#define SRNXR_SIMT_ROWS 8
+ccl_device_forceinline void srnxr_dot_rows(const ccl_global uint16_t *rows,
+                                           const ccl_private float *a,
+                                           const uint32_t n,
+                                           const ccl_global float *bias,
+                                           ccl_private float *sum)
+{
+  for (int r = 0; r < SRNXR_SIMT_ROWS; r++) {
+    sum[r] = bias[r];
+  }
+#if defined(__KERNEL_GPU__)
+  if ((n & 7) == 0) {
+    const ccl_global uint4 *row4 = reinterpret_cast<const ccl_global uint4 *>(rows);
+    const uint32_t n8 = n >> 3;
+    for (uint32_t i = 0; i < n8; i++) {
+      uint32_t words[SRNXR_SIMT_ROWS][4];
+      for (int r = 0; r < SRNXR_SIMT_ROWS; r++) {
+        const uint4 w = row4[r * n8 + i];
+        words[r][0] = w.x;
+        words[r][1] = w.y;
+        words[r][2] = w.z;
+        words[r][3] = w.w;
+      }
+      for (int j = 0; j < 4; j++) {
+        const float a0 = a[8 * i + 2 * j];
+        const float a1 = a[8 * i + 2 * j + 1];
+        for (int r = 0; r < SRNXR_SIMT_ROWS; r++) {
+          sum[r] += srnxr_half_to_float(uint16_t(words[r][j] & 0xFFFFu)) * a0;
+          sum[r] += srnxr_half_to_float(uint16_t(words[r][j] >> 16)) * a1;
+        }
+      }
+    }
+    return;
+  }
+#endif
+  for (int r = 0; r < SRNXR_SIMT_ROWS; r++) {
+    sum[r] = srnxr_dot_row(rows + r * n, a, n, sum[r]);
+  }
+}
+
 /* One local SIREN, one query per thread: FP16 weights, FP32 arithmetic and sine. */
 ccl_device_noinline void srnxr_v2_eval_network_simt(const ccl_global uint8_t *base,
                                                     const uint32_t network,
@@ -327,10 +370,18 @@ ccl_device_noinline void srnxr_v2_eval_network_simt(const ccl_global uint8_t *ba
 
   for (uint32_t layer = 1; layer < hdr->hidden_layer_count; layer++) {
     w0 = hdr->layer_w0[layer];
-    for (uint32_t o = 0; o < width; o++) {
+    uint32_t o = 0;
+    for (; o + SRNXR_SIMT_ROWS <= width; o += SRNXR_SIMT_ROWS) {
+      float sum[SRNXR_SIMT_ROWS];
+      srnxr_dot_rows(weights + o * width, a, width, biases + o, sum);
+      for (int r = 0; r < SRNXR_SIMT_ROWS; r++) {
+        b[o + r] = srnxr_sin(w0 * sum[r], sine_mode);
+      }
+    }
+    for (; o < width; o++) {
       b[o] = srnxr_sin(w0 * srnxr_dot_row(weights + o * width, a, width, biases[o]), sine_mode);
     }
-    for (uint32_t o = 0; o < width; o++) {
+    for (o = 0; o < width; o++) {
       a[o] = b[o];
     }
     weights += width * width;
@@ -1365,8 +1416,11 @@ ccl_device_inline bool srnxr_v2_decode_warp(const ccl_global uint8_t *base,
 #endif /* SRNXR_HAS_WARP_INTRINSICS */
 
 
-/* Conservative range of the mapped channels in the box p +- bake_margin: the union of the
- * certified ranges of the strict leaves the box touches. */
+/* Conservative range of the mapped channels in the box p +- bake_margin over the shutter time
+ * interval of p[3]. The value at a point is a convex combination of the outputs of the leaves
+ * whose expanded box contains the point, all of them neighbors of the strict leaf of the point:
+ * the union of the certified output ranges of the neighbors (of the strict leaves the box touches)
+ * whose expanded box intersects the box bounds every value in the box. */
 ccl_device_inline void srnxr_v2_bound(const ccl_global uint8_t *base,
                                       const float p[4],
                                       ccl_private float *lo,
@@ -1382,11 +1436,15 @@ ccl_device_inline void srnxr_v2_bound(const ccl_global uint8_t *base,
     lo[c] = FLT_MAX;
     hi[c] = -FLT_MAX;
   }
-  float qmin[3], qmax[3];
+  const ccl_global uint32_t *neighbors = reinterpret_cast<const ccl_global uint32_t *>(
+      base + hdr->neighbors_offset);
+  float qmin[4], qmax[4];
   for (int d = 0; d < 3; d++) {
     qmin[d] = p[d] - hdr->bake_margin[d];
     qmax[d] = p[d] + hdr->bake_margin[d];
   }
+  qmin[3] = p[3] - 0.5f * fabsf(hdr->time_shutter);
+  qmax[3] = p[3] + 0.5f * fabsf(hdr->time_shutter);
   uint32_t stack[64];
   int top = 0;
   stack[top++] = 0;
@@ -1398,10 +1456,20 @@ ccl_device_inline void srnxr_v2_bound(const ccl_global uint8_t *base,
       continue;
     }
     if (node.first_child == SRNXR_INVALID_INDEX) {
-      const ccl_global SRNXRLeafV2 &leaf = leaves[node.leaf];
-      for (uint32_t c = 0; c < channels; c++) {
-        lo[c] = fminf(lo[c], leaf.bound_min[c]);
-        hi[c] = fmaxf(hi[c], leaf.bound_max[c]);
+      const ccl_global SRNXRLeafV2 &strict = leaves[node.leaf];
+      for (uint32_t i = strict.neighbor_begin; i < strict.neighbor_end; i++) {
+        const ccl_global SRNXRLeafV2 &leaf = leaves[neighbors[i]];
+        bool touches = true;
+        for (int d = 0; d < 4; d++) {
+          touches = touches && leaf.expanded_min[d] <= qmax[d] && leaf.expanded_max[d] >= qmin[d];
+        }
+        if (!touches) {
+          continue;
+        }
+        for (uint32_t c = 0; c < channels; c++) {
+          lo[c] = fminf(lo[c], leaf.bound_min[c]);
+          hi[c] = fmaxf(hi[c], leaf.bound_max[c]);
+        }
       }
       continue;
     }

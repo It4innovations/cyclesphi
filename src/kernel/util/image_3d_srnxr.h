@@ -135,6 +135,9 @@ enum SRNXRDeviceFlags {
   SRNXR_DEVICE_FLAG_COUNTERS = (1 << 1),    /* the kernels update the counters */
   SRNXR_DEVICE_FLAG_WARP_WEIGHTS = (1 << 2), /* warp_weights holds the networks of width 64k */
   SRNXR_DEVICE_FLAG_PARTIAL_WARPS = (1 << 3), /* use the partial-warp path (else per-thread) */
+  /* The majorant bake samples the decoded field like any procedural density instead of
+   * returning the certified bounds: tight, but NOT certified (no guarantee between samples). */
+  SRNXR_DEVICE_FLAG_SAMPLED_MAJORANT = (1 << 4),
 };
 
 /* Device statistics, see srnxr_counter_add(). */
@@ -202,7 +205,8 @@ struct SRNXRLeafV2 {
   uint32_t neighbor_end;
   float output_scale[SRNXR_V2_MAX_OUTPUTS]; /* u = y * output_scale + output_offset */
   float output_offset[SRNXR_V2_MAX_OUTPUTS];
-  /* Certified range of the mapped channels for any point of the strict leaf box. */
+  /* Certified range of the mapped channels of the output of the leaf network, for any input
+   * (|sin| <= 1). */
   float bound_min[SRNXR_V2_MAX_CHANNELS];
   float bound_max[SRNXR_V2_MAX_CHANNELS];
   float pad[2];
@@ -269,6 +273,9 @@ struct SRNXRDeviceHeaderV2 {
   uint32_t counter_slot;
   /* COOPVEC: 0 matrix products with FP32 output and bias, 1 with FP16 output and bias. */
   uint32_t coopvec_mode;
+  /* Nonzero key of the decoded field (file checksum and the decode settings except the channel
+   * mapping): images with the same key share the decode of a point (ShaderData cache). */
+  uint32_t decode_key;
 
   float layer_w0[SRNXR_V2_MAX_LAYERS];
 

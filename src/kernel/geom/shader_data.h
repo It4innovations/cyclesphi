@@ -449,6 +449,9 @@ ccl_device_inline void shader_setup_from_volume(ccl_private ShaderData *ccl_rest
   sd->object_flag = 0;
   sd->time = ray->time;
   sd->ray_length = 0.0f; /* todo: can we set this to some useful value? */
+#ifdef WITH_CYCLES_NEURAL_VOLUME
+  sd->srnxr_cache_key = 0;
+#endif
 
   /* TODO: fill relevant fields for texture coordinates. */
   sd->object = object;

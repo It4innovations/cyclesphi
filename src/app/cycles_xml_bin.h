@@ -34,6 +34,8 @@ struct XMLNeuralVolumeOptions {
   int counters = -1;
   /* -1: from XML (default on), 0: off, 1: on. Cooperative decoding of partially active warps. */
   int partial_warps = -1;
+  /* certified (default) or sampled (not certified), empty: from XML. Majorant bake. */
+  std::string majorant;
 };
 void xml_set_neural_volume_options(const XMLNeuralVolumeOptions &options);
 void xml_set_volume_to_attr(Scene* scene, std::string geom_name, std::string attr_name, int type, vector<char>& file_content);

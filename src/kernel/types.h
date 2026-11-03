@@ -931,6 +931,8 @@ enum ShaderRuntimeFlag {
   /* Volume density evaluation of the majorant octree (kernel_volume_density_evaluate): images
    * that cannot be point sampled safely may return conservative bounds instead. */
   SR_VOLUME_MAJORANT_BAKE = (1 << 13),
+  /* With SR_VOLUME_MAJORANT_BAKE: return the lower end of the bounds, otherwise the upper end. */
+  SR_VOLUME_MAJORANT_BAKE_LOWER = (1 << 14),
 };
 
 /* Shader flags that are set after compiling the shaders. */
@@ -1091,6 +1093,14 @@ struct ccl_align(16) ShaderData {
    * emission and shadow transparency with MAX_CLOSURE 0. */
   Spectrum closure_emission_background;
   Spectrum closure_transparent_extinction;
+
+#ifdef WITH_CYCLES_NEURAL_VOLUME
+  /* Last neural volume decode of a volume shader evaluation: every field of the model with key
+   * srnxr_cache_key (0: empty) at srnxr_cache_p, shared by the images of one model. */
+  float srnxr_cache_p[4];
+  uint srnxr_cache_key;
+  float srnxr_cache_out[8];
+#endif
 
   /* At the end so we can adjust size in ShaderDataTinyStorage. */
   struct ShaderClosure closure[MAX_CLOSURE];

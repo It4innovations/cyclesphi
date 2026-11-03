@@ -232,6 +232,18 @@ static bool xml_read_srnxr_settings(const XMLReadState &state,
   if (cli.partial_warps >= 0) {
     settings.partial_warps = cli.partial_warps != 0;
   }
+  std::string majorant = "certified";
+  if (const xml_attribute a = node_attribute.attribute("srnxr_majorant")) {
+    majorant = a.value();
+  }
+  if (!cli.majorant.empty()) {
+    majorant = cli.majorant;
+  }
+  if (majorant != "certified" && majorant != "sampled") {
+    fprintf(stderr, "Error: unknown neural volume majorant \"%s\".\n", majorant.c_str());
+    return false;
+  }
+  settings.sampled_majorant = majorant == "sampled";
 
   const SRNXRBackend requested = settings.backend;
   string reason;

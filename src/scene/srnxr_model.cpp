@@ -878,13 +878,11 @@ bool srnxr_build_device_blob_v2(const char *data,
       dl.output_scale[k] = output_tf[size_t(i) * 2 * output_dim + k];
       dl.output_offset[k] = output_tf[size_t(i) * 2 * output_dim + output_dim + k];
     }
-    /* The blended value is a convex combination of the outputs of the neighbors. */
+    /* Range of the output of this leaf network; the bake takes the union over the leaves whose
+     * expanded box touches the voxel, of which the blended value is a convex combination. */
     for (size_t c = 0; c < report.channel_field.size(); c++) {
-      double lo = std::numeric_limits<double>::max(), hi = -lo;
-      for (const uint32_t j : neighbor_lists[i]) {
-        lo = std::min(lo, leaf_lo[size_t(j) * output_dim + report.channel_field[c]]);
-        hi = std::max(hi, leaf_hi[size_t(j) * output_dim + report.channel_field[c]]);
-      }
+      const double lo = leaf_lo[size_t(i) * output_dim + report.channel_field[c]];
+      const double hi = leaf_hi[size_t(i) * output_dim + report.channel_field[c]];
       dl.bound_min[c] = float(lo);
       dl.bound_max[c] = float(hi);
       dl.bound_min[c] = std::nextafter(dl.bound_min[c], -std::numeric_limits<float>::max());
@@ -1078,12 +1076,17 @@ bool srnxr_build_device_blob_v2(const char *data,
   hdr.node_count = node_count;
   hdr.flags = (settings.counters ? SRNXR_DEVICE_FLAG_COUNTERS : 0) |
               (settings.partial_warps ? SRNXR_DEVICE_FLAG_PARTIAL_WARPS : 0) |
+              (settings.sampled_majorant ? SRNXR_DEVICE_FLAG_SAMPLED_MAJORANT : 0) |
               ((want_mma && report.networks_without_mma < network_count) ?
                    SRNXR_DEVICE_FLAG_MMA_WEIGHTS :
                    0) |
               ((want_warp && report.networks_without_warp < network_count) ?
                    SRNXR_DEVICE_FLAG_WARP_WEIGHTS :
                    0);
+  if (settings.sampled_majorant) {
+    report.warnings.push_back("sampled volume majorant: the bake samples the decoded field, the "
+                              "majorant is not certified");
+  }
   hdr.backend = settings.backend;
   hdr.sine_mode = settings.sine_mode;
   hdr.channel_count = uint32_t(report.channel_field.size());
@@ -1119,6 +1122,26 @@ bool srnxr_build_device_blob_v2(const char *data,
   }
   hdr.outside_value = settings.outside_value;
   hdr.coopvec_mode = settings.coopvec_mode;
+  {
+    /* FNV-1a over everything the decoded values depend on except the channel mapping. */
+    uint32_t outside_bits;
+    std::memcpy(&outside_bits, &hdr.outside_value, sizeof(outside_bits));
+    const uint32_t parts[] = {read_value<uint32_t>(data, file_crc_offset),
+                              uint32_t(size),
+                              uint32_t(uint64_t(size) >> 32),
+                              hdr.flags,
+                              hdr.backend,
+                              hdr.sine_mode,
+                              hdr.coopvec_mode,
+                              outside_bits};
+    uint32_t key = 2166136261u;
+    for (const uint32_t part : parts) {
+      for (int b = 0; b < 4; b++) {
+        key = (key ^ ((part >> (8 * b)) & 0xFFu)) * 16777619u;
+      }
+    }
+    hdr.decode_key = (key == 0) ? 1 : key;
+  }
   for (uint32_t l = 0; l < layers; l++) {
     hdr.layer_w0[l] = layer_w0[l];
   }
