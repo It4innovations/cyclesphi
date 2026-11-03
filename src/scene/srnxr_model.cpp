@@ -1141,6 +1141,7 @@ bool srnxr_build_device_blob_v2(const char *data,
       }
     }
     hdr.decode_key = (key == 0) ? 1 : key;
+    hdr.bucket_base = 0xFFFFFFFFu; /* SRNXR_QUEUE_INVALID_BUCKET_BASE, set on upload */
   }
   for (uint32_t l = 0; l < layers; l++) {
     hdr.layer_w0[l] = layer_w0[l];

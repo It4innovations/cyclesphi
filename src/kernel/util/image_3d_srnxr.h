@@ -276,6 +276,10 @@ struct SRNXRDeviceHeaderV2 {
   /* Nonzero key of the decoded field (file checksum and the decode settings except the channel
    * mapping): images with the same key share the decode of a point (ShaderData cache). */
   uint32_t decode_key;
+  /* First bucket of the networks of this model in the wavefront decode queue
+   * (kernel/util/image_3d_srnxr_queue.h), set on upload; SRNXR_QUEUE_INVALID_BUCKET_BASE
+   * (0xFFFFFFFF) when the image is not decoded through the queue. */
+  uint32_t bucket_base;
 
   float layer_w0[SRNXR_V2_MAX_LAYERS];
 

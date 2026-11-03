@@ -151,6 +151,10 @@ class OptiXDevice : public CUDADevice {
 
   bool supports_neural_coopvec(string &reason) const override;
   void set_use_neural_coopvec(bool use) override;
+  bool get_use_neural_coopvec() const override
+  {
+    return use_neural_coopvec;
+  }
 
   /* Converts the cooperative vector matrices of uploaded SRNXR images, and reports the decoder
    * statistics of the OptiX programs before freeing them. */

@@ -354,6 +354,86 @@ block mean difference is 0.0017 (below the 8-bit step) and the PSNR between them
 - Not measured: the GUI viewport of `cycles` / cyclesphi with display and denoising, adaptive
   resolution (start pixel size) and sample count of the interactive session.
 
+## Wavefront decode queue (2026-11-03)
+
+The frame time of the interactive renders above is the latency of the longest per-thread walks
+(0.5 s per sample at 960 x 540 for 0.7 M decodes: about 3 % of the decoder throughput of the
+GPU). The wavefront queue (`tools/srnxr/neural_volume.md`, "Wavefront decode queue") records
+the queries of the walks, decodes them in batches sorted by network with full Tensor Core tiles,
+and replays them. Standalone measurement of the batch stages
+(`srnxr_bench --wavefront`, build with nvcc 13.3 `-O3 -lineinfo`, `sm_120`, 256 threads per
+block without a register limit; the point sets of `srnxr_points.py` with `--workload-size
+1048576`), RTX PRO 6000 Blackwell, SIREN-3, accurate sine. Every point is one request; the
+stages record, expand, scan, scatter, tensor, blend and replay run as separate kernels and are
+timed with events (median of 5 - 10). Mpairs/s counts the local network evaluations.
+
+| workload | requests | pairs per request | direct CUDA_TENSOR decode | queue, block-shared weights | queue, independent warp tiles | tensor stage (block) |
+|---|---|---|---|---|---|---|
+| coherent | 65 536 | 1.75 | 32.7 Mq/s | **100.6 Mq/s** (0.65 ms) | 99.3 Mq/s | 0.49 ms |
+| random | 65 536 | 1.77 | 7.1 Mq/s | **98.2 Mq/s** (0.67 ms) | 103.9 Mq/s | 0.54 ms |
+| coherent | 1 048 576 | 1.76 | 56.4 Mq/s | **117.4 Mq/s, 206.8 Mpairs/s** (8.9 ms) | 103.9 Mq/s | 6.8 ms |
+| random | 1 048 576 | 1.77 | 10.2 Mq/s | **120.7 Mq/s, 213.3 Mpairs/s** (8.7 ms) | 110.6 Mq/s | 7.0 ms |
+| overlap | 1 048 576 | 3.62 | 5.4 Mq/s | **67.4 Mq/s, 243.8 Mpairs/s** (15.6 ms) | 54.1 Mq/s | 13.3 ms |
+
+- The tiles are full: 15.9 - 16.0 rows per tile on every workload (the direct decoder of the
+  interactive renders had 6.4 - 6.6 rows, and 1 - 2 rows on `random`); the network order of
+  the queries no longer matters (`random` decodes as fast as `coherent`).
+- The stages other than the tensor stage cost about 1.9 ms per 1 M requests (expand 0.8 - 1.1
+  ms, scatter 0.6 - 0.9 ms, blend 0.1 - 0.2 ms, record and replay 0.1 ms each, scan 4 us).
+- Correctness: 0 replay misses, 0 overflow, 0 incomplete requests; the blended fields differ
+  from the direct CUDA_TENSOR decode by at most 3.6e-7 (1.2e-7 of the field range; the blend
+  order of the contributing leaves differs).
+- Block-shared weights (12 warps of a block evaluating tiles of one network, 8 KB weight panels
+  staged in shared memory with `cp.async`, double buffered) are 13 - 25 % faster than
+  independent warp tiles at 1 M requests and equal at 65 K requests: the tensor stage is at about
+  a quarter of the dense FP16 Tensor Core peak of the GPU (16 rows x 2 x 256 x 256 MACs per tile
+  at 256 FMA per cycle and SM would be 3.4 us per tile; measured 10 - 11 us per tile and SM), the
+  rest is the latency of the dependent mma chains and the sines per warp.
+- At the 1.24 M requests of a 1280 x 720 frame (both fields, sampled majorant; 2.5 M network
+  evaluations) the batch costs about 11 ms per sample.
+
+### Cycles with the queue
+
+Same method as [Interactive rendering](#interactive-rendering) (`scripts/srnxr/run_fps_queue.sh`
+on p12, `neural_volume_results/fps_queue.csv`): render time of 9 samples minus 1 sample over 8,
+CUDA device, CUDA_TENSOR backend, accurate sine, counters off, test scene of
+`srnxr_make_scene.py` with both fields (density from `rho`, emission from `p`). Cycles built with
+CUDA 12.9 (`sm_120`), the stages run as CUDA kernels on the CUDA device.
+
+| resolution | majorant | queue window | ms per sample | FPS | queue statistics (9 samples) |
+|---|---|---|---|---|---|
+| 1280 x 720 | sampled | off (inline decode) | 825.0 | 1.21 | |
+| 1280 x 720 | sampled | 32 | 44.6 | 22.4 | 16.8 M requests, 30.9 M pairs, 15.99 rows per tile, 109 overflows = 109 replay misses |
+| 1280 x 720 | sampled | **128** | **27.9** | **35.9** | 16.8 M requests, 0 overflows, 0 misses |
+| 1280 x 720 (density only) | sampled | 32 | 48.0 | 20.8 | 17.1 M requests |
+| 1280 x 720 | certified | 32 | 145.4 | 6.9 | 62.4 M requests, 117.4 M pairs, 3578 overflows, 3188 misses |
+| 1280 x 720 | certified | **128** | **92.8** | **10.8** | 62.4 M requests, 0 overflows, 0 misses |
+| 1280 x 720 (density only) | certified | 32 | 145.5 | 6.9 | 66.0 M requests |
+
+The 15 FPS target at 1280 x 720 is met with the sampled majorant (35.9 FPS, 29.6x the inline
+decode); the certified majorant, with 3.7x the requests per sample (9x the mean density), reaches
+10.8 FPS.
+
+- The window matters: a lookup the record kernel could not keep (window full) is decoded inline
+  at replay by one thread of a nearly empty warp, on the critical path of the launch; 109 of
+  17 M lookups cost 17 ms per sample at 720p. The default window is now 128 (0 overflows on the
+  test scene with both majorants).
+- Per-kernel times of one sample at 1280 x 720, both fields, window 32
+  (`scripts/srnxr/run_kstats_queue.sh`): sampled majorant: `neural_queue_tensor` 12.2 ms,
+  `integrator_shade_volume` (replay) 8.8 ms, `integrator_neural_record_volume` 6.7 ms,
+  `integrator_shade_shadow` 2.1 ms, `integrator_neural_record_shadow` 1.8 ms, expand 1.6 ms,
+  scatter 1.2 ms, scan 0.8 ms (5 launches of a 65 536 bucket scan), blend 0.3 ms. Certified
+  majorant: tensor 45.6 ms, record 42.0 ms, replay 39.3 ms, shadow 8.2 + 7.0 ms, expand 5.9 ms,
+  scatter 4.7 ms: the walks (two per launch) cost as much as the decode; a tighter certified
+  bound would cut both.
+- Correctness: 960 x 540, both fields, 16 samples, sampled majorant, queue vs inline decode (both
+  CUDA_TENSOR): render time 0.374 s vs 8.067 s, mean image value 0.32849 in both, PSNR 67.0 dB
+  (noise: the queue decodes every evaluation on Tensor Cores where the inline decoder used the
+  SIMT paths for partially active warps, and blends the leaves in neighbor order), largest 16 x 16
+  block mean difference 0.0003, 0 replay misses. The accuracy of the decoded field is that of
+  CUDA_TENSOR (FP16 activations, [Accuracy](#accuracy)); the batch result matches the direct
+  tensor decode to 3.6e-7 (standalone).
+
 ## Not tested
 
 - RTX 4090 / Ada (SM 8.9), any other GPU than the RTX PRO 6000 Blackwell.

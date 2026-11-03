@@ -217,6 +217,11 @@ KERNEL_STRUCT_MEMBER(integrator, int, blue_noise_sequence_length)
 KERNEL_STRUCT_MEMBER(integrator, int, use_volumes)
 KERNEL_STRUCT_MEMBER(integrator, int, volume_ray_marching)
 KERNEL_STRUCT_MEMBER(integrator, int, volume_max_steps)
+/* Wavefront decode queue of neural volumes (kernel/util/image_3d_srnxr_queue.h): on/off, lookups
+ * per path and launch (window, 128), requests per launch (0: 4 x the paths). */
+KERNEL_STRUCT_MEMBER(integrator, int, volume_neural_queue)
+KERNEL_STRUCT_MEMBER(integrator, int, volume_neural_queue_window)
+KERNEL_STRUCT_MEMBER(integrator, int, volume_neural_queue_capacity)
 /* Shadow catcher. */
 KERNEL_STRUCT_MEMBER(integrator, int, has_shadow_catcher)
 /* Closure filter. */

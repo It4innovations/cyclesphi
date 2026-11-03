@@ -12,6 +12,7 @@
 #include "scene/stats.h"
 
 #include "kernel/util/image_3d_srnxr.h"
+#include "kernel/util/image_3d_srnxr_queue.h"
 
 #include "util/atomic.h"
 #include "util/debug.h"
@@ -19,6 +20,8 @@
 #include "util/image_impl.h"
 #include "util/image_metadata.h"
 #include "util/log.h"
+#include "util/map.h"
+#include "util/thread.h"
 #include "util/simd.h"
 
 #include <OpenImageIO/thread.h>
@@ -350,9 +353,31 @@ device_image *ImageCache::load_image_full(Device &device,
           SRNXRDeviceHeaderV2 *hdr = reinterpret_cast<SRNXRDeviceHeaderV2 *>(pixels);
           if (hdr->magic == SRNXR_DEVICE_MAGIC && hdr->version == SRNXR_DEVICE_VERSION_V2) {
             hdr->counter_slot = image_info_id;
-            printf("SRNXR: image %s uses counter slot %u\n",
+            /* Buckets of the wavefront decode queue: the images of one model (decode key) share
+             * them, their networks are identical. */
+            static thread_mutex srnxr_bucket_mutex;
+            static unordered_map<uint32_t, uint32_t> srnxr_bucket_base;
+            static uint32_t srnxr_next_bucket = 0;
+            {
+              const thread_scoped_lock lock(srnxr_bucket_mutex);
+              auto it = srnxr_bucket_base.find(hdr->decode_key);
+              if (it == srnxr_bucket_base.end()) {
+                if (srnxr_next_bucket + hdr->network_count > SRNXR_QUEUE_DEFAULT_BUCKETS) {
+                  /* Start over (the queue checks the model of every row, a collision with a
+                   * model still loaded only costs inline decodes). */
+                  srnxr_bucket_base.clear();
+                  srnxr_next_bucket = 0;
+                }
+                it = srnxr_bucket_base.emplace(hdr->decode_key, srnxr_next_bucket).first;
+                srnxr_next_bucket += hdr->network_count;
+              }
+              hdr->bucket_base = it->second;
+            }
+            printf("SRNXR: image %s uses counter slot %u, queue buckets %u - %u\n",
                    loader.name().c_str(),
-                   image_info_id % SRNXR_COUNTER_SLOTS);
+                   image_info_id % SRNXR_COUNTER_SLOTS,
+                   hdr->bucket_base,
+                   hdr->bucket_base + hdr->network_count - 1);
           }
         }
       }

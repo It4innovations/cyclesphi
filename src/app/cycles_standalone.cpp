@@ -113,6 +113,7 @@ static void scene_init()
 #endif
   {
     xml_read_file(options.scene, options.filepath.c_str());
+    xml_apply_neural_volume_options(options.scene);
   }
 
   /* The viewplane and resolution as read from the file. */
@@ -542,6 +543,17 @@ static void options_parse(const int argc, const char **argv)
   ap.arg("--neural-counters %d:ON")
       .help("Neural volume device statistics: 1 on, 0 off (default: XML, on)")
       .action([&](auto argv) { parse_int(argv, &neural_options.counters); });
+  ap.arg("--neural-queue %d:ON")
+      .help("Neural volume wavefront decode queue: 1 record the lookups of the volume walks, "
+            "decode them in batches on Tensor Cores and replay, 0 decode inside the walks "
+            "(default: XML, off)")
+      .action([&](auto argv) { parse_int(argv, &neural_options.queue); });
+  ap.arg("--neural-queue-window %d:K")
+      .help("Neural volume queue: lookups per path and launch (default 128)")
+      .action([&](auto argv) { parse_int(argv, &neural_options.queue_window); });
+  ap.arg("--neural-queue-capacity %d:N")
+      .help("Neural volume queue: requests per launch (default 4 x the paths)")
+      .action([&](auto argv) { parse_int(argv, &neural_options.queue_capacity); });
   ap.arg("--list-devices", &list).help("List information about all available devices");
   ap.arg("--profile", &profile).help("Enable profile logging");
   ap.arg("--log-level %s:LEVEL")

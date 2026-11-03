@@ -13,6 +13,7 @@
 #if defined(WITH_CYCLES_NEURAL_VOLUME) && !defined(__KERNEL_METAL__)
 #  define SRNXR_V2_KERNEL 1
 #  include "kernel/util/image_3d_srnxr_decode.h"
+#  include "kernel/util/image_3d_srnxr_queue_decode.h"
 #endif
 
 #if !defined(__KERNEL_METAL__) && !defined(__KERNEL_ONEAPI__)
@@ -1080,6 +1081,45 @@ ccl_device_noinline float kernel_image_interp_srnxr(const ccl_global KernelImage
 // the 16 samples of a voxel see both ends.
 
 #ifdef SRNXR_V2_KERNEL
+
+/* Decode of a volume shader evaluation through the wavefront queue (ShaderData
+ * srnxr_queue_mode): record the lookup and return zero, or replay it; inline decode when the
+ * queue cannot serve it. */
+#  if defined(__KERNEL_CUDA__) && defined(__CUDA_ARCH__)
+ccl_device_inline void srnxr_v2_decode_queued(const ccl_global uint8_t *base,
+                                              const ccl_global SRNXRDeviceHeaderV2 *hdr,
+                                              ccl_private ShaderData *sd,
+                                              const float p[4])
+{
+  const SRNXRQueue &q = kernel_integrator_state.srnxr_queue;
+  if (sd->srnxr_queue_mode == SRNXR_QUEUE_RECORD) {
+    if (q.capacity && srnxr_queue_image_eligible(q, hdr) &&
+        srnxr_queue_record(
+            q, sd->srnxr_queue_slot, sd->srnxr_queue_cursor, p, hdr->counter_slot, hdr->decode_key))
+    {
+      for (int k = 0; k < SRNXR_V2_MAX_OUTPUTS; k++) {
+        sd->srnxr_cache_out[k] = 0.0f;
+      }
+      return;
+    }
+  }
+  else if (sd->srnxr_queue_mode == SRNXR_QUEUE_REPLAY) {
+    if (q.capacity && srnxr_queue_replay(q,
+                                         sd->srnxr_queue_slot,
+                                         sd->srnxr_queue_count,
+                                         sd->srnxr_queue_cursor,
+                                         p,
+                                         hdr->decode_key,
+                                         hdr->output_dim,
+                                         sd->srnxr_cache_out))
+    {
+      return;
+    }
+  }
+  srnxr_v2_decode(base, p, true, sd->srnxr_cache_out);
+}
+#  endif
+
 ccl_device_noinline float4 kernel_image_interp_srnxr_v2(const ccl_global uint8_t *base,
                                                         ccl_private ShaderData *sd,
                                                         const float3 P)
@@ -1119,7 +1159,16 @@ ccl_device_noinline float4 kernel_image_interp_srnxr_v2(const ccl_global uint8_t
           sd->srnxr_cache_p[1] == p[1] && sd->srnxr_cache_p[2] == p[2] &&
           sd->srnxr_cache_p[3] == p[3]))
     {
-      srnxr_v2_decode(base, p, true, sd->srnxr_cache_out);
+#  if defined(__KERNEL_CUDA__) && defined(__CUDA_ARCH__)
+      if (sd->srnxr_queue_mode == SRNXR_QUEUE_RECORD || sd->srnxr_queue_mode == SRNXR_QUEUE_REPLAY)
+      {
+        srnxr_v2_decode_queued(base, hdr, sd, p);
+      }
+      else
+#  endif
+      {
+        srnxr_v2_decode(base, p, true, sd->srnxr_cache_out);
+      }
       sd->srnxr_cache_key = hdr->decode_key;
       for (int d = 0; d < 4; d++) {
         sd->srnxr_cache_p[d] = p[d];

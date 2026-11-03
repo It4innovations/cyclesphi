@@ -89,7 +89,8 @@ ccl_device_inline Spectrum
 integrate_transparent_surface_shadow(KernelGlobals kg,
                                      IntegratorShadowState state,
                                      const int hit,
-                                     ccl_private ShaderEvalResult &result)
+                                     ccl_private ShaderEvalResult &result,
+                                     const bool neural_record = false)
 {
   PROFILING_INIT(kg, PROFILING_SHADE_SHADOW_SURFACE);
 
@@ -110,8 +111,12 @@ integrate_transparent_surface_shadow(KernelGlobals kg,
 
   shader_setup_from_ray(kg, shadow_sd, &ray, &isect);
 
-  /* Evaluate shader. */
-  if (!(shadow_sd->shader_flag & SD_HAS_ONLY_VOLUME)) {
+  /* Evaluate shader. When recording the neural volume lookups the surface counts as fully
+   * transparent (the recorded walk covers at least the segments of the real one). */
+  if (neural_record) {
+    /* Pass. */
+  }
+  else if (!(shadow_sd->shader_flag & SD_HAS_ONLY_VOLUME)) {
     surface_shader_eval<KERNEL_FEATURE_NODE_MASK_SURFACE_SHADOW>(
         kg, state, shadow_sd, nullptr, PATH_RAY_VISIBILITY_SHADOW, PATH_RAY_FLAG_NONE);
     if (shadow_sd->runtime_flag & SR_CACHE_MISS) {
@@ -136,7 +141,7 @@ integrate_transparent_surface_shadow(KernelGlobals kg,
 
   /* Compute transparency from closures. */
   result = SHADER_EVAL_OK;
-  return surface_shader_transparency(shadow_sd);
+  return neural_record ? one_spectrum() : surface_shader_transparency(shadow_sd);
 }
 
 #  ifdef __VOLUME__
@@ -145,7 +150,11 @@ ccl_device_inline bool integrate_transparent_volume_shadow(KernelGlobals kg,
                                                            const int hit,
                                                            const int num_recorded_hits,
                                                            ccl_private Spectrum *ccl_restrict
-                                                               throughput)
+                                                               throughput,
+                                                           const uint neural_mode,
+                                                           const uint neural_slot,
+                                                           ccl_private uint *neural_cursor,
+                                                           const uint neural_count)
 {
   PROFILING_INIT(kg, PROFILING_SHADE_SHADOW_VOLUME);
 
@@ -167,6 +176,16 @@ ccl_device_inline bool integrate_transparent_volume_shadow(KernelGlobals kg,
 
   /* `object` is only needed for light tree with light linking, it is irrelevant for shadow. */
   shader_setup_from_volume(shadow_sd, &ray, OBJECT_NONE);
+#  ifdef WITH_CYCLES_NEURAL_VOLUME
+  shadow_sd->srnxr_queue_mode = neural_mode;
+  shadow_sd->srnxr_queue_slot = neural_slot;
+  shadow_sd->srnxr_queue_cursor = *neural_cursor;
+  shadow_sd->srnxr_queue_count = neural_count;
+#  else
+  (void)neural_mode;
+  (void)neural_slot;
+  (void)neural_count;
+#  endif
 
   if (kernel_data.integrator.volume_ray_marching) {
     const float step_size = volume_stack_step_size<true>(kg, state);
@@ -175,14 +194,28 @@ ccl_device_inline bool integrate_transparent_volume_shadow(KernelGlobals kg,
   else {
     volume_shadow_null_scattering(kg, state, &ray, shadow_sd, throughput);
   }
+#  ifdef WITH_CYCLES_NEURAL_VOLUME
+  *neural_cursor = shadow_sd->srnxr_queue_cursor;
+#  endif
 
   return shadow_sd->runtime_flag & SR_CACHE_MISS;
 }
 #  endif
 
 ccl_device_inline TransparentShadowEvalResult integrate_transparent_shadow(
-    KernelGlobals kg, IntegratorShadowState state, const uint packed_num_hits)
+    KernelGlobals kg,
+    IntegratorShadowState state,
+    const uint packed_num_hits,
+    const uint neural_mode = 0,
+    const uint neural_slot = 0,
+    ccl_private uint *neural_cursor = nullptr,
+    const uint neural_count = 0)
 {
+  uint neural_cursor_local = 0;
+  if (neural_cursor == nullptr) {
+    neural_cursor = &neural_cursor_local;
+  }
+  const bool neural_record = neural_mode == 1; /* SRNXR_QUEUE_RECORD */
   /* Accumulate shadow for transparent surfaces. */
   const uint num_hits = shadow_num_hits_get(packed_num_hits);
   const uint num_recorded_hits = min(num_hits, (uint)INTEGRATOR_SHADOW_ISECT_SIZE);
@@ -203,8 +236,15 @@ ccl_device_inline TransparentShadowEvalResult integrate_transparent_shadow(
 #  ifdef __VOLUME__
       if (!integrator_state_shadow_volume_stack_is_empty(kg, state)) {
         Spectrum throughput = INTEGRATOR_STATE(state, shadow_path, throughput);
-        const bool cache_miss = integrate_transparent_volume_shadow(
-            kg, state, hit, num_recorded_hits, &throughput);
+        const bool cache_miss = integrate_transparent_volume_shadow(kg,
+                                                                    state,
+                                                                    hit,
+                                                                    num_recorded_hits,
+                                                                    &throughput,
+                                                                    neural_mode,
+                                                                    neural_slot,
+                                                                    neural_cursor,
+                                                                    neural_count);
         if (is_zero(throughput)) {
           return TRANSPARENT_SHADOW_EVAL_OPAQUE;
         }
@@ -224,7 +264,8 @@ ccl_device_inline TransparentShadowEvalResult integrate_transparent_shadow(
     /* Surface shaders. */
     if (hit < num_recorded_hits) {
       ShaderEvalResult result = SHADER_EVAL_EMPTY;
-      const Spectrum shadow = integrate_transparent_surface_shadow(kg, state, hit, result);
+      const Spectrum shadow = integrate_transparent_surface_shadow(
+          kg, state, hit, result, neural_record);
       if (result == SHADER_EVAL_CACHE_MISS) {
         /* Store resume state: restart at this hit, skip volume. */
         INTEGRATOR_STATE_WRITE(state, shadow_path, packed_num_hits) = shadow_num_hits_pack(
@@ -262,17 +303,69 @@ ccl_device_inline TransparentShadowEvalResult integrate_transparent_shadow(
 }
 #endif /* __TRANSPARENT_SHADOWS__ */
 
+#if defined(WITH_CYCLES_NEURAL_VOLUME) && defined(__TRANSPARENT_SHADOWS__) && \
+    defined(__KERNEL_CUDA__) && defined(__CUDA_ARCH__)
+/* Record the neural volume lookups of the transparent shadow walk of this path into the window
+ * of its launch slot. The walk modifies the shadow path state (volume stack, random number
+ * offset, throughput, ...), which is restored afterwards: the real walk at replay starts from the
+ * same state. */
+ccl_device void integrator_shade_shadow_neural_record(KernelGlobals kg,
+                                                      IntegratorShadowState state,
+                                                      const uint packed_num_hits,
+                                                      const uint neural_slot)
+{
+  const Spectrum throughput = INTEGRATOR_STATE(state, shadow_path, throughput);
+  const uint16_t transparent_bounce = INTEGRATOR_STATE(state, shadow_path, transparent_bounce);
+  const uint16_t volume_bounds_bounce = INTEGRATOR_STATE(state, shadow_path, volume_bounds_bounce);
+  const uint16_t rng_offset = INTEGRATOR_STATE(state, shadow_path, rng_offset);
+  const float tmin = INTEGRATOR_STATE(state, shadow_ray, tmin);
+  const int stack_size = min(int(kernel_data.volume_stack_size), MAX_VOLUME_STACK_SIZE);
+  VolumeStack stack[MAX_VOLUME_STACK_SIZE];
+  for (int i = 0; i < stack_size; i++) {
+    stack[i] = integrator_state_read_shadow_volume_stack(state, i);
+  }
+
+  uint cursor = 0;
+  integrate_transparent_shadow(
+      kg, state, packed_num_hits, SRNXR_QUEUE_RECORD, neural_slot, &cursor, 0);
+
+  INTEGRATOR_STATE_WRITE(state, shadow_path, throughput) = throughput;
+  INTEGRATOR_STATE_WRITE(state, shadow_path, transparent_bounce) = transparent_bounce;
+  INTEGRATOR_STATE_WRITE(state, shadow_path, volume_bounds_bounce) = volume_bounds_bounce;
+  INTEGRATOR_STATE_WRITE(state, shadow_path, rng_offset) = rng_offset;
+  INTEGRATOR_STATE_WRITE(state, shadow_path, packed_num_hits) = packed_num_hits;
+  INTEGRATOR_STATE_WRITE(state, shadow_ray, tmin) = tmin;
+  for (int i = 0; i < stack_size; i++) {
+    integrator_state_write_shadow_volume_stack(state, i, stack[i]);
+  }
+  kernel_integrator_state.srnxr_queue.window_count[neural_slot] = cursor;
+}
+#endif
+
 ccl_device void integrator_shade_shadow(KernelGlobals kg,
                                         IntegratorShadowState state,
-                                        ccl_global float *ccl_restrict render_buffer)
+                                        ccl_global float *ccl_restrict render_buffer,
+                                        const uint neural_mode = 0,
+                                        const uint neural_slot = 0)
 {
   PROFILING_INIT(kg, PROFILING_SHADE_SHADOW_SETUP);
   const uint packed_num_hits = INTEGRATOR_STATE(state, shadow_path, packed_num_hits);
 
 #ifdef __TRANSPARENT_SHADOWS__
+  uint neural_count = 0;
+#  if defined(WITH_CYCLES_NEURAL_VOLUME) && defined(__KERNEL_CUDA__) && defined(__CUDA_ARCH__)
+  if (neural_mode == SRNXR_QUEUE_RECORD) {
+    integrator_shade_shadow_neural_record(kg, state, packed_num_hits, neural_slot);
+    return;
+  }
+  if (neural_mode == SRNXR_QUEUE_REPLAY) {
+    neural_count = kernel_integrator_state.srnxr_queue.window_count[neural_slot];
+  }
+#  endif
+  uint neural_cursor = 0;
   /* Evaluate transparent shadows. */
   const TransparentShadowEvalResult result = integrate_transparent_shadow(
-      kg, state, packed_num_hits);
+      kg, state, packed_num_hits, neural_mode, neural_slot, &neural_cursor, neural_count);
   if (result == TRANSPARENT_SHADOW_EVAL_CACHE_MISS) {
     integrator_shadow_path_cache_miss(state, DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW);
     return;

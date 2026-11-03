@@ -299,13 +299,32 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
     ccl_gpu_kernel_signature(integrator_shade_shadow,
                              const ccl_global int *path_index_array,
                              ccl_global float *render_buffer,
+                             const int work_size,
+                             const int neural_mode)
+{
+  const int global_index = ccl_gpu_global_id_x();
+
+  if (ccl_gpu_kernel_within_bounds(global_index, work_size)) {
+    const int state = (path_index_array) ? path_index_array[global_index] : global_index;
+    ccl_gpu_kernel_call(
+        integrator_shade_shadow(nullptr, state, render_buffer, neural_mode, global_index));
+  }
+}
+ccl_gpu_kernel_postfix
+
+/* Record the neural volume lookups of the shadow paths (wavefront decode queue). */
+ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
+    ccl_gpu_kernel_signature(integrator_neural_record_shadow,
+                             const ccl_global int *path_index_array,
+                             ccl_global float *render_buffer,
                              const int work_size)
 {
   const int global_index = ccl_gpu_global_id_x();
 
   if (ccl_gpu_kernel_within_bounds(global_index, work_size)) {
     const int state = (path_index_array) ? path_index_array[global_index] : global_index;
-    ccl_gpu_kernel_call(integrator_shade_shadow(nullptr, state, render_buffer));
+    ccl_gpu_kernel_call(
+        integrator_shade_shadow(nullptr, state, render_buffer, SRNXR_QUEUE_RECORD, global_index));
   }
 }
 ccl_gpu_kernel_postfix
@@ -371,14 +390,120 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
     ccl_gpu_kernel_signature(integrator_shade_volume,
                              const ccl_global int *path_index_array,
                              ccl_global float *render_buffer,
+                             const int work_size,
+                             const int neural_mode)
+{
+  const int global_index = ccl_gpu_global_id_x();
+
+  if (ccl_gpu_kernel_within_bounds(global_index, work_size)) {
+    const int state = (path_index_array) ? path_index_array[global_index] : global_index;
+    ccl_gpu_kernel_call(
+        integrator_shade_volume(nullptr, state, render_buffer, neural_mode, global_index));
+  }
+}
+ccl_gpu_kernel_postfix
+
+/* Record the neural volume lookups of the volume paths (wavefront decode queue). */
+ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
+    ccl_gpu_kernel_signature(integrator_neural_record_volume,
+                             const ccl_global int *path_index_array,
+                             ccl_global float *render_buffer,
                              const int work_size)
 {
   const int global_index = ccl_gpu_global_id_x();
 
   if (ccl_gpu_kernel_within_bounds(global_index, work_size)) {
     const int state = (path_index_array) ? path_index_array[global_index] : global_index;
-    ccl_gpu_kernel_call(integrator_shade_volume(nullptr, state, render_buffer));
+    ccl_gpu_kernel_call(
+        integrator_shade_volume(nullptr, state, render_buffer, SRNXR_QUEUE_RECORD, global_index));
   }
+}
+ccl_gpu_kernel_postfix
+
+/* Stages of the wavefront decode queue (kernel/util/image_3d_srnxr_queue_decode.h), CUDA only:
+ * grid-stride loops over the counts in device memory. */
+#if defined(__KERNEL_CUDA__) && defined(__CUDA_ARCH__) && defined(SRNXR_V2_KERNEL)
+struct SRNXRQueueBaseOf {
+  ccl_device_forceinline const ccl_global uint8_t *operator()(const uint32_t slot) const
+  {
+    return (const ccl_global uint8_t *)kernel_data_fetch(image_info, slot).data;
+  }
+};
+#  define SRNXR_QUEUE_STAGES 1
+#endif
+
+ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
+    ccl_gpu_kernel_signature(neural_queue_expand, const int work_size)
+{
+#ifdef SRNXR_QUEUE_STAGES
+  const SRNXRQueue &q = kernel_integrator_state.srnxr_queue;
+  const uint32_t n = srnxr_queue_num_requests(q);
+  for (uint32_t i = ccl_gpu_global_id_x(); i < n; i += ccl_gpu_global_size_x()) {
+    srnxr_queue_expand(q, i, SRNXRQueueBaseOf());
+  }
+#endif
+  (void)work_size;
+}
+ccl_gpu_kernel_postfix
+
+ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
+    ccl_gpu_kernel_signature(neural_queue_scan, const int work_size)
+{
+#ifdef SRNXR_QUEUE_STAGES
+  if (ccl_gpu_block_idx_x == 0) {
+    srnxr_queue_scan_block(kernel_integrator_state.srnxr_queue);
+  }
+#endif
+  (void)work_size;
+}
+ccl_gpu_kernel_postfix
+
+ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
+    ccl_gpu_kernel_signature(neural_queue_scatter, const int work_size)
+{
+#ifdef SRNXR_QUEUE_STAGES
+  const SRNXRQueue &q = kernel_integrator_state.srnxr_queue;
+  const uint32_t n = srnxr_queue_num_requests(q);
+  for (uint32_t i = ccl_gpu_global_id_x(); i < n; i += ccl_gpu_global_size_x()) {
+    srnxr_queue_scatter(q, i);
+  }
+#endif
+  (void)work_size;
+}
+ccl_gpu_kernel_postfix
+
+ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
+    ccl_gpu_kernel_signature(neural_queue_tensor, const int work_size)
+{
+#if defined(SRNXR_QUEUE_STAGES) && defined(SRNXR_HAS_MMA)
+  __shared__ __align__(16) uint8_t smem[SRNXR_TENSOR_BLOCK_SMEM_BYTES + 16];
+  const SRNXRQueue &q = kernel_integrator_state.srnxr_queue;
+  const uint32_t tiles = q.counters[SRNXR_QUEUE_COUNTER_TILES];
+  const uint32_t warps_per_block = ccl_gpu_block_dim_x >> 5;
+  for (uint32_t first = ccl_gpu_block_idx_x * warps_per_block; first < tiles;
+       first += ccl_gpu_grid_dim_x * warps_per_block)
+  {
+    srnxr_queue_tensor_group(q, first, tiles, SRNXRQueueBaseOf(), smem);
+  }
+#endif
+  (void)work_size;
+}
+ccl_gpu_kernel_postfix
+
+ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
+    ccl_gpu_kernel_signature(neural_queue_blend, const int work_size)
+{
+#ifdef SRNXR_QUEUE_STAGES
+  const SRNXRQueue &q = kernel_integrator_state.srnxr_queue;
+  const uint32_t n = srnxr_queue_num_requests(q);
+  for (uint32_t i = ccl_gpu_global_id_x(); i < n; i += ccl_gpu_global_size_x()) {
+    srnxr_queue_blend(q, i, SRNXRQueueBaseOf());
+  }
+  if (ccl_gpu_global_id_x() == 0) {
+    srnxr_queue_finish_stats(q);
+  }
+#endif
+  (void)work_size;
 }
 ccl_gpu_kernel_postfix
 

@@ -98,11 +98,18 @@ PathTraceWorkGPU::PathTraceWorkGPU(Device *device,
       work_tiles_(device, "work_tiles", MEM_READ_WRITE),
       display_rgba_half_(device, "display buffer half", MEM_READ_WRITE),
       display_rgba_byte_(device, "display buffer byte", MEM_READ_WRITE),
+      neural_queue_counters_(device, "neural_queue_counters", MEM_READ_WRITE),
+      neural_queue_stats_(device, "neural_queue_stats", MEM_READ_WRITE),
       max_num_paths_(0),
       min_num_active_main_paths_(0),
       max_active_main_path_index_(0)
 {
   memset(&integrator_state_gpu_, 0, sizeof(integrator_state_gpu_));
+}
+
+PathTraceWorkGPU::~PathTraceWorkGPU()
+{
+  neural_queue_print_stats();
 }
 
 void PathTraceWorkGPU::alloc_integrator_soa()
@@ -587,13 +594,25 @@ void PathTraceWorkGPU::enqueue_path_iteration(DeviceKernel kernel, const int num
       queue_->enqueue(kernel, work_size, args);
       break;
     }
+    case DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW:
+    case DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME: {
+      /* Volume and shadow kernels: the neural volume lookups may be decoded ahead through the
+       * wavefront queue, the kernel then replays them. */
+      int neural_mode = 0;
+      if (neural_queue_enqueue(kernel, d_path_index, work_size)) {
+        neural_mode = SRNXR_QUEUE_REPLAY;
+      }
+      const DeviceKernelArguments args(
+          &d_path_index, &buffers_->buffer.device_pointer, &work_size, &neural_mode);
+
+      queue_->enqueue(kernel, work_size, args);
+      break;
+    }
     case DEVICE_KERNEL_INTEGRATOR_SHADE_BACKGROUND:
     case DEVICE_KERNEL_INTEGRATOR_SHADE_LIGHT_NEE:
     case DEVICE_KERNEL_INTEGRATOR_SHADE_LIGHT_FORWARD:
-    case DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW:
     case DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE:
     case DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE_RAYTRACE:
-    case DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME:
     case DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME_RAY_MARCHING:
     case DEVICE_KERNEL_INTEGRATOR_SHADE_DEDICATED_LIGHT: {
       /* Shading kernels with integrator state and render buffer. */
@@ -608,6 +627,157 @@ void PathTraceWorkGPU::enqueue_path_iteration(DeviceKernel kernel, const int num
                 << " used for path iteration, should never happen.";
       break;
   }
+}
+
+/* Wavefront decode queue of neural volumes. */
+
+bool PathTraceWorkGPU::neural_queue_alloc()
+{
+  if (neural_queue_checked_) {
+    return neural_queue_enabled_;
+  }
+  neural_queue_checked_ = true;
+  const KernelIntegrator &kintegrator = device_scene_->data.integrator;
+  if (!kintegrator.volume_neural_queue) {
+    return false;
+  }
+#ifndef WITH_CYCLES_NEURAL_VOLUME
+  LOG_WARNING << "Neural volume queue: the neural volume decoder is not built, not used";
+  return false;
+#endif
+  if (!(device_->info.type == DEVICE_CUDA || device_->info.type == DEVICE_OPTIX)) {
+    LOG_WARNING << "Neural volume queue: only CUDA and OptiX devices, not used";
+    return false;
+  }
+  if (kintegrator.volume_ray_marching) {
+    LOG_WARNING << "Neural volume queue: not used with the ray marching volume integrator";
+    return false;
+  }
+  if (device_->get_use_neural_coopvec()) {
+    LOG_WARNING << "Neural volume queue: not used with the COOPVEC backend (OptiX programs)";
+    return false;
+  }
+
+  SRNXRQueue &q = integrator_state_gpu_.srnxr_queue;
+  memset(&q, 0, sizeof(q));
+  const uint32_t capacity = (kintegrator.volume_neural_queue_capacity > 0) ?
+                                uint32_t(kintegrator.volume_neural_queue_capacity) :
+                                uint32_t(max_num_paths_) * 4u;
+  q.capacity = capacity;
+  q.num_buckets = SRNXR_QUEUE_DEFAULT_BUCKETS;
+  q.k_max = max(kintegrator.volume_neural_queue_window, 1);
+  q.num_slots = max_num_paths_;
+  const size_t pairs = size_t(capacity) * SRNXR_QUEUE_MAX_PAIRS;
+
+  auto alloc_u32 = [&](const char *name, const size_t count) -> uint32_t * {
+    auto mem = make_unique<device_only_memory<uint32_t>>(device_, name);
+    mem->alloc_to_device(count);
+    uint32_t *ptr = (uint32_t *)mem->device_pointer;
+    neural_queue_memory_.push_back(std::move(mem));
+    return ptr;
+  };
+  auto alloc_f32 = [&](const char *name, const size_t count) -> float * {
+    auto mem = make_unique<device_only_memory<float>>(device_, name);
+    mem->alloc_to_device(count);
+    float *ptr = (float *)mem->device_pointer;
+    neural_queue_memory_.push_back(std::move(mem));
+    return ptr;
+  };
+  q.req_p = alloc_f32("neural_queue_req_p", size_t(capacity) * 4);
+  q.req_slot = alloc_u32("neural_queue_req_slot", capacity);
+  q.req_key = alloc_u32("neural_queue_req_key", capacity);
+  q.req_info = alloc_u32("neural_queue_req_info", capacity);
+  q.req_out = alloc_f32("neural_queue_req_out", size_t(capacity) * SRNXR_QUEUE_OUT_STRIDE);
+  q.pair_leaf = alloc_u32("neural_queue_pair_leaf", pairs);
+  q.pair_bucket = alloc_u32("neural_queue_pair_bucket", pairs);
+  q.pair_exp = alloc_f32("neural_queue_pair_exp", pairs);
+  q.pair_out = alloc_f32("neural_queue_pair_out", pairs * SRNXR_QUEUE_OUT_STRIDE);
+  q.sorted = alloc_u32("neural_queue_sorted", pairs);
+  q.bucket_count = alloc_u32("neural_queue_bucket_count", q.num_buckets);
+  neural_queue_bucket_count_ = neural_queue_memory_.back().get();
+  q.bucket_offset = alloc_u32("neural_queue_bucket_offset", q.num_buckets + 1);
+  q.bucket_tile = alloc_u32("neural_queue_bucket_tile", q.num_buckets + 1);
+  q.bucket_cursor = alloc_u32("neural_queue_bucket_cursor", q.num_buckets);
+  q.window = alloc_u32("neural_queue_window", size_t(q.num_slots) * q.k_max);
+  q.window_count = alloc_u32("neural_queue_window_count", q.num_slots);
+  neural_queue_counters_.alloc(SRNXR_QUEUE_COUNTER_NUM);
+  neural_queue_counters_.zero_to_device();
+  q.counters = (uint32_t *)neural_queue_counters_.device_pointer;
+  neural_queue_stats_.alloc(SRNXR_QUEUE_COUNTER_NUM);
+  neural_queue_stats_.zero_to_device();
+  q.stats = (unsigned long long int *)neural_queue_stats_.device_pointer;
+
+  size_t bytes = 0;
+  for (const unique_ptr<device_memory> &mem : neural_queue_memory_) {
+    bytes += mem->memory_size();
+  }
+  LOG_INFO << "Neural volume queue: capacity " << capacity << " requests, window " << q.k_max
+           << " lookups per path, " << q.num_slots << " slots, "
+           << string_human_readable_size(bytes) << " of device memory";
+
+  /* The kernels read the queue from the integrator state constants. */
+  device_->const_copy_to("integrator_state", &integrator_state_gpu_, sizeof(integrator_state_gpu_));
+  neural_queue_enabled_ = true;
+  return true;
+}
+
+bool PathTraceWorkGPU::neural_queue_enqueue(DeviceKernel kernel,
+                                            device_ptr d_path_index,
+                                            const int work_size)
+{
+  if (!neural_queue_alloc()) {
+    return false;
+  }
+  if (work_size <= 0) {
+    return false;
+  }
+  /* Per launch counters. */
+  queue_->zero_to_device(neural_queue_counters_);
+  queue_->zero_to_device(*neural_queue_bucket_count_);
+
+  /* Record the lookups of the walks. */
+  {
+    const DeviceKernelArguments args(&d_path_index, &buffers_->buffer.device_pointer, &work_size);
+    queue_->enqueue((kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW) ?
+                        DEVICE_KERNEL_INTEGRATOR_NEURAL_RECORD_SHADOW :
+                        DEVICE_KERNEL_INTEGRATOR_NEURAL_RECORD_VOLUME,
+                    work_size,
+                    args);
+  }
+  /* Batch stages: grid-stride kernels over the counts in device memory. */
+  {
+    const int persistent = 256 * 1024;
+    const int one_block = 1;
+    DeviceKernelArguments args_p(&persistent);
+    DeviceKernelArguments args_1(&one_block);
+    queue_->enqueue(DEVICE_KERNEL_NEURAL_QUEUE_EXPAND, persistent, args_p);
+    queue_->enqueue(DEVICE_KERNEL_NEURAL_QUEUE_SCAN, one_block, args_1);
+    queue_->enqueue(DEVICE_KERNEL_NEURAL_QUEUE_SCATTER, persistent, args_p);
+    queue_->enqueue(DEVICE_KERNEL_NEURAL_QUEUE_TENSOR, persistent, args_p);
+    queue_->enqueue(DEVICE_KERNEL_NEURAL_QUEUE_BLEND, persistent, args_p);
+  }
+  return true;
+}
+
+void PathTraceWorkGPU::neural_queue_print_stats()
+{
+  if (!neural_queue_enabled_) {
+    return;
+  }
+  queue_->copy_from_device(neural_queue_stats_);
+  queue_->synchronize();
+  const uint64_t *s = neural_queue_stats_.data();
+  string line = "SRNXR queue stats:";
+  for (int k = 0; k < SRNXR_QUEUE_COUNTER_NUM; k++) {
+    line += string_printf(" %s=%llu", srnxr_queue_counter_name(k), (unsigned long long)s[k]);
+  }
+  if (s[SRNXR_QUEUE_COUNTER_TILES]) {
+    line += string_printf(" rows_per_tile=%.2f",
+                          double(s[SRNXR_QUEUE_COUNTER_PAIRS]) /
+                              double(s[SRNXR_QUEUE_COUNTER_TILES]));
+  }
+  printf("%s\n", line.c_str());
+  LOG_INFO << line;
 }
 
 void PathTraceWorkGPU::compute_sorted_queued_paths(DeviceKernel queued_kernel,

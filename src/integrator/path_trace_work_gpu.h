@@ -24,6 +24,8 @@ struct KernelWorkTile;
  * This implementation suits best devices which have a lot of integrator states, such as GPU. */
 class PathTraceWorkGPU : public PathTraceWork {
  public:
+  ~PathTraceWorkGPU() override;
+
   PathTraceWorkGPU(Device *device,
                    Film *film,
                    DeviceScene *device_scene,
@@ -149,6 +151,18 @@ class PathTraceWorkGPU : public PathTraceWork {
 
   /* Temporary buffer for passing work tiles to kernel. */
   device_vector<KernelWorkTile> work_tiles_;
+
+  /* Wavefront decode queue of neural volumes (kernel/util/image_3d_srnxr_queue.h): allocated on
+   * the first volume or shadow kernel when the integrator asks for it. */
+  bool neural_queue_checked_ = false;
+  bool neural_queue_enabled_ = false;
+  vector<unique_ptr<device_memory>> neural_queue_memory_;
+  device_vector<uint32_t> neural_queue_counters_;
+  device_vector<uint64_t> neural_queue_stats_;
+  device_memory *neural_queue_bucket_count_ = nullptr;
+  bool neural_queue_alloc();
+  bool neural_queue_enqueue(DeviceKernel kernel, device_ptr d_path_index, int work_size);
+  void neural_queue_print_stats();
 
   /* Temporary buffer used by the copy_to_display() whenever graphics interoperability is not
    * available. Is allocated on-demand. */

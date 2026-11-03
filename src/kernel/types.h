@@ -1100,6 +1100,13 @@ struct ccl_align(16) ShaderData {
   float srnxr_cache_p[4];
   uint srnxr_cache_key;
   float srnxr_cache_out[8];
+  /* Wavefront decode queue (kernel/util/image_3d_srnxr_queue.h): SRNXRQueueMode, the launch
+   * slot of the path, the lookups recorded so far (record) or the search hint and the number of
+   * recorded lookups (replay). */
+  uint srnxr_queue_mode;
+  uint srnxr_queue_slot;
+  uint srnxr_queue_cursor;
+  uint srnxr_queue_count;
 #endif
 
   /* At the end so we can adjust size in ShaderDataTinyStorage. */
@@ -1787,6 +1794,14 @@ enum DeviceKernel : int {
   DEVICE_KERNEL_INTEGRATOR_COMPACT_SHADOW_STATES,
   DEVICE_KERNEL_INTEGRATOR_RESET,
   DEVICE_KERNEL_INTEGRATOR_SHADOW_CATCHER_COUNT_POSSIBLE_SPLITS,
+  /* Wavefront decoding of neural volumes (kernel/util/image_3d_srnxr_queue.h). */
+  DEVICE_KERNEL_INTEGRATOR_NEURAL_RECORD_VOLUME,
+  DEVICE_KERNEL_INTEGRATOR_NEURAL_RECORD_SHADOW,
+  DEVICE_KERNEL_NEURAL_QUEUE_EXPAND,
+  DEVICE_KERNEL_NEURAL_QUEUE_SCAN,
+  DEVICE_KERNEL_NEURAL_QUEUE_SCATTER,
+  DEVICE_KERNEL_NEURAL_QUEUE_TENSOR,
+  DEVICE_KERNEL_NEURAL_QUEUE_BLEND,
 
   DEVICE_KERNEL_SHADER_EVAL_DISPLACE,
   DEVICE_KERNEL_SHADER_EVAL_BACKGROUND,

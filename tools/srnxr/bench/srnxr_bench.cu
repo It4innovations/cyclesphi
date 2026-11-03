@@ -18,6 +18,15 @@
  *     --per-thread                           CUDA_FUSED: per-thread SIMT only (no warp path)
  *     --active-fraction F                    decode in two launches, each with a random fraction
  *                                            F (and 1 - F) of the threads active
+ *     --wavefront                            also decode through the wavefront queue
+ *                                            (kernel/util/image_3d_srnxr_queue.h): record,
+ *                                            expand, scan, scatter, tensor, blend, replay as
+ *                                            separate timed kernels; compared to the direct decode
+ *     --wf-grid N                            blocks of the persistent wavefront kernels (default
+ *                                            8 per SM)
+ *     --wf-warp-tiles                        wavefront tensor stage with one independent warp per
+ *                                            tile (default: the warps of a block share the
+ *                                            weights of one network through shared memory)
  *     --json results.json                    machine readable results
  *
  * points.f32 holds float32 [N, 4] = (x, y, z, t). Without --batches the whole set is decoded
@@ -91,6 +100,8 @@ __global__ void decode_kernel(const uint8_t *blob,
 
 __global__ void empty_kernel() {}
 
+#include "srnxr_wavefront.cuh"
+
 static bool read_file(const std::string &path, std::vector<char> &data)
 {
   std::ifstream f(path, std::ios::binary | std::ios::ate);
@@ -146,6 +157,9 @@ int main(int argc, char **argv)
   bool no_partial = false;
   /* < 1: every launch runs as two launches over complementary random thread subsets */
   float active_fraction = 1.0f;
+  bool wavefront = false;
+  int wf_grid = 0;
+  bool wf_block_tensor = true;
   for (int i = 3; i < argc; i++) {
     const std::string a = argv[i];
     auto next = [&]() -> std::string {
@@ -188,6 +202,15 @@ int main(int argc, char **argv)
     else if (a == "--active-fraction") {
       active_fraction = float(atof(next().c_str()));
     }
+    else if (a == "--wavefront") {
+      wavefront = true;
+    }
+    else if (a == "--wf-grid") {
+      wf_grid = atoi(next().c_str());
+    }
+    else if (a == "--wf-warp-tiles") {
+      wf_block_tensor = false;
+    }
     else {
       fprintf(stderr, "unknown option %s\n", a.c_str());
       return 1;
@@ -226,6 +249,8 @@ int main(int argc, char **argv)
   settings.has_time_frame = true;
   settings.time_frame = 0.0f;
   settings.time_shutter = 0.0f;
+  /* The queue evaluates every network on Tensor Cores. */
+  settings.force_mma_weights = settings.force_mma_weights || wavefront;
 
   std::vector<char> blob;
   SRNXRBuildReport report;
@@ -246,6 +271,8 @@ int main(int argc, char **argv)
   if (no_partial) {
     hdr.flags &= ~SRNXR_DEVICE_FLAG_PARTIAL_WARPS;
   }
+  /* The only model of the queue. */
+  hdr.bucket_base = 0;
   /* The decode kernel passes the point time directly, not frame time + shutter offset. */
   memcpy(blob.data(), &hdr, sizeof(hdr));
   printf("SRNXR model %s\n%s", model_path.c_str(), report.summary().c_str());
@@ -454,6 +481,163 @@ int main(int argc, char **argv)
       }
       bj += "]";
       jkv("batches", bj, false);
+    }
+    if (wavefront) {
+      WavefrontQueue wq;
+      wq.init(uint32_t(n), hdr.network_count, uint32_t(n));
+      float *d_wf = nullptr;
+      CUDA_CHECK(cudaMalloc(&d_wf, values.size() * sizeof(float)));
+      const int grid_p = wf_grid ? wf_grid : prop.multiProcessorCount * 8;
+      cudaEvent_t ev[8];
+      for (cudaEvent_t &e : ev) {
+        CUDA_CHECK(cudaEventCreate(&e));
+      }
+      static const char *stage_names[7] = {
+          "record", "expand", "scan", "scatter", "tensor", "blend", "replay"};
+      auto stage_times = [&](float t[7]) {
+        for (int k = 0; k < 7; k++) {
+          CUDA_CHECK(cudaEventElapsedTime(&t[k], ev[k], ev[k + 1]));
+        }
+      };
+      auto read_queue_counters = [&](uint32_t c[SRNXR_QUEUE_COUNTER_NUM],
+                                     uint64_t st[SRNXR_QUEUE_COUNTER_NUM]) {
+        CUDA_CHECK(cudaMemcpy(c, wq.q.counters, sizeof(uint32_t) * SRNXR_QUEUE_COUNTER_NUM,
+                              cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(st, wq.q.stats, sizeof(uint64_t) * SRNXR_QUEUE_COUNTER_NUM,
+                              cudaMemcpyDeviceToHost));
+      };
+      cudaFuncAttributes tattr;
+      if (wf_block_tensor) {
+        CUDA_CHECK(cudaFuncGetAttributes(&tattr, wf_tensor_block_kernel));
+      }
+      else {
+        CUDA_CHECK(cudaFuncGetAttributes(&tattr, wf_tensor_kernel));
+      }
+      jkv("wavefront_block_tensor", wf_block_tensor ? "true" : "false", false);
+      printf("wavefront: tensor kernel %d registers, %zu bytes local, %zu bytes shared; "
+             "persistent grid %d x %d\n",
+             tattr.numRegs, tattr.localSizeBytes, tattr.sharedSizeBytes, grid_p, block);
+      jkv("wavefront_tensor_registers", std::to_string(tattr.numRegs), false);
+      jkv("wavefront_tensor_local_bytes", std::to_string(tattr.localSizeBytes), false);
+      jkv("wavefront_grid", std::to_string(grid_p), false);
+
+      /* Correctness over the full set against the direct decode. */
+      CUDA_CHECK(cudaMemset(wq.q.stats, 0, sizeof(uint64_t) * SRNXR_QUEUE_COUNTER_NUM));
+      wavefront_run(wq, d_blob, d_points, n, hdr.decode_key, output_dim, d_wf, block, grid_p, ev,
+                    wf_block_tensor);
+      CUDA_CHECK(cudaGetLastError());
+      CUDA_CHECK(cudaDeviceSynchronize());
+      std::vector<float> wf_values(values.size());
+      CUDA_CHECK(cudaMemcpy(wf_values.data(), d_wf, wf_values.size() * sizeof(float),
+                            cudaMemcpyDeviceToHost));
+      float t[7];
+      stage_times(t);
+      uint32_t qc[SRNXR_QUEUE_COUNTER_NUM];
+      uint64_t qs[SRNXR_QUEUE_COUNTER_NUM];
+      read_queue_counters(qc, qs);
+      std::string qjson = "{";
+      for (int k = 0; k < SRNXR_QUEUE_COUNTER_NUM; k++) {
+        qjson += std::string(k ? ", " : "") + "\"" + srnxr_queue_counter_name(k) +
+                 "\": " + std::to_string(qs[k]);
+      }
+      qjson += "}";
+      printf("wavefront full set: %d requests, %u pairs, %u tiles (%.2f rows per tile), stats %s\n",
+             n, qc[SRNXR_QUEUE_COUNTER_PAIRS], qc[SRNXR_QUEUE_COUNTER_TILES],
+             qc[SRNXR_QUEUE_COUNTER_TILES] ? double(qc[SRNXR_QUEUE_COUNTER_PAIRS]) /
+                                                 double(qc[SRNXR_QUEUE_COUNTER_TILES]) :
+                                             0.0,
+             qjson.c_str());
+      printf("wavefront stages (ms):");
+      float total = 0.0f;
+      for (int k = 0; k < 7; k++) {
+        printf(" %s %.3f", stage_names[k], t[k]);
+        total += t[k];
+      }
+      printf(" | total %.3f\n", total);
+      jkv("wavefront_counters_full_set", qjson, false);
+      /* Differences per channel: max abs and the fraction above 1e-3 of the channel range. */
+      std::string dj = "[";
+      for (int c = 0; c < output_dim; c++) {
+        float lo = FLT_MAX, hi = -FLT_MAX, max_abs = 0.0f;
+        size_t bad = 0;
+        for (int i = 0; i < n; i++) {
+          const float a = values[size_t(i) * output_dim + c];
+          lo = std::min(lo, a);
+          hi = std::max(hi, a);
+        }
+        const float range = std::max(hi - lo, 1e-30f);
+        for (int i = 0; i < n; i++) {
+          const float d = fabsf(values[size_t(i) * output_dim + c] -
+                                wf_values[size_t(i) * output_dim + c]);
+          max_abs = std::max(max_abs, d);
+          bad += d > 1e-3f * range;
+        }
+        printf("wavefront vs direct, channel %d: max abs diff %.3e (%.3e of range), %zu of %d "
+               "above 1e-3 range\n",
+               c, max_abs, max_abs / range, bad, n);
+        char buf[160];
+        snprintf(buf, sizeof(buf), "%s{\"max_abs\": %.6e, \"max_rel_range\": %.6e, \"bad\": %zu}",
+                 c ? ", " : "", max_abs, max_abs / range, bad);
+        dj += buf;
+      }
+      dj += "]";
+      jkv("wavefront_vs_direct", dj, false);
+
+      /* Timed batches. */
+      if (!batches.empty()) {
+        std::string bj = "[";
+        for (size_t bi = 0; bi < batches.size(); bi++) {
+          const int b = std::min(batches[bi], n);
+          if (b <= 0) {
+            continue;
+          }
+          for (int r = 0; r < 3; r++) {
+            wavefront_run(wq, d_blob, d_points, b, hdr.decode_key, output_dim, d_wf, block,
+                          grid_p, nullptr, wf_block_tensor);
+          }
+          CUDA_CHECK(cudaGetLastError());
+          std::vector<float> st[7], totals(repeat);
+          for (int r = 0; r < repeat; r++) {
+            wavefront_run(wq, d_blob, d_points, b, hdr.decode_key, output_dim, d_wf, block,
+                          grid_p, ev, wf_block_tensor);
+            CUDA_CHECK(cudaEventSynchronize(ev[7]));
+            float tt[7];
+            stage_times(tt);
+            float sum = 0.0f;
+            for (int k = 0; k < 7; k++) {
+              st[k].push_back(tt[k]);
+              sum += tt[k];
+            }
+            totals[r] = sum;
+          }
+          std::sort(totals.begin(), totals.end());
+          const float median = totals[totals.size() / 2];
+          CUDA_CHECK(cudaDeviceSynchronize());
+          read_queue_counters(qc, qs);
+          printf("wavefront batch %7d: median %9.4f ms, %9.3f Mqueries/s, %9.3f Mpairs/s |",
+                 b, median, b / (median * 1e3), qc[SRNXR_QUEUE_COUNTER_PAIRS] / (median * 1e3));
+          char buf[1024];
+          snprintf(buf, sizeof(buf),
+                   "%s{\"batch\": %d, \"median_ms\": %.6f, \"mqueries_per_s\": %.6f, \"pairs\": %u, "
+                   "\"tiles\": %u, \"stages_ms\": {",
+                   bi ? ", " : "", b, median, b / (median * 1e3), qc[SRNXR_QUEUE_COUNTER_PAIRS],
+                   qc[SRNXR_QUEUE_COUNTER_TILES]);
+          bj += buf;
+          for (int k = 0; k < 7; k++) {
+            std::sort(st[k].begin(), st[k].end());
+            const float m = st[k][st[k].size() / 2];
+            printf(" %s %.3f", stage_names[k], m);
+            snprintf(buf, sizeof(buf), "%s\"%s\": %.6f", k ? ", " : "", stage_names[k], m);
+            bj += buf;
+          }
+          printf("\n");
+          bj += "}}";
+        }
+        bj += "]";
+        jkv("wavefront_batches", bj, false);
+      }
+      cudaFree(d_wf);
+      wq.free();
     }
     cudaFree(d_blob);
     cudaFree(d_points);

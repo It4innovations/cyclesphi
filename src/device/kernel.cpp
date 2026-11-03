@@ -114,6 +114,20 @@ const char *device_kernel_as_string(DeviceKernel kernel)
       return "integrator_reset";
     case DEVICE_KERNEL_INTEGRATOR_SHADOW_CATCHER_COUNT_POSSIBLE_SPLITS:
       return "integrator_shadow_catcher_count_possible_splits";
+    case DEVICE_KERNEL_INTEGRATOR_NEURAL_RECORD_VOLUME:
+      return "integrator_neural_record_volume";
+    case DEVICE_KERNEL_INTEGRATOR_NEURAL_RECORD_SHADOW:
+      return "integrator_neural_record_shadow";
+    case DEVICE_KERNEL_NEURAL_QUEUE_EXPAND:
+      return "neural_queue_expand";
+    case DEVICE_KERNEL_NEURAL_QUEUE_SCAN:
+      return "neural_queue_scan";
+    case DEVICE_KERNEL_NEURAL_QUEUE_SCATTER:
+      return "neural_queue_scatter";
+    case DEVICE_KERNEL_NEURAL_QUEUE_TENSOR:
+      return "neural_queue_tensor";
+    case DEVICE_KERNEL_NEURAL_QUEUE_BLEND:
+      return "neural_queue_blend";
 
     /* Shader evaluation. */
     case DEVICE_KERNEL_SHADER_EVAL_DISPLACE:

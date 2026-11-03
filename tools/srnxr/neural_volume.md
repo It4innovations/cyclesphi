@@ -235,6 +235,62 @@ directly, so the `accurate` mode is accurate in every build (fast math still flu
   `__activemask()`; a fully active warp uses CUDA_TENSOR or the warp SIMT path, 8 - 31 active
   lanes the partial-warp path, fewer lanes one query per thread. Measured on the test scene: 10.9
   active lanes per call on average.
+- **Wavefront decode queue** (`volume_neural_queue`, `src/kernel/util/image_3d_srnxr_queue.h`,
+  `image_3d_srnxr_queue_decode.h`): the inline decode makes the volume kernels latency bound
+  (every thread walks its ray and decodes at every majorant collision, warps are a third active
+  at the decoder and the lanes of a nearly empty warp decode one query per thread, 0.6 - 2.3 ms
+  each; a launch lasts as long as its longest walk). The queue takes the decodes out of the walk.
+  For every `integrator_shade_volume` and `integrator_shade_shadow` launch
+  `PathTraceWorkGPU::neural_queue_enqueue` (`src/integrator/path_trace_work_gpu.cpp`) launches:
+  1. `integrator_neural_record_volume` / `_shadow`: the same walk with the decoder replaced by
+     "append the query to the window of this launch slot, return zero" (`SRNXR_QUEUE_RECORD` in
+     `ShaderData::srnxr_queue_mode`, set by `volume_integrate` and
+     `integrate_transparent_volume_shadow`). The candidate collisions of null-scattering tracking
+     depend on the majorant and the random numbers only, so the recorded queries are a superset
+     of the queries of the real walk (which may stop earlier: Russian roulette, zero throughput,
+     opaque surfaces). The record walk writes nothing to the film or the path state: the volume
+     writes are skipped (`volume_neural_recording`), the shadow walk restores the shadow path
+     state it modifies (throughput, volume stack, random number offset, bounces, ray)
+     and treats surfaces as transparent (`integrator_shade_shadow_neural_record`).
+  2. `neural_queue_expand`: every request is resolved to its leaves (the strict leaf and the
+     neighbors whose expanded box contains the point) with the blend exponent, one pair per
+     leaf in neighbor order, counted per bucket (`SRNXRDeviceHeaderV2::bucket_base` of the model,
+     assigned per decode key by `ImageCache`, plus the network index).
+  3. `neural_queue_scan` (one block): pair and tile offsets of the buckets (counting sort).
+  4. `neural_queue_scatter`: pair indices sorted by bucket.
+  5. `neural_queue_tensor`: the warps of a block take consecutive tiles of 16 rows of one
+     network (`srnxr_queue_tensor_group`, `srnxr_v2_eval_network_tensor_block`): the 8 KB
+     output tile pairs of the hidden layer weights are staged into shared memory by `cp.async`,
+     double buffered, so the layer weights come from L2 once per block instead of once per warp;
+     the tiles are full (16 rows) because the rows of a network come from every path of the
+     launch, not from one warp.
+  6. `neural_queue_blend`: the pairs of a request are blended in neighbor order (deterministic,
+     the same running-max Gaussian blend as the inline decoder) into the result of the request.
+  7. the real `integrator_shade_volume` / `integrator_shade_shadow` (`SRNXR_QUEUE_REPLAY`):
+     `srnxr_v2_decode_queued` (`src/kernel/util/image_3d.h`) looks every query up in the window
+     of its launch slot by exact position, time and decode key (not FIFO: the VSPG finalization
+     re-evaluates a visited candidate, the equiangular lookup comes after the loop), and decodes
+     inline when the query is not there or its request could not be served (more than
+     `SRNXR_QUEUE_MAX_PAIRS` leaves, a network without Tensor Core specialization): correct,
+     counted as `replay_miss`.
+  The stages are grid-stride kernels over counts in device memory (no host synchronization).
+  Statistics (`SRNXR queue stats`: requests, pairs, tiles, overflow, incomplete, replay hits and
+  misses, launches) are printed when the path trace work is freed. Memory: `capacity` requests
+  (default 4 x the paths) of 16 B position, 12 B ids, 32 B result, 8 pairs of 12 B plus 32 B
+  output, and a window of `volume_neural_queue_window` (default 128; 32 overflowed on 0.001 % of the lookups
+  of the test scene with the sampled majorant and 0.006 % with the certified one, each miss a
+  per-thread inline decode on the critical path) indices per path; about 2.4 GB at 1 M paths,
+  10 GB with the 4.6 M paths the RTX PRO 6000 allocates (logged as "Neural volume queue: ...").
+  A request the queue cannot hold (capacity) is decoded inline at replay (counted as overflow).
+  Limits of this version (reviewed with codex): the queue is configured once per path trace
+  work (a changed integrator setting needs a new session); shaders with a Light Path node
+  (majorants estimated at render time) or a velocity field read from the model for motion blur
+  would make the record walk diverge from the real one (every miss is still decoded inline,
+  correctly); the COOPVEC backend (OptiX volume programs) and OSL shading do not replay, the
+  queue is disabled for COOPVEC; bucket ranges of unloaded models are reused after 65 536
+  networks (a collision only costs inline decodes, the tile kernel checks the model of every
+  row). CUDA and OptiX devices only (the stages need `mma.sync`); not with ray marching
+  (`volume_ray_marching`) in this version.
 
 ## Build options
 
@@ -265,7 +321,11 @@ XML attributes of an `<attribute volume_type="srnxr" buffer="file.srnxr" ...>`:
 | `srnxr_partial_warps` | cooperative decoding of partially active warps on / off (default on) |
 | `srnxr_majorant` | majorant bake: `certified` (default, bounds) or `sampled` (decoded field at the bake samples, not certified) |
 
-Command line of `cycles` (overrides the XML): `--neural-backend`, `--neural-sine`,
+Integrator sockets: `volume_neural_queue` (off), `volume_neural_queue_window` (128),
+`volume_neural_queue_capacity` (0: 4 x the paths).
+
+Command line of `cycles` (overrides the XML): `--neural-queue 0|1`, `--neural-queue-window K`,
+`--neural-queue-capacity N`, `--neural-backend`, `--neural-sine`,
 `--neural-fallback BACKEND` (used with a warning when the requested backend cannot run on the
 render device), `--neural-benchmark` (no fallback, an unsupported backend is an error),
 `--neural-counters 0|1`, `--neural-partial-warps 0|1`, `--neural-majorant certified|sampled`. The selected and the requested backend

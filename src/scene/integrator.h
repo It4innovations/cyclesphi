@@ -63,6 +63,9 @@ class Integrator : public Node {
   NODE_SOCKET_API(bool, volume_ray_marching)
   NODE_SOCKET_API(int, volume_max_steps)
   NODE_SOCKET_API(float, volume_step_rate)
+  NODE_SOCKET_API(bool, volume_neural_queue)
+  NODE_SOCKET_API(int, volume_neural_queue_window)
+  NODE_SOCKET_API(int, volume_neural_queue_capacity)
 
   NODE_SOCKET_API(bool, use_guiding);
   NODE_SOCKET_API(bool, deterministic_guiding);

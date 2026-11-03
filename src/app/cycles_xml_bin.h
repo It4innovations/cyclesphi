@@ -36,7 +36,17 @@ struct XMLNeuralVolumeOptions {
   int partial_warps = -1;
   /* certified (default) or sampled (not certified), empty: from XML. Majorant bake. */
   std::string majorant;
+  /* -1: from XML (default off), 0: off, 1: on. Wavefront decode queue (record the lookups of
+   * the volume walks, decode them in batches on Tensor Cores, replay). */
+  int queue = -1;
+  /* Lookups per path and launch kept by the queue (0: default). */
+  int queue_window = 0;
+  /* Requests per launch (0: 4 x the paths). */
+  int queue_capacity = 0;
 };
+
+/* Apply the integrator options of the command line to the scene (after reading the file). */
+void xml_apply_neural_volume_options(Scene *scene);
 void xml_set_neural_volume_options(const XMLNeuralVolumeOptions &options);
 void xml_set_volume_to_attr(Scene* scene, std::string geom_name, std::string attr_name, int type, vector<char>& file_content);
 void xml_set_material_to_node(Scene* scene, const char* file_content);

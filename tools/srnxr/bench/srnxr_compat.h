@@ -60,3 +60,4 @@ CCL_NAMESPACE_END
 
 #include "kernel/util/image_3d_srnxr.h"
 #include "kernel/util/image_3d_srnxr_decode.h"
+#include "kernel/util/image_3d_srnxr_queue_decode.h"

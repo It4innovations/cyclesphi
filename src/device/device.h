@@ -170,6 +170,12 @@ class Device {
     return false;
   }
   virtual void set_use_neural_coopvec(bool /*use*/) {}
+  /* Whether the volume kernels run as OptiX programs (COOPVEC): the wavefront decode queue
+   * replays through the CUDA kernels only. */
+  virtual bool get_use_neural_coopvec() const
+  {
+    return false;
+  }
 
   /* noexcept needed to silence TBB warning. */
   virtual ~Device() noexcept(false);

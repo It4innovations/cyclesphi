@@ -84,6 +84,9 @@ NODE_DEFINE(Integrator)
   SOCKET_BOOLEAN(volume_ray_marching, "Biased", false);
   SOCKET_INT(volume_max_steps, "Volume Max Steps", 1024);
   SOCKET_FLOAT(volume_step_rate, "Volume Step Rate", 1.0f);
+  SOCKET_BOOLEAN(volume_neural_queue, "Volume Neural Queue", false);
+  SOCKET_INT(volume_neural_queue_window, "Volume Neural Queue Window", 128);
+  SOCKET_INT(volume_neural_queue_capacity, "Volume Neural Queue Capacity", 0);
 
   static NodeEnum guiding_distribution_enum;
   guiding_distribution_enum.insert("PARALLAX_AWARE_VMM", GUIDING_TYPE_PARALLAX_AWARE_VMM);
@@ -263,6 +266,9 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
 
   kintegrator->volume_ray_marching = volume_ray_marching;
   kintegrator->volume_max_steps = volume_max_steps;
+  kintegrator->volume_neural_queue = volume_neural_queue;
+  kintegrator->volume_neural_queue_window = volume_neural_queue_window;
+  kintegrator->volume_neural_queue_capacity = volume_neural_queue_capacity;
 
   kintegrator->caustics_reflective = caustics_reflective;
   kintegrator->caustics_refractive = caustics_refractive;

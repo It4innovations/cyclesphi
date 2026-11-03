@@ -36,6 +36,8 @@
 
 #pragma once
 
+#include "kernel/util/image_3d_srnxr_queue.h"
+
 CCL_NAMESPACE_BEGIN
 
 /* Data structures */
@@ -210,6 +212,9 @@ struct IntegratorStateGPU {
 
   /* Divisor used to partition active indices by locality when sorting by material. */
   uint sort_partition_divisor;
+
+  /* Wavefront decode queue of neural volumes (capacity 0: not used). */
+  SRNXRQueue srnxr_queue;
 };
 
 /* Abstraction

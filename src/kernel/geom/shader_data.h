@@ -451,6 +451,10 @@ ccl_device_inline void shader_setup_from_volume(ccl_private ShaderData *ccl_rest
   sd->ray_length = 0.0f; /* todo: can we set this to some useful value? */
 #ifdef WITH_CYCLES_NEURAL_VOLUME
   sd->srnxr_cache_key = 0;
+  sd->srnxr_queue_mode = SRNXR_QUEUE_OFF;
+  sd->srnxr_queue_slot = 0;
+  sd->srnxr_queue_cursor = 0;
+  sd->srnxr_queue_count = 0;
 #endif
 
   /* TODO: fill relevant fields for texture coordinates. */

@@ -111,6 +111,21 @@ void xml_set_neural_volume_options(const XMLNeuralVolumeOptions &options)
   xml_neural_volume_options = options;
 }
 
+void xml_apply_neural_volume_options(Scene *scene)
+{
+  const XMLNeuralVolumeOptions &cli = xml_neural_volume_options;
+  Integrator *integrator = scene->integrator;
+  if (cli.queue >= 0) {
+    integrator->set_volume_neural_queue(cli.queue != 0);
+  }
+  if (cli.queue_window > 0) {
+    integrator->set_volume_neural_queue_window(cli.queue_window);
+  }
+  if (cli.queue_capacity > 0) {
+    integrator->set_volume_neural_queue_capacity(cli.queue_capacity);
+  }
+}
+
 /* Whether every render device can run the backend. The CPU runs the CUDA_FUSED arithmetic one
  * query per thread. CUDA_TENSOR needs mma.m16n8k16 (SM 8.0) and the shading kernels launched
  * as CUDA kernels (with OSL on OptiX they are OptiX programs, where warp-synchronous code is

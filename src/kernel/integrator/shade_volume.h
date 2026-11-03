@@ -38,6 +38,13 @@ enum VolumeIntegrateEvent {
 
 #ifdef __VOLUME__
 
+/* Whether the walk only records the neural volume lookups (no film or state writes). */
+#  ifdef WITH_CYCLES_NEURAL_VOLUME
+#    define volume_neural_recording(sd) ((sd)->srnxr_queue_mode == SRNXR_QUEUE_RECORD)
+#  else
+#    define volume_neural_recording(sd) false
+#  endif
+
 struct VolumeIntegrateResult {
   /* Throughput and offset for direct light scattering. */
   bool direct_scatter;
@@ -1464,7 +1471,7 @@ ccl_device void volume_integrate_step_scattering(
   if (sd->runtime_flag & SR_EMISSION) {
     /* Emission = inv_sigma * (L_e + sigma_n * (inv_sigma * (L_e + sigma_n * ···))). */
     vstate.emission += result.indirect_throughput * coeff.emission;
-    if (!result.indirect_scatter) {
+    if (!result.indirect_scatter && !volume_neural_recording(sd)) {
       /* Record emission until scatter position. */
       guiding_record_volume_emission(kg, state, coeff.emission);
     }
@@ -1738,7 +1745,9 @@ ccl_device_forceinline void volume_integrate_homogeneous(KernelGlobals kg,
   if (sd->runtime_flag & SR_EMISSION) {
     const Spectrum emission = volume_emission_integrate(&coeff, sd->runtime_flag, ray_length);
     vstate.emission = throughput * emission;
-    guiding_record_volume_emission(kg, state, emission);
+    if (!volume_neural_recording(sd)) {
+      guiding_record_volume_emission(kg, state, emission);
+    }
   }
 
   /* Transmittance of the complete ray segment. */
@@ -1975,6 +1984,11 @@ ccl_device void volume_integrate_null_scattering(KernelGlobals kg,
   }
 
   volume_direct_scatter_mis(ray, vstate, equiangular_coeffs, result);
+
+  if (volume_neural_recording(sd)) {
+    /* Recording the neural volume lookups only. */
+    return;
+  }
 
   /* Write accumulated emission. */
   if (!is_zero(vstate.emission)) {
@@ -2844,7 +2858,9 @@ volume_integrate_event(KernelGlobals kg,
 ccl_device VolumeIntegrateEvent volume_integrate(KernelGlobals kg,
                                                  IntegratorState state,
                                                  ccl_private Ray *ccl_restrict ray,
-                                                 ccl_global float *ccl_restrict render_buffer)
+                                                 ccl_global float *ccl_restrict render_buffer,
+                                                 const uint neural_mode = 0,
+                                                 const uint neural_slot = 0)
 {
   kernel_assert(!kernel_data.integrator.volume_ray_marching);
 
@@ -2865,11 +2881,32 @@ ccl_device VolumeIntegrateEvent volume_integrate(KernelGlobals kg,
   sd.lcg_state = lcg_state_init(
       rng_state.rng_pixel, rng_state.rng_offset, rng_state.sample, 0x15b4f88d);
 
+#ifdef WITH_CYCLES_NEURAL_VOLUME
+  /* Wavefront decode queue: record the lookups of this walk, or replay them. */
+  sd.srnxr_queue_mode = neural_mode;
+  sd.srnxr_queue_slot = neural_slot;
+#  if defined(__KERNEL_CUDA__) && defined(__CUDA_ARCH__)
+  if (neural_mode == SRNXR_QUEUE_REPLAY) {
+    sd.srnxr_queue_count = kernel_integrator_state.srnxr_queue.window_count[neural_slot];
+  }
+#  endif
+#else
+  (void)neural_mode;
+  (void)neural_slot;
+#endif
+
   LightSample ls ccl_optional_struct_init;
 
   /* TODO: expensive to zero closures? */
   VolumeIntegrateResult result = {};
   volume_integrate_null_scattering(kg, state, ray, &sd, &rng_state, render_buffer, &ls, result);
+
+#if defined(WITH_CYCLES_NEURAL_VOLUME) && defined(__KERNEL_CUDA__) && defined(__CUDA_ARCH__)
+  if (neural_mode == SRNXR_QUEUE_RECORD) {
+    kernel_integrator_state.srnxr_queue.window_count[neural_slot] = sd.srnxr_queue_cursor;
+    return VOLUME_PATH_ATTENUATED;
+  }
+#endif
 
   if (sd.runtime_flag & SR_CACHE_MISS) {
     return VOLUME_PATH_CACHE_MISS;
@@ -2982,14 +3019,23 @@ ccl_device_inline void integrator_next_kernel_after_shade_volume(
 
 ccl_device void integrator_shade_volume(KernelGlobals kg,
                                         IntegratorState state,
-                                        ccl_global float *ccl_restrict render_buffer)
+                                        ccl_global float *ccl_restrict render_buffer,
+                                        const uint neural_mode = 0,
+                                        const uint neural_slot = 0)
 {
 #ifdef __VOLUME__
   Ray ray ccl_optional_struct_init;
   Intersection isect ccl_optional_struct_init;
   integrator_shade_volume_setup(kg, state, &ray, &isect);
 
-  const VolumeIntegrateEvent event = volume_integrate(kg, state, &ray, render_buffer);
+  const VolumeIntegrateEvent event = volume_integrate(
+      kg, state, &ray, render_buffer, neural_mode, neural_slot);
+#  ifdef WITH_CYCLES_NEURAL_VOLUME
+  if (neural_mode == SRNXR_QUEUE_RECORD) {
+    /* Only the neural volume lookups were recorded, the path continues at replay. */
+    return;
+  }
+#  endif
   if (event == VOLUME_PATH_CACHE_MISS) {
     integrator_path_cache_miss(state, DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME);
     return;
